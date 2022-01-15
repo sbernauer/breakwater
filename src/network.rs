@@ -178,7 +178,7 @@ pub fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>) {
                                             }
                                         }
 
-                                        let rgba: u16 = (blue as u16) << 11 | (green as u16) << 6 | (red as u16) << 1;
+                                        let rgba: u32 = (blue as u32) << 11 | (green as u32) << 6 | (red as u32) << 1;
                                         // let rgba = 0b0111101111011110;
 
                                         //println!("For \"{}\" got : x={} y={} rgba={}", str::from_utf8(&buffer[loop_start..i]).unwrap(), x, y, rgba);

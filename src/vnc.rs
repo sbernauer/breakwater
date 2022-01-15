@@ -25,17 +25,17 @@ pub fn start_vnc_server(fb: &FrameBuffer, fps: u32) {
 }
 
 // We don't check for bounds as the only input is from this module
-fn set_pixel(vnc_server: RfbScreenInfoPtr, width: usize,  height: usize, x: usize, y: usize, rgba: u16) {
+fn set_pixel(vnc_server: RfbScreenInfoPtr, width: usize,  height: usize, x: usize, y: usize, rgba: u32) {
     unsafe {
-        let addr = (*vnc_server).frameBuffer as *mut u16;
-        let slice: &mut [u16] = slice::from_raw_parts_mut(addr, width * height);
+        let addr = (*vnc_server).frameBuffer as *mut u32;
+        let slice: &mut [u32] = slice::from_raw_parts_mut(addr, width * height);
         slice[x + width * y] = rgba;
     }
 }
 
 fn initialize_vnc_server(fb: &FrameBuffer) -> RfbScreenInfoPtr {
-    let vnc_server = rfb_get_screen(fb.width as i32, fb.height as i32, 5, 3, 2);
-    rfb_framebuffer_malloc(vnc_server, (fb.width * fb.height * 2) as u64);
+    let vnc_server = rfb_get_screen(fb.width as i32, fb.height as i32, 5, 3, 4);
+    rfb_framebuffer_malloc(vnc_server, (fb.width * fb.height * 4 /* bytes per pixel */) as u64);
     rfb_init_server(vnc_server);
     rfb_run_event_loop(vnc_server, 1, 1);
 
