@@ -9,10 +9,10 @@ use crate::framebuffer::FrameBuffer;
 
 const NETWORK_BUFFER_SIZE: usize = 128_000;
 
-pub fn listen(fb: Arc<FrameBuffer>, listen_adress: &str) {
-    let listener = TcpListener::bind(listen_adress)
-        .expect(format!("Failed to listen on {listen_adress}").as_str());
-    println!("Listening for Pixelflut connections on {listen_adress}");
+pub fn listen(fb: Arc<FrameBuffer>, listen_address: &str) {
+    let listener = TcpListener::bind(listen_address)
+        .expect(format!("Failed to listen on {listen_address}").as_str());
+    println!("Listening for Pixelflut connections on {listen_address}");
 
     let pool = ThreadPool::new(12);
 
@@ -178,7 +178,7 @@ pub fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>) {
                                             }
                                         }
 
-                                        let rgba: u32 = (blue as u32) << 11 | (green as u32) << 6 | (red as u32) << 1;
+                                        let rgba: u32 = (blue as u32) << 20 | (green as u32) << 12 | (red as u32) << 4;
                                         // let rgba = 0b0111101111011110;
 
                                         //println!("For \"{}\" got : x={} y={} rgba={}", str::from_utf8(&buffer[loop_start..i]).unwrap(), x, y, rgba);
@@ -190,16 +190,8 @@ pub fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>) {
 
                                 // End of command to read Pixel value
                                 if buffer[i] == '\n' as u8 {
-                                    //i += 1;
-                                    // stream.write(&fb.get(x as usize * WIDTH + y as usize).to_be_bytes()).unwrap();
-                                    // stream.flush().unwrap();
-                                    // let response = "HTTP/1.1 200 OK\r\n\r\n";
-                                    // stream.write(response.as_bytes()).unwrap();
-
-                                    // let response: u16 = 0x3030;
-                                    // stream.write(&response.to_be_bytes() + [0u8]).unwrap();
-                                    // stream.flush().unwrap();
-                                    println!("TODO: Implement reading Pixel value for {}, {}", x, y);
+                                    i += 1;
+                                    stream.write(rgba_to_hex_ascii_bytes(x, y, fb.get(x, y)).as_bytes()).unwrap();
                                 }
                             }
                         }
@@ -207,9 +199,15 @@ pub fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>) {
                 }
             }
         }
+        stream.flush().unwrap(); // Flush return buffer e.g. for requested pixel values
 
         // println!("Got {} bytes ({}%))",
         //          bytes, bytes as f32 / BUFFER_SIZE as f32 * 100 as f32);
         //println!("{:?}", str::from_utf8(&buffer[0..64]).unwrap());
     }
+}
+
+#[inline(always)]
+fn rgba_to_hex_ascii_bytes(x: usize, y: usize, rgba: u32) -> String {
+    format!("PX {x} {y} {:08x}\n", rgba)
 }

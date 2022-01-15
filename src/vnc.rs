@@ -34,7 +34,7 @@ fn set_pixel(vnc_server: RfbScreenInfoPtr, width: usize,  height: usize, x: usiz
 }
 
 fn initialize_vnc_server(fb: &FrameBuffer) -> RfbScreenInfoPtr {
-    let vnc_server = rfb_get_screen(fb.width as i32, fb.height as i32, 5, 3, 4);
+    let vnc_server = rfb_get_screen(fb.width as i32, fb.height as i32, 8, 3, 4);
     rfb_framebuffer_malloc(vnc_server, (fb.width * fb.height * 4 /* bytes per pixel */) as u64);
     rfb_init_server(vnc_server);
     rfb_run_event_loop(vnc_server, 1, 1);
