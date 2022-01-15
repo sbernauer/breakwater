@@ -128,9 +128,9 @@ pub fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>) {
                                         // Color format: 1 bit padding + 5 bit blue + 5 bit green + 5 bit red
                                         // As we would need to parse the second ASCII character to only get the 1 bit remaining to
                                         // the color depth of 5, we skip this and only use a color depth of 4 bit.
-                                        let red: u8;
+                                        let mut red: u8;
                                         if buffer[i - 9] > '0' as u8 - 1 && buffer[i - 9] < '9' as u8 + 1 {
-                                            red = buffer[i - 9] - '0' as u8;
+                                            red = (buffer[i - 9] - '0' as u8) << 4;
                                         } else {
                                             // If the char is A-Z lowercase it (Thanks to https://github.com/TobleMiner/shoreline for the idea)
                                             // Using existent buffer segment and not a new variable.
@@ -138,15 +138,30 @@ pub fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>) {
                                             buffer[i - 9] = buffer[i - 9] | 0x20;
 
                                             if buffer[i - 9] > 'a' as u8 - 1 && buffer[i - 9] < 'f' as u8 + 1  {
-                                                red = buffer[i - 9] - 'a' as u8 + 10;
+                                                red = (buffer[i - 9] - 'a' as u8 + 10) << 4;
                                             } else {
                                                 continue;
                                             }
                                         }
 
-                                        let green: u8;
+                                        if buffer[i - 8] > '0' as u8 - 1 && buffer[i - 8] < '9' as u8 + 1 {
+                                            red += buffer[i - 8] - '0' as u8;
+                                        } else {
+                                            // If the char is A-Z lowercase it (Thanks to https://github.com/TobleMiner/shoreline for the idea)
+                                            // Using existent buffer segment and not a new variable.
+                                            // I don't know if this improves performance, but doing so anyway :)
+                                            buffer[i - 8] = buffer[i - 8] | 0x20;
+
+                                            if buffer[i - 8] > 'a' as u8 - 1 && buffer[i - 8] < 'f' as u8 + 1  {
+                                                red += buffer[i - 8] - 'a' as u8 + 10;
+                                            } else {
+                                                continue;
+                                            }
+                                        }
+
+                                        let mut green: u8;
                                         if buffer[i - 7] > '0' as u8 - 1 && buffer[i - 7] < '9' as u8 + 1 {
-                                            green = buffer[i - 7] - '0' as u8;
+                                            green = (buffer[i - 7] - '0' as u8) << 4;
                                         } else {
                                             // If the char is A-Z lowercase it (Thanks to https://github.com/TobleMiner/shoreline for the idea)
                                             // Using existent buffer segment and not a new variable.
@@ -154,15 +169,30 @@ pub fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>) {
                                             buffer[i - 7] = buffer[i - 7] | 0x20;
 
                                             if buffer[i - 7] > 'a' as u8 - 1 && buffer[i - 7] < 'f' as u8 + 1  {
-                                                green = buffer[i - 7] - 'a' as u8 + 10;
+                                                green = (buffer[i - 7] - 'a' as u8 + 10) << 4;
                                             } else {
                                                 continue;
                                             }
                                         }
 
-                                        let blue: u8;
+                                        if buffer[i - 6] > '0' as u8 - 1 && buffer[i - 6] < '9' as u8 + 1 {
+                                            green += buffer[i - 6] - '0' as u8;
+                                        } else {
+                                            // If the char is A-Z lowercase it (Thanks to https://github.com/TobleMiner/shoreline for the idea)
+                                            // Using existent buffer segment and not a new variable.
+                                            // I don't know if this improves performance, but doing so anyway :)
+                                            buffer[i - 6] = buffer[i - 6] | 0x20;
+
+                                            if buffer[i - 6] > 'a' as u8 - 1 && buffer[i - 6] < 'f' as u8 + 1  {
+                                                green += buffer[i - 6] - 'a' as u8 + 10;
+                                            } else {
+                                                continue;
+                                            }
+                                        }
+
+                                        let mut blue: u8;
                                         if buffer[i - 5] > '0' as u8 - 1 && buffer[i - 5] < '9' as u8 + 1 {
-                                            blue = buffer[i - 5] - '0' as u8;
+                                            blue = (buffer[i - 5] - '0' as u8) << 4;
                                         } else {
                                             // If the char is A-Z lowercase it (Thanks to https://github.com/TobleMiner/shoreline for the idea)
                                             // Using existent buffer segment and not a new variable.
@@ -170,13 +200,28 @@ pub fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>) {
                                             buffer[i - 5] = buffer[i - 5] | 0x20;
 
                                             if buffer[i - 5] > 'a' as u8 - 1 && buffer[i - 5] < 'f' as u8 + 1  {
-                                                blue = buffer[i - 5] - 'a' as u8 + 10;
+                                                blue = (buffer[i - 5] - 'a' as u8 + 10) << 4;
                                             } else {
                                                 continue;
                                             }
                                         }
 
-                                        let rgba: u32 = (blue as u32) << 20 | (green as u32) << 12 | (red as u32) << 4;
+                                        if buffer[i - 4] > '0' as u8 - 1 && buffer[i - 4] < '9' as u8 + 1 {
+                                            blue += buffer[i - 4] - '0' as u8;
+                                        } else {
+                                            // If the char is A-Z lowercase it (Thanks to https://github.com/TobleMiner/shoreline for the idea)
+                                            // Using existent buffer segment and not a new variable.
+                                            // I don't know if this improves performance, but doing so anyway :)
+                                            buffer[i - 4] = buffer[i - 4] | 0x20;
+
+                                            if buffer[i - 4] > 'a' as u8 - 1 && buffer[i - 4] < 'f' as u8 + 1  {
+                                                blue += buffer[i - 4] - 'a' as u8 + 10;
+                                            } else {
+                                                continue;
+                                            }
+                                        }
+
+                                        let rgba: u32 = (blue as u32) << 16 | (green as u32) << 8 | (red as u32);
                                         // let rgba = 0b0111101111011110;
 
                                         //println!("For \"{}\" got : x={} y={} rgba={}", str::from_utf8(&buffer[loop_start..i]).unwrap(), x, y, rgba);
