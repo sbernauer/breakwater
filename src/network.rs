@@ -47,70 +47,69 @@ pub fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>) {
         }
         // We need to subtract XXX as the for loop can advance by max XXX bytes
         for mut i in 0..loop_end {
-            let loop_start = i;
-            if buffer[i] == 'P' as u8 {
+            if buffer[i] == b'P' {
                 i += 1;
-                if buffer[i] == 'X' as u8 {
+                if buffer[i] == b'X' {
                     i += 1;
-                    if buffer[i] == ' ' as u8 {
+                    if buffer[i] == b' ' {
                         i += 1;
                         // Parse first x coordinate char
-                        if buffer[i] > '/' as u8 && buffer[i] < ':' as u8 {
-                            x = (buffer[i] - '0' as u8) as usize;
+                        if buffer[i] > b'/' && buffer[i] < b':' {
+                            x = (buffer[i] - b'0') as usize;
                             i += 1;
 
                             // Parse optional second x coordinate char
-                            if buffer[i] > '/' as u8 && buffer[i] < ':' as u8 {
-                                x = 10 * x + (buffer[i] - '0' as u8) as usize;
+                            if buffer[i] > b'/' && buffer[i] < b':' {
+                                x = 10 * x + (buffer[i] - b'0') as usize;
                                 i += 1;
 
                                 // Parse optional third x coordinate char
-                                if buffer[i] > '/' as u8 && buffer[i] < ':' as u8 {
-                                    x = 10 * x + (buffer[i] - '0' as u8) as usize;
+                                if buffer[i] > b'/' && buffer[i] < b':' {
+                                    x = 10 * x + (buffer[i] - b'0') as usize;
                                     i += 1;
 
                                     // Parse optional forth x coordinate char
-                                    if buffer[i] > '/' as u8 && buffer[i] < ':' as u8 {
-                                        x = 10 * x + (buffer[i] - '0' as u8) as usize;
+                                    if buffer[i] > b'/' && buffer[i] < b':' {
+                                        x = 10 * x + (buffer[i] - b'0') as usize;
                                         i += 1;
                                     }
                                 }
                             }
 
                             // Separator between x and y
-                            if buffer[i] == ' ' as u8 {
+                            if buffer[i] == b' ' {
                                 i += 1;
                             }
 
                             // Parse first y coordinate char
-                            if buffer[i] > '/' as u8 && buffer[i] < ':' as u8 {
-                                y = (buffer[i] - '0' as u8) as usize;
+                            if buffer[i] > b'/' && buffer[i] < b':' {
+                                y = (buffer[i] - b'0') as usize;
                                 i += 1;
 
                                 // Parse optional second y coordinate char
-                                if buffer[i] > '/' as u8 && buffer[i] < ':' as u8 {
-                                    y = 10 * y + (buffer[i] - '0' as u8) as usize;
+                                if buffer[i] > b'/' && buffer[i] < b':' {
+                                    y = 10 * y + (buffer[i] - b'0') as usize;
                                     i += 1;
 
                                     // Parse optional third y coordinate char
-                                    if buffer[i] > '/' as u8 && buffer[i] < ':' as u8 {
-                                        y = 10 * y + (buffer[i] - '0' as u8) as usize;
+                                    if buffer[i] > b'/' && buffer[i] < b':' {
+                                        y = 10 * y + (buffer[i] - b'0') as usize;
                                         i += 1;
 
                                         // Parse optional forth y coordinate char
-                                        if buffer[i] > '/' as u8 && buffer[i] < ':' as u8 {
-                                            y = 10 * y + (buffer[i] - '0' as u8) as usize;
+                                        if buffer[i] > b'/' && buffer[i] < b':' {
+                                            y = 10 * y + (buffer[i] - b'0') as usize;
                                             i += 1;
                                         }
                                     }
                                 }
 
                                 // Separator between coordinates and color
-                                if buffer[i] == ' ' as u8 {
+                                if buffer[i] == b' ' {
                                     i += 1;
 
                                     // Must be followed by 6 bytes RGB and newline or ...
-                                    if buffer[i + 6] == '\n' as u8 {
+                                    if buffer[i + 6] == b'\n' {
                                         i += 7;
 
                                         let rgba: u32 =
@@ -127,7 +126,7 @@ pub fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>) {
                                     }
 
                                     // ... or must be followed by 8 bytes RGBA and newline
-                                    if buffer[i + 8] == '\n' as u8 {
+                                    if buffer[i + 8] == b'\n' {
                                         i += 9;
 
                                         let rgba: u32 =
@@ -145,7 +144,7 @@ pub fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>) {
                                 }
 
                                 // End of command to read Pixel value
-                                if buffer[i] == '\n' as u8 {
+                                if buffer[i] == b'\n' {
                                     i += 1;
                                     stream.write(rgba_to_hex_ascii_bytes(x, y, fb.get(x, y)).as_bytes()).unwrap();
                                 }
