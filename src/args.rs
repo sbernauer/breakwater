@@ -12,15 +12,15 @@ pub struct Args {
     #[clap(short, long, default_value = "12")]
     pub thread_pool_size: u32,
 
-    /// Width of the display
+    /// Width of the drawing surface
     #[clap(short, long, default_value_t = 1280)]
     pub width: usize,
 
-    /// Height of the display
+    /// Height of the drawing surface
     #[clap(short, long, default_value_t = 720)]
     pub height: usize,
 
     /// Frames per second the VNC server should aim for
-    #[clap(short, long, default_value_t = 60)]
+    #[clap(short, long, default_value_t = 30)]
     pub fps: u32,
 }
