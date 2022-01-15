@@ -112,14 +112,22 @@ pub fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>) {
                                     // Must be followed by 6 bytes RGB and newline or ...
                                     if buffer[i + 6] == '\n' as u8 {
                                         i += 7;
-                                        println!("For \"{}\" got : x={} y={}", str::from_utf8(&buffer[loop_start..i]).unwrap(), x, y);
+
+                                        let rgba: u32 =
+                                                  (from_hex_char(buffer[i - 3]) as u32) << 20
+                                                | (from_hex_char(buffer[i - 2]) as u32) << 16
+                                                | (from_hex_char(buffer[i - 5]) as u32) << 12
+                                                | (from_hex_char(buffer[i - 4]) as u32) << 8
+                                                | (from_hex_char(buffer[i - 7]) as u32) << 4
+                                                | (from_hex_char(buffer[i - 6]) as u32) << 0;
+
+                                        fb.set(x as usize, y as usize, rgba);
+
                                         continue;
                                     }
 
                                     // ... or must be followed by 8 bytes RGBA and newline
                                     if buffer[i + 8] == '\n' as u8 {
-                                        // Advancing early as we can continue the loop if non hey charater follows
-                                        // In this case we can skip some already parsed bytes
                                         i += 9;
 
                                         let rgba: u32 =
