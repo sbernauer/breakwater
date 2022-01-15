@@ -54,22 +54,22 @@ pub fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>) {
                     if buffer[i] == b' ' {
                         i += 1;
                         // Parse first x coordinate char
-                        if buffer[i] > b'/' && buffer[i] < b':' {
+                        if buffer[i] >= b'0' && buffer[i] <= b'9' {
                             x = (buffer[i] - b'0') as usize;
                             i += 1;
 
                             // Parse optional second x coordinate char
-                            if buffer[i] > b'/' && buffer[i] < b':' {
+                            if buffer[i] >= b'0' && buffer[i] <= b'9' {
                                 x = 10 * x + (buffer[i] - b'0') as usize;
                                 i += 1;
 
                                 // Parse optional third x coordinate char
-                                if buffer[i] > b'/' && buffer[i] < b':' {
+                                if buffer[i] >= b'0' && buffer[i] <= b'9' {
                                     x = 10 * x + (buffer[i] - b'0') as usize;
                                     i += 1;
 
                                     // Parse optional forth x coordinate char
-                                    if buffer[i] > b'/' && buffer[i] < b':' {
+                                    if buffer[i] >= b'0' && buffer[i] <= b'9' {
                                         x = 10 * x + (buffer[i] - b'0') as usize;
                                         i += 1;
                                     }
@@ -82,22 +82,22 @@ pub fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>) {
                             }
 
                             // Parse first y coordinate char
-                            if buffer[i] > b'/' && buffer[i] < b':' {
+                            if buffer[i] >= b'0' && buffer[i] <= b'9' {
                                 y = (buffer[i] - b'0') as usize;
                                 i += 1;
 
                                 // Parse optional second y coordinate char
-                                if buffer[i] > b'/' && buffer[i] < b':' {
+                                if buffer[i] >= b'0' && buffer[i] <= b'9' {
                                     y = 10 * y + (buffer[i] - b'0') as usize;
                                     i += 1;
 
                                     // Parse optional third y coordinate char
-                                    if buffer[i] > b'/' && buffer[i] < b':' {
+                                    if buffer[i] >= b'0' && buffer[i] <= b'9' {
                                         y = 10 * y + (buffer[i] - b'0') as usize;
                                         i += 1;
 
                                         // Parse optional forth y coordinate char
-                                        if buffer[i] > b'/' && buffer[i] < b':' {
+                                        if buffer[i] >= b'0' && buffer[i] <= b'9' {
                                             y = 10 * y + (buffer[i] - b'0') as usize;
                                             i += 1;
                                         }
