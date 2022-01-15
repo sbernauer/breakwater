@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
+clap = { version = "3.0.7", features = ["derive"] }
 threadpool = "1.8.1"
 vncserver = "0.2.2"
 

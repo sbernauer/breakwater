@@ -7,13 +7,12 @@ use threadpool::ThreadPool;
 
 use crate::framebuffer::FrameBuffer;
 
-const LISTEN_ADDRESS: &str = "127.0.0.1:1234";
 const NETWORK_BUFFER_SIZE: usize = 128_000;
 
-pub fn listen(fb: Arc<FrameBuffer>) {
-    let listener = TcpListener::bind(LISTEN_ADDRESS)
-        .expect(format!("Failed to listen on {}", LISTEN_ADDRESS).as_str());
-    println!("Listening for Pixelflut connections on {}", LISTEN_ADDRESS);
+pub fn listen(fb: Arc<FrameBuffer>, listen_adress: &str) {
+    let listener = TcpListener::bind(listen_adress)
+        .expect(format!("Failed to listen on {listen_adress}").as_str());
+    println!("Listening for Pixelflut connections on {listen_adress}");
 
     let pool = ThreadPool::new(12);
 
