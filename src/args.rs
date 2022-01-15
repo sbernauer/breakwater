@@ -8,10 +8,6 @@ pub struct Args {
     #[clap(short, long, default_value = "[::]:1234")]
     pub listen_address: String,
 
-    /// Size of the thread pool handling the network traffic.
-    #[clap(short, long, default_value = "12")]
-    pub thread_pool_size: u32,
-
     /// Width of the drawing surface
     #[clap(short, long, default_value_t = 1280)]
     pub width: usize,

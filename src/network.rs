@@ -3,7 +3,7 @@ use std::net::TcpListener;
 use std::net::TcpStream;
 use std::str;
 use std::sync::Arc;
-use threadpool::ThreadPool;
+use std::thread;
 
 use crate::framebuffer::FrameBuffer;
 
@@ -14,13 +14,11 @@ pub fn listen(fb: Arc<FrameBuffer>, listen_address: &str) {
         .expect(format!("Failed to listen on {listen_address}").as_str());
     println!("Listening for Pixelflut connections on {listen_address}");
 
-    let pool = ThreadPool::new(12);
-
     for stream in listener.incoming() {
         let stream = stream.unwrap();
 
         let fb = Arc::clone(&fb);
-        pool.execute(move || {
+        thread::spawn(move || {
             println!("Got connection from {}", stream.peer_addr().unwrap());
             handle_connection(stream, fb);
         });
