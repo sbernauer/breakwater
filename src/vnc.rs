@@ -1,3 +1,4 @@
+use core::slice;
 use std::thread;
 use std::time::Duration;
 use vncserver::*;
@@ -10,7 +11,9 @@ pub fn start_vnc_server(fb: &FrameBuffer, fps: u32) {
     loop {
         for x in 0..fb.width {
             for y in 0..fb.height {
-                rfb_framebuffer_set_rgb16(vnc_server, x as i32, y as i32, fb.get(x, y));
+                // We don't use this as the wrapper method only exists for 16 bit, not for 32 bit :/
+                // rfb_framebuffer_set_rgb16(vnc_server, x as i32, y as i32, fb.get(x, y));
+                set_pixel(vnc_server, fb.width, fb.height, x, y, fb.get(x, y));
             }
         }
         rfb_mark_rect_as_modified(vnc_server, 0, 0, fb.width as i32, fb.height as i32);
@@ -19,6 +22,15 @@ pub fn start_vnc_server(fb: &FrameBuffer, fps: u32) {
     }
 
     // stop_vnc_server(vnc_server);
+}
+
+// We don't check for bounds as the only input is from this module
+fn set_pixel(vnc_server: RfbScreenInfoPtr, width: usize,  height: usize, x: usize, y: usize, rgba: u16) {
+    unsafe {
+        let addr = (*vnc_server).frameBuffer as *mut u16;
+        let slice: &mut [u16] = slice::from_raw_parts_mut(addr, width * height);
+        slice[x + width * y] = rgba;
+    }
 }
 
 fn initialize_vnc_server(fb: &FrameBuffer) -> RfbScreenInfoPtr {
