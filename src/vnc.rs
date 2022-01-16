@@ -1,10 +1,12 @@
 use core::slice;
+use std::sync::atomic::Ordering::Relaxed;
 use rusttype::{point, Font, Scale};
 use std::thread;
 use std::time::Duration;
 use vncserver::*;
 
 use crate::framebuffer::FrameBuffer;
+use crate::Statistics;
 
 pub struct VncServer<'a> {
     fb: &'a FrameBuffer,
@@ -12,10 +14,11 @@ pub struct VncServer<'a> {
     fps: u32,
     font: Font<'a>,
     text: &'a str,
+    statistics: &'a Statistics,
 }
 
 impl<'a> VncServer<'a> {
-    pub fn new(fb: &'a FrameBuffer, fps: u32, text: &'a str) -> Self {
+    pub fn new(fb: &'a FrameBuffer, fps: u32, text: &'a str, statistics: &'a Statistics) -> Self {
         let screen = rfb_get_screen(fb.width as i32, fb.height as i32, 8, 3, 4);
 
         rfb_framebuffer_malloc(screen, (fb.width * fb.height * 4 /* bytes per pixel */) as u64);
@@ -30,7 +33,8 @@ impl<'a> VncServer<'a> {
             screen,
             fps,
             font,
-            text
+            text,
+            statistics,
         }
     }
 
@@ -44,6 +48,8 @@ impl<'a> VncServer<'a> {
                 }
             }
             self.draw_text(20_f32, 10_f32, 32_f32, self.text);
+            self.draw_text(20_f32, 50_f32, 32_f32,
+               format!("{} connections", self.statistics.connections.load(Relaxed)).as_str());
             rfb_mark_rect_as_modified(self.screen, 0, 0, self.fb.width as i32, self.fb.height as i32);
 
             thread::sleep(Duration::from_millis(1000 / self.fps as u64)); // TODO Measure loop time and subtract it

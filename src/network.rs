@@ -2,36 +2,58 @@ use std::io::prelude::*;
 use std::net::TcpListener;
 use std::net::TcpStream;
 use std::str;
+use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 use std::thread;
 
 use crate::framebuffer::FrameBuffer;
+use crate::Statistics;
 
 const NETWORK_BUFFER_SIZE: usize = 128_000;
 
-pub fn listen(fb: Arc<FrameBuffer>, listen_address: &str) {
-    let listener = TcpListener::bind(listen_address)
-        .expect(format!("Failed to listen on {listen_address}").as_str());
-    println!("Listening for Pixelflut connections on {listen_address}");
+pub struct Network<'a>{
+    listen_address: &'a str,
+    fb: Arc<FrameBuffer>,
+    statistics: Arc<Statistics>,
+}
 
-    for stream in listener.incoming() {
-        let stream = stream.unwrap();
+impl<'a> Network<'a> {
+    pub fn new(listen_address: &'a str, fb: Arc<FrameBuffer>, statistics: Arc<Statistics>) -> Self {
+        Network{
+            listen_address,
+            fb,
+            statistics
+        }
+    }
 
-        let fb = Arc::clone(&fb);
-        thread::spawn(move || {
-            println!("Got connection from {}", stream.peer_addr().unwrap());
-            handle_connection(stream, fb);
-        });
+    pub fn listen(&self) {
+        let listener = TcpListener::bind(self.listen_address)
+            .expect(format!("Failed to listen on {}", self.listen_address).as_str());
+        println!("Listening for Pixelflut connections on {}", self.listen_address);
+
+        for stream in listener.incoming() {
+            self.statistics.connections.fetch_add(1, Relaxed);
+            let stream = stream.unwrap();
+
+            let fb = Arc::clone(&self.fb);
+            let statistics = Arc::clone(&self.statistics);
+            thread::spawn(move || {
+                println!("Got connection from {}", stream.peer_addr().unwrap());
+                handle_connection(stream, fb, statistics);
+            });
+        }
     }
 }
 
-pub fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>) {
+fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Arc<Statistics>) {
+    println!("Got connection from {}", stream.peer_addr().unwrap());
     let mut buffer = [0u8; NETWORK_BUFFER_SIZE];
 
     loop {
         let bytes = stream.read(&mut buffer).expect("Failed to read from stream");
         if bytes == 0 {
-            println!("Got connection from {}", stream.peer_addr().unwrap());
+            println!("Closed connection from {}", stream.peer_addr().unwrap());
+            statistics.connections.fetch_sub(1, Relaxed);
             break;
         }
 
