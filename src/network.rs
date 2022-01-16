@@ -145,7 +145,7 @@ pub fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>) {
 
                                 // End of command to read Pixel value
                                 if buffer[i] == b'\n' {
-                                    i += 1;
+                                    // i += 1;
                                     stream.write(rgba_to_hex_ascii_bytes(x, y, fb.get(x, y)).as_bytes()).unwrap();
                                 }
                             }

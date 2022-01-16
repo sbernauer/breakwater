@@ -9,6 +9,7 @@ use std::thread;
 
 use args::Args;
 use framebuffer::FrameBuffer;
+use vnc::VncServer;
 
 fn main() {
     let args = Args::parse();
@@ -16,13 +17,14 @@ fn main() {
     let fb = Arc::new(FrameBuffer::new(args.width, args.height));
 
     let fb_for_network = Arc::clone(&fb);
-    let listen_address = args.listen_address.clone();
+    let listen_address = args.listen_address.clone(); // TODO: Somehow avoid clone
     let network_thread = thread::spawn(move || {
         network::listen(fb_for_network, listen_address.as_str());
     });
 
     thread::spawn(move || {
-        vnc::start_vnc_server(&fb, args.fps);
+        let vnc_server = VncServer::new(&fb, args.fps);
+        vnc_server.run();
     });
 
     network_thread.join().unwrap();
