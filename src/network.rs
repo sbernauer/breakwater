@@ -45,12 +45,15 @@ impl<'a> Network<'a> {
 }
 
 fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Arc<Statistics>) {
+    let ip = stream.peer_addr().unwrap().ip();
     let mut buffer = [0u8; NETWORK_BUFFER_SIZE];
+
 
     loop {
         let bytes = stream.read(&mut buffer).expect("Failed to read from stream");
+        statistics.inc_bytes(ip, bytes as u64);
         if bytes == 0 {
-            statistics.dec_connections(stream.peer_addr().unwrap().ip());
+            statistics.dec_connections(ip);
             break;
         }
 

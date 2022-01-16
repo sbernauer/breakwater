@@ -1,23 +1,31 @@
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicU32, AtomicU64};
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Mutex;
 
 pub struct Statistics {
     connections_for_ip: Mutex<HashMap<IpAddr, AtomicU32>>,
+    bytes_for_ip: Mutex<HashMap<IpAddr, AtomicU64>>,
 }
 
 impl Statistics {
     pub fn new() -> Self {
         Statistics {
             connections_for_ip: Mutex::new(HashMap::new()),
+            bytes_for_ip: Mutex::new(HashMap::new()),
         }
     }
 
     pub fn inc_connections(&self, ip: IpAddr) {
+        // Initialize connection counter
         let mut connections_for_ip = self.connections_for_ip.lock().unwrap();
         connections_for_ip.entry(ip).or_insert(AtomicU32::new(0));
+
+        // Initialize byte counter
+        let mut bytes_for_ip = self.bytes_for_ip.lock().unwrap();
+        bytes_for_ip.entry(ip).or_insert(AtomicU64::new(0));
+
         connections_for_ip[&ip].fetch_add(1, Relaxed);
     }
 
@@ -38,5 +46,18 @@ impl Statistics {
 
     pub fn get_ip_count(&self) -> u32 {
         self.connections_for_ip.lock().unwrap().len() as u32
+    }
+
+    pub fn inc_bytes(&self, ip: IpAddr, bytes: u64) {
+        // We dont have to check if the entry exists, as inc_connections() will create it for us
+        let bytes_for_ip = self.bytes_for_ip.lock().unwrap();
+        bytes_for_ip[&ip].fetch_add(bytes, Relaxed);
+    }
+
+    pub fn get_bytes(&self) -> u64 {
+        self.bytes_for_ip.lock().unwrap()
+            .values()
+            .map(|i| i.load(Relaxed))
+            .sum()
     }
 }
