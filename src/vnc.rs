@@ -1,7 +1,7 @@
 use core::slice;
 use rusttype::{point, Font, Scale};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use vncserver::*;
 
 use crate::framebuffer::FrameBuffer;
@@ -38,7 +38,10 @@ impl<'a> VncServer<'a> {
     }
 
     pub fn run(&self) {
+        let desired_loop_time_ms = (1_000 / self.fps) as u128;
         loop {
+            let start = Instant::now();
+
             for x in 0..self.fb.width {
                 for y in 0..self.fb.height {
                     // We don't use this as the wrapper method only exists for 16 bit, not for 32 bit :/
@@ -58,7 +61,10 @@ impl<'a> VncServer<'a> {
                            ).as_str());
             rfb_mark_rect_as_modified(self.screen, 0, 0, self.fb.width as i32, self.fb.height as i32);
 
-            thread::sleep(Duration::from_millis(1000 / self.fps as u64)); // TODO Measure loop time and subtract it
+            let duration_ms = start.elapsed().as_millis();
+            if duration_ms < desired_loop_time_ms {
+                thread::sleep(Duration::from_millis((desired_loop_time_ms - duration_ms) as u64));
+            }
         }
     }
 
