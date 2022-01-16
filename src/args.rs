@@ -19,4 +19,9 @@ pub struct Args {
     /// Frames per second the VNC server should aim for
     #[clap(short, long, default_value_t = 30)]
     pub fps: u32,
+
+    /// Text to display on the screen.
+    /// The text will be followed by "on <listen_address>"
+    #[clap(short, long, default_value = "Breakwater Pixelflut server")]
+    pub text: String,
 }

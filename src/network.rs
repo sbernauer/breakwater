@@ -2,7 +2,6 @@ use std::io::prelude::*;
 use std::net::TcpListener;
 use std::net::TcpStream;
 use std::str;
-use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 use std::thread;
 
@@ -32,13 +31,13 @@ impl<'a> Network<'a> {
         println!("Listening for Pixelflut connections on {}", self.listen_address);
 
         for stream in listener.incoming() {
-            self.statistics.connections.fetch_add(1, Relaxed);
             let stream = stream.unwrap();
+
+            self.statistics.inc_connections(stream.peer_addr().unwrap().ip());
 
             let fb = Arc::clone(&self.fb);
             let statistics = Arc::clone(&self.statistics);
             thread::spawn(move || {
-                println!("Got connection from {}", stream.peer_addr().unwrap());
                 handle_connection(stream, fb, statistics);
             });
         }
@@ -46,14 +45,12 @@ impl<'a> Network<'a> {
 }
 
 fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Arc<Statistics>) {
-    println!("Got connection from {}", stream.peer_addr().unwrap());
     let mut buffer = [0u8; NETWORK_BUFFER_SIZE];
 
     loop {
         let bytes = stream.read(&mut buffer).expect("Failed to read from stream");
         if bytes == 0 {
-            println!("Closed connection from {}", stream.peer_addr().unwrap());
-            statistics.connections.fetch_sub(1, Relaxed);
+            statistics.dec_connections(stream.peer_addr().unwrap().ip());
             break;
         }
 

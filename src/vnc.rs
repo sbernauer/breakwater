@@ -1,5 +1,4 @@
 use core::slice;
-use std::sync::atomic::Ordering::Relaxed;
 use rusttype::{point, Font, Scale};
 use std::thread;
 use std::time::Duration;
@@ -49,7 +48,10 @@ impl<'a> VncServer<'a> {
             }
             self.draw_text(20_f32, 10_f32, 32_f32, self.text);
             self.draw_text(20_f32, 50_f32, 32_f32,
-               format!("{} connections", self.statistics.connections.load(Relaxed)).as_str());
+               format!("{} connections by {} IPs",
+                       self.statistics.get_connections(),
+                       self.statistics.get_ip_count()
+               ).as_str());
             rfb_mark_rect_as_modified(self.screen, 0, 0, self.fb.width as i32, self.fb.height as i32);
 
             thread::sleep(Duration::from_millis(1000 / self.fps as u64)); // TODO Measure loop time and subtract it
