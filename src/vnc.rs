@@ -3,6 +3,7 @@ use std::sync::atomic::Ordering::Relaxed;
 use rusttype::{point, Font, Scale};
 use std::thread;
 use std::time::{Duration, Instant};
+use bytesize::ByteSize;
 use vncserver::*;
 
 use crate::framebuffer::FrameBuffer;
@@ -57,9 +58,9 @@ impl<'a> VncServer<'a> {
                                    self.statistics.current_ips.load(Relaxed)
                            ).as_str());
             self.draw_text(20_f32, 90_f32, 32_f32,
-                           format!("{} Bit/s ({} bytes total)",
-                                   self.statistics.bytes_per_s.load(Relaxed),
-                                   self.statistics.current_bytes.load(Relaxed),
+                           format!("{}it/s ({} total)",
+                                   ByteSize(self.statistics.bytes_per_s.load(Relaxed) * 8),
+                                   ByteSize(self.statistics.current_bytes.load(Relaxed)),
                            ).as_str());
             rfb_mark_rect_as_modified(self.screen, 0, 0, self.fb.width as i32, self.fb.height as i32);
 
