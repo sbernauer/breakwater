@@ -23,7 +23,8 @@ fn main() {
     });
 
     thread::spawn(move || {
-        let vnc_server = VncServer::new(&fb, args.fps);
+        let vnc_text = format!("Brakewater @ {}", args.listen_address);
+        let vnc_server = VncServer::new(&fb, args.fps, &vnc_text);
         vnc_server.run();
     });
 
