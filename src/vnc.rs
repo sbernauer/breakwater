@@ -53,9 +53,10 @@ impl<'a> VncServer<'a> {
             }
             self.draw_text(20_f32, 10_f32, 32_f32, self.text);
             self.draw_text(20_f32, 50_f32, 32_f32,
-                           format!("{} connections by {} IPs",
+                           format!("{} connections by {} IPs ({} legacy)",
                                    self.statistics.current_connections.load(Relaxed),
-                                   self.statistics.current_ips.load(Relaxed)
+                                   self.statistics.current_ips.load(Relaxed),
+                                   self.statistics.current_legacy_ips.load(Relaxed)
                            ).as_str());
             self.draw_text(20_f32, 90_f32, 32_f32,
                            format!("{}it/s ({} total)",

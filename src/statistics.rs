@@ -12,6 +12,7 @@ pub struct Statistics {
 
     pub current_connections: AtomicU32,
     pub current_ips: AtomicU32,
+    pub current_legacy_ips: AtomicU32,
     pub current_bytes: AtomicU64,
 
     pub bytes_per_s: AtomicU64,
@@ -25,6 +26,7 @@ impl Statistics {
 
             current_connections: AtomicU32::new(0),
             current_ips: AtomicU32::new(0),
+            current_legacy_ips: AtomicU32::new(0),
             current_bytes: AtomicU64::new(0),
 
             bytes_per_s: AtomicU64::new(0),
@@ -62,6 +64,12 @@ impl Statistics {
         self.connections_for_ip.lock().unwrap().len() as u32
     }
 
+    fn get_ip_count_legacy(&self) -> u32 {
+        self.connections_for_ip.lock().unwrap().keys()
+            .filter(|ip| ip.is_ipv4() || (ip.is_ipv6() && is_mapped_to_ipv6(ip)))
+            .count() as u32
+    }
+
     pub fn inc_bytes(&self, ip: IpAddr, bytes: u64) {
         // We dont have to check if the entry exists, as inc_connections() will create it for us
         let bytes_for_ip = self.bytes_for_ip.lock().unwrap();
@@ -78,6 +86,7 @@ impl Statistics {
     fn update(&self) {
         self.current_connections.store(self.get_connections(), Relaxed);
         self.current_ips.store(self.get_ip_count(), Relaxed);
+        self.current_legacy_ips.store(self.get_ip_count_legacy(), Relaxed);
 
         let new_bytes = self.get_bytes();
         self.bytes_per_s.store(new_bytes - self.current_bytes.load(Relaxed), Relaxed);
@@ -92,4 +101,15 @@ pub fn start_loop(statistics: Arc<Statistics>) {
             statistics.update();
         }
     });
+}
+
+fn is_mapped_to_ipv6(ip: &IpAddr) -> bool {
+    match ip {
+        IpAddr::V6(ip) => match ip.segments() {
+            // 5 * 16 `0` bits, 16 `1` bits, leftover is actual IPv4 addr
+            [0, 0, 0, 0, 0, 0xFFFF, ..] => true,
+            _ => false,
+        },
+        _ => false,
+    }
 }
