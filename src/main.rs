@@ -19,6 +19,7 @@ fn main() {
 
     let fb = Arc::new(FrameBuffer::new(args.width, args.height));
     let statistics = Arc::new(Statistics::new());
+    statistics::start_loop(Arc::clone(&statistics));
 
     let network_listen_address = args.listen_address.clone(); // TODO: Somehow avoid clone
     let network_fb = Arc::clone(&fb);

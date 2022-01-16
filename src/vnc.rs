@@ -1,4 +1,5 @@
 use core::slice;
+use std::sync::atomic::Ordering::Relaxed;
 use rusttype::{point, Font, Scale};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -52,12 +53,13 @@ impl<'a> VncServer<'a> {
             self.draw_text(20_f32, 10_f32, 32_f32, self.text);
             self.draw_text(20_f32, 50_f32, 32_f32,
                            format!("{} connections by {} IPs",
-                                   self.statistics.get_connections(),
-                                   self.statistics.get_ip_count()
+                                   self.statistics.current_connections.load(Relaxed),
+                                   self.statistics.current_ips.load(Relaxed)
                            ).as_str());
             self.draw_text(20_f32, 90_f32, 32_f32,
-                           format!("TODO Bit/s ({} bytes total)",
-                                   self.statistics.get_bytes(),
+                           format!("{} Bit/s ({} bytes total)",
+                                   self.statistics.bytes_per_s.load(Relaxed),
+                                   self.statistics.current_bytes.load(Relaxed),
                            ).as_str());
             rfb_mark_rect_as_modified(self.screen, 0, 0, self.fb.width as i32, self.fb.height as i32);
 

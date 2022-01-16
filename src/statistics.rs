@@ -2,11 +2,19 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicU32, AtomicU64};
 use std::sync::atomic::Ordering::Relaxed;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
 pub struct Statistics {
     connections_for_ip: Mutex<HashMap<IpAddr, AtomicU32>>,
     bytes_for_ip: Mutex<HashMap<IpAddr, AtomicU64>>,
+
+    pub current_connections: AtomicU32,
+    pub current_ips: AtomicU32,
+    pub current_bytes: AtomicU64,
+
+    pub bytes_per_s: AtomicU64,
 }
 
 impl Statistics {
@@ -14,6 +22,12 @@ impl Statistics {
         Statistics {
             connections_for_ip: Mutex::new(HashMap::new()),
             bytes_for_ip: Mutex::new(HashMap::new()),
+
+            current_connections: AtomicU32::new(0),
+            current_ips: AtomicU32::new(0),
+            current_bytes: AtomicU64::new(0),
+
+            bytes_per_s: AtomicU64::new(0),
         }
     }
 
@@ -37,14 +51,14 @@ impl Statistics {
         }
     }
 
-    pub fn get_connections(&self) -> u32 {
+    fn get_connections(&self) -> u32 {
         self.connections_for_ip.lock().unwrap()
             .values()
             .map(|i| i.load(Relaxed))
             .sum()
     }
 
-    pub fn get_ip_count(&self) -> u32 {
+    fn get_ip_count(&self) -> u32 {
         self.connections_for_ip.lock().unwrap().len() as u32
     }
 
@@ -54,10 +68,28 @@ impl Statistics {
         bytes_for_ip[&ip].fetch_add(bytes, Relaxed);
     }
 
-    pub fn get_bytes(&self) -> u64 {
+    fn get_bytes(&self) -> u64 {
         self.bytes_for_ip.lock().unwrap()
             .values()
             .map(|i| i.load(Relaxed))
             .sum()
     }
+
+    fn update(&self) {
+        self.current_connections.store(self.get_connections(), Relaxed);
+        self.current_ips.store(self.get_ip_count(), Relaxed);
+
+        let new_bytes = self.get_bytes();
+        self.bytes_per_s.store(new_bytes - self.current_bytes.load(Relaxed), Relaxed);
+        self.current_bytes.store(new_bytes, Relaxed);
+    }
+}
+
+pub fn start_loop(statistics: Arc<Statistics>) {
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(1));
+            statistics.update();
+        }
+    });
 }
