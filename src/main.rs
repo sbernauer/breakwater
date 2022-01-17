@@ -8,11 +8,11 @@ use clap::Parser;
 use std::sync::Arc;
 use std::thread;
 
-use args::Args;
-use framebuffer::FrameBuffer;
-use vnc::VncServer;
-use statistics::Statistics;
-use network::Network;
+use crate::args::Args;
+use crate::framebuffer::FrameBuffer;
+use crate::vnc::VncServer;
+use crate::statistics::Statistics;
+use crate::network::Network;
 
 fn main() {
     let args = Args::parse();
@@ -20,6 +20,7 @@ fn main() {
     let fb = Arc::new(FrameBuffer::new(args.width, args.height));
     let statistics = Arc::new(Statistics::new());
     statistics::start_loop(Arc::clone(&statistics));
+    statistics::start_prometheus_server(args.prometheus_listen_address.as_str());
 
     let network_listen_address = args.listen_address.clone(); // TODO: Somehow avoid clone
     let network_fb = Arc::clone(&fb);

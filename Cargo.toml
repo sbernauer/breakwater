@@ -8,6 +8,8 @@ clap = { version = "3.0.7", features = ["derive"] }
 vncserver = "0.2.2"
 rusttype = "0.9.2"
 bytesize = "1.1.0"
+prometheus = "0.13.0"
+prometheus_exporter = "0.8.3"
 
 [profile.dev]
 opt-level = 3

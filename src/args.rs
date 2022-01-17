@@ -24,4 +24,9 @@ pub struct Args {
     /// The text will be followed by "on <listen_address>"
     #[clap(short, long, default_value = "Breakwater Pixelflut server")]
     pub text: String,
+
+    /// Listen address zhe prometheus exporter should listen om.
+    /// The default value will listen on all interfaces for IPv4 and v6 packets.
+    #[clap(short, long, default_value = "[::]:9090")]
+    pub prometheus_listen_address: String,
 }
