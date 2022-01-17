@@ -48,7 +48,6 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
     let ip = stream.peer_addr().unwrap().ip();
     let mut buffer = [0u8; NETWORK_BUFFER_SIZE];
 
-
     loop {
         let bytes = stream.read(&mut buffer).expect("Failed to read from stream");
         statistics.inc_bytes(ip, bytes as u64);
@@ -60,12 +59,10 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
         let mut x: usize;
         let mut y: usize;
 
-        let loop_lookahead = "PX 1234 1234 rrggbbaa".len();
-        let loop_end;
-        if bytes < loop_lookahead {
-            loop_end = 0;
-        } else {
-            loop_end = bytes - loop_lookahead;
+        let loop_lookahead = "PX 1234 1234 rrggbbaa\n".len();
+        let mut loop_end = bytes;
+        if bytes + loop_lookahead >= NETWORK_BUFFER_SIZE {
+            loop_end -= loop_lookahead;
         }
         // We need to subtract XXX as the for loop can advance by max XXX bytes
         for mut i in 0..loop_end {
@@ -185,7 +182,7 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
 }
 
 fn rgba_to_hex_ascii_bytes(x: usize, y: usize, rgba: u32) -> String {
-    format!("PX {x} {y} {:08x}\n", rgba)
+    format!("PX {x} {y} {:06x}\n", rgba.to_be() >> 8)
 }
 
 fn from_hex_char(char: u8) -> u8 {
