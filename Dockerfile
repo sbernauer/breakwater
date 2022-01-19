@@ -2,7 +2,8 @@ FROM rust:1.58.0 as builder
 
 WORKDIR /breakwater
 COPY src/ src/
-COPY Cargo.toml .
+COPY Cargo.toml Arial.ttf ./
+
 RUN apt-get update && \
     apt-get install -y clang libvncserver-dev && \
     rm -rf /var/lib/apt/lists/*
