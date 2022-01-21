@@ -18,6 +18,7 @@ PX x y rrggbbaa: Color the pixel (x,y) with the given hexadecimal color rrggbb (
 PX x y: Get the color value of the pixel (x,y)
 SIZE: Get the size of the drawing surface
 ".as_bytes();
+const LOOP_LOOKAHEAD : usize = "PX 1234 1234 rrggbbaa\n".len();
 
 pub struct Network<'a>{
     listen_address: &'a str,
@@ -69,13 +70,14 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
         let mut x: usize;
         let mut y: usize;
 
-        let loop_lookahead = "PX 1234 1234 rrggbbaa\n".len();
         let mut loop_end = bytes;
-        if bytes + loop_lookahead >= NETWORK_BUFFER_SIZE {
-            loop_end -= loop_lookahead;
+        if bytes + LOOP_LOOKAHEAD >= NETWORK_BUFFER_SIZE {
+            loop_end -= LOOP_LOOKAHEAD; // We need to subtract XXX as the for loop can advance by max XXX bytes
         }
-        // We need to subtract XXX as the for loop can advance by max XXX bytes
-        for mut i in 0..loop_end {
+
+        let mut i = 0; // We can't use a for loop here because Rust don't lets use skip characters by incrementing i
+        while i <= loop_end {
+            i += 1;
             if buffer[i] == b'P' {
                 i += 1;
                 if buffer[i] == b'X' {
