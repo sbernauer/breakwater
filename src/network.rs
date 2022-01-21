@@ -9,6 +9,15 @@ use crate::framebuffer::FrameBuffer;
 use crate::Statistics;
 
 const NETWORK_BUFFER_SIZE: usize = 128_000;
+const HELP_TEXT: &[u8] = "\
+Pixelflut server powered by Breakwater https://github.com/sbernauer/breakwater
+Available commands:
+HELP: Show this help
+PX x y rrggbb: Color the pixel (x,y) with the given hexadecimal color
+PX x y rrggbbaa: Color the pixel (x,y) with the given hexadecimal color rrggbb (alpha channel is ignored for now)
+PX x y: Get the color value of the pixel (x,y)
+SIZE: Get the size of the drawing surface
+".as_bytes();
 
 pub struct Network<'a>{
     listen_address: &'a str,
@@ -47,6 +56,7 @@ impl<'a> Network<'a> {
 fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Arc<Statistics>) {
     let ip = stream.peer_addr().unwrap().ip();
     let mut buffer = [0u8; NETWORK_BUFFER_SIZE];
+    let mut output_written = false;
 
     loop {
         let bytes = stream.read(&mut buffer).expect("Failed to read from stream");
@@ -164,25 +174,46 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
 
                                 // End of command to read Pixel value
                                 if buffer[i] == b'\n' {
-                                    // i += 1;
-                                    stream.write(rgba_to_hex_ascii_bytes(x, y, fb.get(x, y)).as_bytes()).unwrap();
+                                    i += 1;
+                                    stream.write(format!("PX {x} {y} {:06x}\n", fb.get(x, y).to_be() >> 8).as_bytes()).unwrap();
+                                    output_written = true;
                                 }
                             }
                         }
                     }
                 }
+            } else if buffer[i] == b'S' {
+                i += 1;
+                if buffer[i] == b'I' {
+                    i += 1;
+                    if buffer[i] == b'Z' {
+                        i += 1;
+                        if buffer[i] == b'E' {
+                            i += 1;
+                            stream.write(format!("SIZE {} {}\n", fb.width, fb.height).as_bytes()).unwrap();
+                            output_written = true;
+                        }
+                    }
+                }
+            } else if buffer[i] == b'H' {
+                i += 1;
+                if buffer[i] == b'E' {
+                    i += 1;
+                    if buffer[i] == b'L' {
+                        i += 1;
+                        if buffer[i] == b'P' {
+                            i += 1;
+                            stream.write(HELP_TEXT).unwrap();
+                            output_written = true;
+                        }
+                    }
+                }
             }
         }
-        stream.flush().unwrap(); // Flush return buffer e.g. for requested pixel values
-
-        // println!("Got {} bytes ({}%))",
-        //          bytes, bytes as f32 / BUFFER_SIZE as f32 * 100 as f32);
-        //println!("{:?}", str::from_utf8(&buffer[0..64]).unwrap());
+        if output_written {
+            stream.flush().unwrap();
+        }
     }
-}
-
-fn rgba_to_hex_ascii_bytes(x: usize, y: usize, rgba: u32) -> String {
-    format!("PX {x} {y} {:06x}\n", rgba.to_be() >> 8)
 }
 
 fn from_hex_char(char: u8) -> u8 {
