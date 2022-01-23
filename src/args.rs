@@ -25,6 +25,11 @@ pub struct Args {
     #[clap(short, long, default_value = "Breakwater Pixelflut server")]
     pub text: String,
 
+    /// The font used to render the text on the screen.
+    /// Should be a ttf file.
+    #[clap(long, default_value = "Arial.ttf")]
+    pub font: String,
+
     /// Listen address zhe prometheus exporter should listen om.
     /// The default value will listen on all interfaces for IPv4 and v6 packets.
     #[clap(short, long, default_value = "[::]:9090")]

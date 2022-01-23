@@ -1,9 +1,11 @@
 use core::slice;
+use std::fs;
 use std::sync::atomic::Ordering::Relaxed;
-use rusttype::{point, Font, Scale};
 use std::thread;
 use std::time::{Duration, Instant};
+
 use bytesize::ByteSize;
+use rusttype::{Font, point, Scale};
 use vncserver::*;
 
 use crate::framebuffer::FrameBuffer;
@@ -19,17 +21,17 @@ pub struct VncServer<'a> {
 }
 
 impl<'a> VncServer<'a> {
-    pub fn new(fb: &'a FrameBuffer, fps: u32, text: &'a str, statistics: &'a Statistics) -> Self {
+    pub fn new(fb: &'a FrameBuffer, fps: u32, text: &'a str, statistics: &'a Statistics, font: &'a str) -> Self {
         let screen = rfb_get_screen(fb.width as i32, fb.height as i32, 8, 3, 4);
 
         rfb_framebuffer_malloc(screen, (fb.width * fb.height * 4 /* bytes per pixel */) as u64);
         rfb_init_server(screen);
         rfb_run_event_loop(screen, 1, 1);
 
-        let font_data = include_bytes!("../Arial.ttf");
-        let font = Font::try_from_bytes(font_data as &[u8]).expect("Error constructing Font");
+        let font_bytes = fs::read(font).expect(format!("Cannot read font file {font}").as_str());
+        let font = Font::try_from_vec(font_bytes).expect("Error constructing Font");
 
-        VncServer{
+        VncServer {
             fb,
             screen,
             fps,
@@ -97,7 +99,7 @@ impl<'a> VncServer<'a> {
                         self.set_pixel(
                             x as usize + bounding_box.min.x as usize,
                             y as usize + bounding_box.min.y as usize,
-                            0x0000_ff00
+                            0x0000_ff00,
                         )
                     }
                 });

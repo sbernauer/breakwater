@@ -47,6 +47,10 @@ OPTIONS:
     -f, --fps <FPS>
             Frames per second the VNC server should aim for [default: 30]
 
+        --font <FONT>
+            The font used to render the text on the screen. Should be a ttf file [default:
+            Arial.ttf]
+
     -h, --height <HEIGHT>
             Height of the drawing surface [default: 720]
 
@@ -70,7 +74,6 @@ OPTIONS:
 
     -w, --width <WIDTH>
             Width of the drawing surface [default: 1280]
-
 ```
 You can also build the binary with `cargo build --release`. The binary will be placed at `target/release/breakwater`.
 
