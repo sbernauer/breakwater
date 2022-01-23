@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU32, AtomicU64};
 use std::sync::atomic::Ordering::Relaxed;
-use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use prometheus::core::{AtomicI64, GenericGauge, GenericGaugeVec};
+
 use prometheus::{register_int_gauge, register_int_gauge_vec};
+use prometheus::core::{AtomicI64, GenericGauge, GenericGaugeVec};
 
 pub struct Statistics {
     connections_for_ip: Mutex<HashMap<IpAddr, AtomicU32>>,

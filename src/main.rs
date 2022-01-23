@@ -1,18 +1,19 @@
+use std::sync::Arc;
+use std::thread;
+
+use clap::Parser;
+
+use crate::args::Args;
+use crate::framebuffer::FrameBuffer;
+use crate::network::Network;
+use crate::statistics::Statistics;
+use crate::vnc::VncServer;
+
 mod args;
 mod framebuffer;
 mod network;
 mod vnc;
 mod statistics;
-
-use clap::Parser;
-use std::sync::Arc;
-use std::thread;
-
-use crate::args::Args;
-use crate::framebuffer::FrameBuffer;
-use crate::vnc::VncServer;
-use crate::statistics::Statistics;
-use crate::network::Network;
 
 fn main() {
     let args = Args::parse();

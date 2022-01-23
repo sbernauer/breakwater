@@ -18,9 +18,9 @@ PX x y rrggbbaa: Color the pixel (x,y) with the given hexadecimal color rrggbb (
 PX x y: Get the color value of the pixel (x,y)
 SIZE: Get the size of the drawing surface
 ".as_bytes();
-const LOOP_LOOKAHEAD : usize = "PX 1234 1234 rrggbbaa\n".len();
+const LOOP_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len();
 
-pub struct Network<'a>{
+pub struct Network<'a> {
     listen_address: &'a str,
     fb: Arc<FrameBuffer>,
     statistics: Arc<Statistics>,
@@ -28,10 +28,10 @@ pub struct Network<'a>{
 
 impl<'a> Network<'a> {
     pub fn new(listen_address: &'a str, fb: Arc<FrameBuffer>, statistics: Arc<Statistics>) -> Self {
-        Network{
+        Network {
             listen_address,
             fb,
-            statistics
+            statistics,
         }
     }
 
@@ -144,7 +144,7 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                                         i += 7;
 
                                         let rgba: u32 =
-                                                  (from_hex_char(buffer[i - 3]) as u32) << 20
+                                            (from_hex_char(buffer[i - 3]) as u32) << 20
                                                 | (from_hex_char(buffer[i - 2]) as u32) << 16
                                                 | (from_hex_char(buffer[i - 5]) as u32) << 12
                                                 | (from_hex_char(buffer[i - 4]) as u32) << 8
@@ -161,12 +161,12 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                                         i += 9;
 
                                         let rgba: u32 =
-                                                (from_hex_char(buffer[i - 5]) as u32) << 20
-                                              | (from_hex_char(buffer[i - 4]) as u32) << 16
-                                              | (from_hex_char(buffer[i - 7]) as u32) << 12
-                                              | (from_hex_char(buffer[i - 6]) as u32) << 8
-                                              | (from_hex_char(buffer[i - 9]) as u32) << 4
-                                              | (from_hex_char(buffer[i - 8]) as u32) << 0;
+                                            (from_hex_char(buffer[i - 5]) as u32) << 20
+                                                | (from_hex_char(buffer[i - 4]) as u32) << 16
+                                                | (from_hex_char(buffer[i - 7]) as u32) << 12
+                                                | (from_hex_char(buffer[i - 6]) as u32) << 8
+                                                | (from_hex_char(buffer[i - 9]) as u32) << 4
+                                                | (from_hex_char(buffer[i - 8]) as u32) << 0;
 
                                         fb.set(x as usize, y as usize, rgba);
 
