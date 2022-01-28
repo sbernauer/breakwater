@@ -22,7 +22,7 @@ The easiest way is to continue with the provided [Ready to use Docker setup](#re
 
 If you prefer the manual way (the best performance) you need to have [Rust installed](https://www.rust-lang.org/tools/install).
 Then you can directly run the server with
-```
+```bash
 cargo run --release
 ```
 The default settings should provide you with a ready-to-use server.
@@ -34,7 +34,7 @@ The default settings should provide you with a ready-to-use server.
 | 9100 | Prometheus metrics exporter |
 
 The get a list of options try
-```
+```bash
 cargo run --release -- --help
     Finished release [optimized] target(s) in 0.03s
      Running `target/release/breakwater --help`
@@ -77,6 +77,21 @@ OPTIONS:
 ```
 You can also build the binary with `cargo build --release`. The binary will be placed at `target/release/breakwater`.
 
+# Ready to use Docker setup
+Use the following command to start the whole setup
+```bash
+docker-compose up
+```
+You should now have access to the following services
+
+| Port | Description                 |
+|------|-----------------------------|
+| 1234 | Pixelflut server            |
+| 5900 | VNC server                  |
+| 9100 | Prometheus metrics exporter |
+| 9090 | Prometheus server           |
+| 80   | Grafana                     |
+
 # Performance
 My Laptop has a `Intel(R) Core(TM) i7-8850H CPU @ 2.60GHz` (6 Cores/12 Threads) and 2 DDR4 RAM modules with 16 GB each and 2667 MT/s.
 The Pixelflut-server and Pixelflut-client [Sturmflut](https://github.com/TobleMiner/sturmflut) both run on my Laptop using 24 connections.
@@ -91,10 +106,6 @@ These are the results of different Pixelflut servers:
 
 Test with a real server only running the server (not also the client) will follow.
 
-# Ready to use Docker setup
-Will follow shorty ;)
-Will contain [VNCmux](https://github.com/TobleMiner/vncmux), Prometheus and Grafana similar to https://github.com/sbernauer/pixelflut-infrastructure 
-
 # TODOs
 * Implement proper ring buffer or at least complete parsing the current buffer.
 Currently, if the buffer will be filled with all - 128,000 bytes - the last 21 bytes are skipped so that we don't need to check for buffer boundaries
@@ -102,4 +113,4 @@ This is done for performance reasons. This will cause 1 of about 6,100 commands 
 Ideally we would save us the remaining few bytes and add them to beginning of the next processing loop.
 * Implement Alpha channel feature. For performance reasons there should be a compile-time switch (similar to `#ifdef`).
 Actually haven't checked if Rust supports this ;)
-* Finish Docker compose setup with VncMux, Prometheus and Grafana.
+* Finish Docker compose setup with VncMux and a nice diagram

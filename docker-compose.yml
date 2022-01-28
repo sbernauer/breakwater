@@ -1,0 +1,38 @@
+version: '3'
+services:
+  breakwater:
+    restart: unless-stopped
+    image: sbernauer/breakwater
+    # build: .
+    network_mode: "host" # Used ports are 1234, 5900 and 9100. Choosing host mode here for best performance
+
+  prometheus:
+    restart: unless-stopped
+    image: prom/prometheus:v2.32.1
+    volumes:
+      - "./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml"
+      - "prometheus-data:/prometheus"
+    ports:
+      - 9090:9090
+    networks:
+      - monitoring
+    extra_hosts:
+      - "breakwater:172.17.0.1"
+
+  grafana:
+    restart: unless-stopped
+    image: grafana/grafana:8.3.4
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning/"
+      - "grafana-data:/var/lib/grafana"
+    ports:
+      - 80:3000
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+
+volumes:
+  grafana-data:
+  prometheus-data:
