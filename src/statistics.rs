@@ -132,6 +132,7 @@ pub fn start_prometheus_server(prometheus_listen_address: &str) {
     prometheus_exporter::start(prometheus_listen_address.parse()
         .expect(format!("Cannot parse prometheus listen address: {prometheus_listen_address}").as_str()))
         .expect("Cannot start prometheus exporter");
+    println!("Started Prometheus Exporter on {prometheus_listen_address}");
 }
 
 fn is_mapped_to_ipv6(ip: &IpAddr) -> bool {

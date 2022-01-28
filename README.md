@@ -31,7 +31,7 @@ The default settings should provide you with a ready-to-use server.
 |------|-----------------------------|
 | 1234 | Pixelflut server            |
 | 5900 | VNC server                  |
-| 9090 | Prometheus metrics exporter |
+| 9100 | Prometheus metrics exporter |
 
 The get a list of options try
 ```

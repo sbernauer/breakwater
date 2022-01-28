@@ -32,6 +32,6 @@ pub struct Args {
 
     /// Listen address zhe prometheus exporter should listen om.
     /// The default value will listen on all interfaces for IPv4 and v6 packets.
-    #[clap(short, long, default_value = "[::]:9090")]
+    #[clap(short, long, default_value = "[::]:9100")]
     pub prometheus_listen_address: String,
 }
