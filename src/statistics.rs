@@ -10,20 +10,26 @@ use prometheus::{register_int_gauge, register_int_gauge_vec};
 use prometheus::core::{AtomicI64, GenericGauge, GenericGaugeVec};
 
 pub struct Statistics {
+    // These statistics are always up to date
     connections_for_ip: Mutex<HashMap<IpAddr, AtomicU32>>,
     bytes_for_ip: Mutex<HashMap<IpAddr, AtomicU64>>,
+    pub frame: AtomicU64,
 
+    // Variables to hold the statistics at the last time gathered
     pub current_connections: AtomicU32,
     pub current_ips: AtomicU32,
     pub current_legacy_ips: AtomicU32,
     pub current_bytes: AtomicU64,
+    pub current_frame: AtomicU64,
 
     pub bytes_per_s: AtomicU64,
+    pub fps: AtomicU64,
 
     metric_connections: GenericGaugeVec<AtomicI64>,
     metric_ips: GenericGauge<AtomicI64>,
     metric_legacy_ips: GenericGauge<AtomicI64>,
     metric_bytes: GenericGaugeVec<AtomicI64>,
+    metric_fps: GenericGauge<AtomicI64>,
 }
 
 impl Statistics {
@@ -31,18 +37,22 @@ impl Statistics {
         Statistics {
             connections_for_ip: Mutex::new(HashMap::new()),
             bytes_for_ip: Mutex::new(HashMap::new()),
+            frame: AtomicU64::new(0),
 
             current_connections: AtomicU32::new(0),
             current_ips: AtomicU32::new(0),
             current_legacy_ips: AtomicU32::new(0),
             current_bytes: AtomicU64::new(0),
+            current_frame: AtomicU64::new(0),
 
             bytes_per_s: AtomicU64::new(0),
+            fps: AtomicU64::new(0),
 
             metric_connections: register_int_gauge_vec!("breakwater_connections", "Number of client connections", &["ip"]).unwrap(),
             metric_ips: register_int_gauge!("breakwater_ips", "Number of IPs connected").unwrap(),
             metric_legacy_ips: register_int_gauge!("breakwater_legacy_ips", "Number of legacy (v4) IPs connected").unwrap(),
             metric_bytes: register_int_gauge_vec!("breakwater_bytes", "Number of bytes received", &["ip"]).unwrap(),
+            metric_fps: register_int_gauge!("breakwater_fps", "Frames per second of the VNC server").unwrap(),
         }
     }
 
@@ -98,6 +108,7 @@ impl Statistics {
     }
 
     fn update(&self) {
+        // Calculate statistics
         self.current_connections.store(self.get_connections(), Relaxed);
         self.current_ips.store(self.get_ip_count(), Relaxed);
         self.current_legacy_ips.store(self.get_ip_count_legacy(), Relaxed);
@@ -106,16 +117,20 @@ impl Statistics {
         self.bytes_per_s.store(new_bytes - self.current_bytes.load(Relaxed), Relaxed);
         self.current_bytes.store(new_bytes, Relaxed);
 
+        let new_frame = self.frame.load(Relaxed);
+        self.fps.store(new_frame - self.current_frame.load(Relaxed), Relaxed);
+        self.current_frame.store(new_frame, Relaxed);
 
+        // Put statistics into Prometheus metrics
         self.connections_for_ip.lock().unwrap().iter()
             .for_each(|(ip, bytes)|
                 self.metric_connections.with_label_values(&[&ip.to_string()]).set(bytes.load(Relaxed) as i64));
         self.metric_ips.set(self.current_ips.load(Relaxed) as i64);
         self.metric_legacy_ips.set(self.current_legacy_ips.load(Relaxed) as i64);
-
         self.bytes_for_ip.lock().unwrap().iter()
             .for_each(|(ip, bytes)|
                 self.metric_bytes.with_label_values(&[&ip.to_string()]).set(bytes.load(Relaxed) as i64));
+        self.metric_fps.set(self.fps.load(Relaxed) as i64);
     }
 }
 

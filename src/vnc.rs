@@ -65,7 +65,13 @@ impl<'a> VncServer<'a> {
                                    ByteSize(self.statistics.bytes_per_s.load(Relaxed) * 8),
                                    ByteSize(self.statistics.current_bytes.load(Relaxed)),
                            ).as_str());
+            self.draw_text(20_f32, 130_f32, 32_f32,
+                           format!("{} FPS",
+                                   self.statistics.fps.load(Relaxed),
+                           ).as_str());
             rfb_mark_rect_as_modified(self.screen, 0, 0, self.fb.width as i32, self.fb.height as i32);
+
+            self.statistics.frame.fetch_add(1, Relaxed);
 
             let duration_ms = start.elapsed().as_millis();
             if duration_ms < desired_loop_time_ms {
