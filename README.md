@@ -92,6 +92,15 @@ You should now have access to the following services
 | 9090 | Prometheus server           |
 | 80   | Grafana                     |
 
+This command will only start the Pixelflut server in a docker container
+```bash
+docker run -p 1234:1234 -p 5900:5900 -p 9100:9100 sbernauer/breakwater # --help
+```
+The following command stops the server again (if there are some problems with SIGINT)
+```bash
+docker ps -q --filter ancestor=sbernauer/breakwater | xargs docker kill
+```
+
 # Performance
 My Laptop has a `Intel(R) Core(TM) i7-8850H CPU @ 2.60GHz` (6 Cores/12 Threads) and 2 DDR4 RAM modules with 16 GB each and 2667 MT/s.
 The Pixelflut-server and Pixelflut-client [Sturmflut](https://github.com/TobleMiner/sturmflut) both run on my Laptop using 24 connections.
