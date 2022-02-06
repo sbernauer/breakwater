@@ -5,7 +5,7 @@ It claims to be **the fastest Pixelflut server in existence** - at least at the 
 
 # Features
 1. Accepts Pixelflut commands
-2. Provides VNC server so that everybody to watch
+2. Provides VNC server so that everybody can watch
 3. Exposes Prometheus metrics
 4. IPv6 and legacy IP support
 
