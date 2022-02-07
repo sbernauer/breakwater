@@ -21,8 +21,12 @@ pub struct VncServer<'a> {
 }
 
 impl<'a> VncServer<'a> {
-    pub fn new(fb: &'a FrameBuffer, fps: u32, text: &'a str, statistics: &'a Statistics, font: &'a str) -> Self {
+    pub fn new(fb: &'a FrameBuffer, port: u32, fps: u32, text: &'a str, statistics: &'a Statistics, font: &'a str) -> Self {
         let screen = rfb_get_screen(fb.width as i32, fb.height as i32, 8, 3, 4);
+        unsafe {
+            (*screen).port = port as i32;
+            (*screen).ipv6port = port as i32;
+        }
 
         rfb_framebuffer_malloc(screen, (fb.width * fb.height * 4 /* bytes per pixel */) as u64);
         rfb_init_server(screen);

@@ -33,7 +33,7 @@ fn main() {
 
     thread::spawn(move || {
         let vnc_text = format!("{} on {}", args.text, args.listen_address);
-        let vnc_server = VncServer::new(&fb, args.fps, &vnc_text, &statistics, &args.font);
+        let vnc_server = VncServer::new(&fb, args.vnc_port, args.fps, &vnc_text, &statistics, &args.font);
         vnc_server.run();
     });
 
