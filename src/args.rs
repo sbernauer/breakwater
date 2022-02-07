@@ -8,6 +8,10 @@ pub struct Args {
     #[clap(short, long, default_value = "[::]:1234")]
     pub listen_address: String,
 
+    /// Port of the VNC server.
+    #[clap(short, long, default_value_t = 5900)]
+    pub vnc_port: u32,
+
     /// Width of the drawing surface
     #[clap(short, long, default_value_t = 1280)]
     pub width: usize,
