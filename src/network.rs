@@ -60,7 +60,14 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
     let mut output_written = false;
 
     loop {
-        let bytes = stream.read(&mut buffer).expect("Failed to read from stream");
+        let bytes = match stream.read(&mut buffer) {
+            Ok(bytes) => bytes,
+            Err(_) =>  {
+                statistics.dec_connections(ip);
+                break;
+            },
+        };
+
         statistics.inc_bytes(ip, bytes as u64);
         if bytes == 0 {
             statistics.dec_connections(ip);
@@ -177,7 +184,10 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                                 // End of command to read Pixel value
                                 if buffer[i] == b'\n' {
                                     i += 1;
-                                    stream.write(format!("PX {x} {y} {:06x}\n", fb.get(x, y).to_be() >> 8).as_bytes()).unwrap();
+                                    match stream.write(format!("PX {x} {y} {:06x}\n", fb.get(x, y).to_be() >> 8).as_bytes()) {
+                                        Ok(_) => (),
+                                        Err(_) => continue,
+                                    }
                                     output_written = true;
                                 }
                             }
