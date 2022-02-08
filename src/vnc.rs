@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering::Relaxed;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use bytesize::ByteSize;
+use number_prefix::NumberPrefix;
 use rusttype::{Font, point, Scale};
 use vncserver::*;
 
@@ -65,11 +65,16 @@ impl<'a> VncServer<'a> {
                                    self.statistics.current_legacy_ips.load(Relaxed)
                            ).as_str());
             self.draw_text(20_f32, 90_f32, 32_f32,
-                           format!("{}it/s ({} total)",
-                                   ByteSize(self.statistics.bytes_per_s.load(Relaxed) * 8),
-                                   ByteSize(self.statistics.current_bytes.load(Relaxed)),
+                           format!("{} Bit/s ({}B total)",
+                                   format_per_s(self.statistics.bytes_per_s.load(Relaxed) as f64 * 8.0),
+                                   format(self.statistics.current_bytes.load(Relaxed) as f64),
                            ).as_str());
             self.draw_text(20_f32, 130_f32, 32_f32,
+                           format!("{} Pixel/s ({} Pixels total)",
+                                   format_per_s(self.statistics.pixels_per_s.load(Relaxed) as f64),
+                                   format(self.statistics.current_pixels.load(Relaxed) as f64),
+                           ).as_str());
+            self.draw_text(20_f32, 170_f32, 32_f32,
                            format!("{} FPS",
                                    self.statistics.fps.load(Relaxed),
                            ).as_str());
@@ -115,5 +120,19 @@ impl<'a> VncServer<'a> {
                 });
             }
         }
+    }
+}
+
+fn format_per_s(value: f64) -> String {
+    match NumberPrefix::decimal(value) {
+        NumberPrefix::Prefixed(prefix, n) => format!("{n:.1}{prefix}"),
+        NumberPrefix::Standalone(n) => format!("{n}"),
+    }
+}
+
+fn format(value: f64) -> String {
+    match NumberPrefix::decimal(value ) {
+        NumberPrefix::Prefixed(prefix, n) => format!("{n:.1}{prefix}"),
+        NumberPrefix::Standalone(n) => format!("{n}"),
     }
 }

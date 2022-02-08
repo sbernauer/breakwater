@@ -159,7 +159,9 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                                                 | (from_hex_char(buffer[i - 6]) as u32) << 0;
 
                                         fb.set(x as usize, y as usize, rgba);
-
+                                        if cfg!(feature="count_pixels") {
+                                            statistics.inc_pixels(ip);
+                                        }
                                         continue;
                                     }
 
@@ -176,7 +178,9 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                                                 | (from_hex_char(buffer[i - 8]) as u32) << 0;
 
                                         fb.set(x as usize, y as usize, rgba);
-
+                                        if cfg!(feature="count_pixels") {
+                                            statistics.inc_pixels(ip);
+                                        }
                                         continue;
                                     }
                                 }
