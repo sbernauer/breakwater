@@ -1,0 +1,7 @@
+apiVersion: 1
+
+datasources:
+ - name: Pixelflut
+   type: prometheus
+   access: proxy # <string, required> access mode. direct or proxy. Required
+   url: http://pixelflut:9090

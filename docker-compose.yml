@@ -1,10 +1,21 @@
 version: '3'
 services:
-  breakwater:
+  pixelflut:
     restart: unless-stopped
     image: sbernauer/breakwater
     # build: .
-    network_mode: "host" # Used ports are 1234, 5900 and 9100. Choosing host mode here for best performance
+    network_mode: host # Used ports are 1234, 5900 and 9100. Choosing host mode here for best performance
+
+  node_exporter:
+    restart: unless-stopped
+    image: quay.io/prometheus/node-exporter:latest
+    network_mode: host # Used ports are 9101
+    pid: host
+    volumes:
+      - "/:/host:ro,rslave"
+    command:
+      - "--path.rootfs=/host"
+      - "--web.listen-address=:9101"
 
   prometheus:
     restart: unless-stopped
@@ -14,24 +25,19 @@ services:
       - "prometheus-data:/prometheus"
     ports:
       - 9090:9090
-    networks:
-      - monitoring
     extra_hosts:
-      - "breakwater:172.17.0.1"
+      - "pixelflut:172.17.0.1"
 
   grafana:
     restart: unless-stopped
     image: grafana/grafana:8.3.4
     volumes:
-      - ./grafana/provisioning:/etc/grafana/provisioning/"
+      - "./grafana/provisioning:/etc/grafana/provisioning/"
       - "grafana-data:/var/lib/grafana"
     ports:
       - 80:3000
-    networks:
-      - monitoring
-
-networks:
-  monitoring:
+    extra_hosts:
+      - "pixelflut:172.17.0.1"
 
 volumes:
   grafana-data:
