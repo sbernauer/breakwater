@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+- name: 'Pixelflut'
+  folder: 'Pixelflut'
+  type: file
+  editable: true
+  updateIntervalSeconds: 10
+  allowUiUpdates: true
+  options:
+    path: /etc/grafana/provisioning/dashboards/pixelflut
