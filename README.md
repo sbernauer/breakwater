@@ -63,11 +63,14 @@ OPTIONS:
 
     -p, --prometheus-listen-address <PROMETHEUS_LISTEN_ADDRESS>
             Listen address zhe prometheus exporter should listen om. The default value will listen
-            on all interfaces for IPv4 and v6 packets [default: [::]:9090]
+            on all interfaces for IPv4 and v6 packets [default: [::]:9100]
 
     -t, --text <TEXT>
             Text to display on the screen. The text will be followed by "on <listen_address>"
             [default: "Breakwater Pixelflut server"]
+
+    -v, --vnc-port <VNC_PORT>
+            Port of the VNC server [default: 5900]
 
     -V, --version
             Print version information
@@ -77,7 +80,18 @@ OPTIONS:
 ```
 You can also build the binary with `cargo build --release`. The binary will be placed at `target/release/breakwater`.
 
-# Ready to use Docker setup
+# Run in docker container
+This command will start the Pixelflut server in a docker container
+```bash
+docker run -p 1234:1234 -p 5900:5900 -p 9100:9100 sbernauer/breakwater # --help
+```
+The following command stops the server again (if there are some problems with SIGINT)
+```bash
+docker ps -q --filter ancestor=sbernauer/breakwater | xargs docker kill
+```
+
+# Ready to use Docker compose setup
+The ready to use Docker compose setup contains the Pixelflut server, a prometheus server and a Grafana for monitoring.
 Use the following command to start the whole setup
 ```bash
 docker-compose up
@@ -92,16 +106,11 @@ You should now have access to the following services
 | 9090 | Prometheus server           |
 | 80   | Grafana                     |
 
-This command will only start the Pixelflut server in a docker container
-```bash
-docker run -p 1234:1234 -p 5900:5900 -p 9100:9100 sbernauer/breakwater # --help
-```
-The following command stops the server again (if there are some problems with SIGINT)
-```bash
-docker ps -q --filter ancestor=sbernauer/breakwater | xargs docker kill
-```
+If you visit the Grafana server (user=admin, password=admin) you will have access to dashboards like the dashboard below.
+![Grafana screenshit](docs/images/Screenshot_20220210_215752.png)
 
 # Performance
+## Laptop
 My Laptop has a `Intel(R) Core(TM) i7-8850H CPU @ 2.60GHz` (6 Cores/12 Threads) and 2 DDR4 RAM modules with 16 GB each and 2667 MT/s.
 The Pixelflut-server and Pixelflut-client [Sturmflut](https://github.com/TobleMiner/sturmflut) both run on my Laptop using 24 connections.
 These are the results of different Pixelflut servers:
@@ -113,7 +122,17 @@ These are the results of different Pixelflut servers:
 | [Shoreline](https://github.com/TobleMiner/shoreline)                    | C        | 15 Gbit/s                | 12 Gbit/s               |
 | [Breakwater](https://github.com/sbernauer/breakwater)                   | Rust     | 30 Gbit/s                | 22 Gbit/s               |
 
-Test with a real server only running the server (not also the client) will follow.
+## Server
+The server has two `Intel(R) Xeon(R) CPU E5-2660 v2 @ 2.20GHz` processors with 10 cores / 20 threads each.
+Another server was used as a Pixelflut-client [Sturmflut](https://github.com/TobleMiner/sturmflut).
+The servers were connected with two 40G and one 10G links, through which traffic was generated.
+
+
+| Server                                                | Language | Sustainable traffic |
+|-------------------------------------------------------|----------|---------------------|
+| [Shoreline](https://github.com/TobleMiner/shoreline)  | C        | 34 Gbit/s           |
+| [Breakwater](https://github.com/sbernauer/breakwater) | Rust     | 52 Gbit/s           |
+
 
 # TODOs
 * Implement proper ring buffer or at least complete parsing the current buffer.
@@ -122,4 +141,4 @@ This is done for performance reasons. This will cause 1 of about 6,100 commands 
 Ideally we would save us the remaining few bytes and add them to beginning of the next processing loop.
 * Implement Alpha channel feature. For performance reasons there should be a compile-time switch (similar to `#ifdef`).
 Actually haven't checked if Rust supports this ;)
-* Finish Docker compose setup with VncMux and a nice diagram
+* Finish Docker compose setup with VncMux
