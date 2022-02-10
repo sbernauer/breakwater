@@ -21,7 +21,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 4,
+  "id": 3,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -100,10 +100,10 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "thresholds"
+            "fixedColor": "green",
+            "mode": "fixed"
           },
           "mappings": [],
-          "noValue": "0",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -149,7 +149,7 @@
             "uid": "P0FAC05DE14135586"
           },
           "exemplar": true,
-          "expr": "sum(breakwater_connections)",
+          "expr": "sum(breakwater_connections) or vector(0)",
           "interval": "",
           "legendFormat": "",
           "refId": "A"
@@ -183,6 +183,74 @@
               }
             ]
           },
+          "unit": "FPS"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 3,
+        "x": 9,
+        "y": 0
+      },
+      "id": 15,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "8.3.4",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P0FAC05DE14135586"
+          },
+          "exemplar": true,
+          "expr": "breakwater_fps",
+          "interval": "",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "FPS",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P0FAC05DE14135586"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "green",
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
           "unit": "binbps"
         },
         "overrides": []
@@ -190,7 +258,7 @@
       "gridPos": {
         "h": 5,
         "w": 3,
-        "x": 6,
+        "x": 12,
         "y": 0
       },
       "id": 8,
@@ -216,7 +284,7 @@
             "uid": "P0FAC05DE14135586"
           },
           "exemplar": true,
-          "expr": "sum(rate(breakwater_bytes[1m]))*8",
+          "expr": "sum(rate(breakwater_bytes[1m])) * 8  or vector(0)",
           "interval": "",
           "legendFormat": "",
           "refId": "A"
@@ -253,7 +321,7 @@
       "gridPos": {
         "h": 5,
         "w": 3,
-        "x": 9,
+        "x": 15,
         "y": 0
       },
       "id": 9,
@@ -279,7 +347,7 @@
             "uid": "P0FAC05DE14135586"
           },
           "exemplar": true,
-          "expr": "sum(breakwater_bytes)",
+          "expr": "sum(breakwater_bytes) or vector(0)",
           "interval": "",
           "legendFormat": "",
           "refId": "A"
@@ -296,7 +364,8 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "thresholds"
+            "fixedColor": "green",
+            "mode": "fixed"
           },
           "mappings": [],
           "noValue": "0",
@@ -313,17 +382,17 @@
               }
             ]
           },
-          "unit": "FPS"
+          "unit": "reqps"
         },
         "overrides": []
       },
       "gridPos": {
         "h": 5,
         "w": 3,
-        "x": 12,
+        "x": 18,
         "y": 0
       },
-      "id": 15,
+      "id": 16,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -346,13 +415,76 @@
             "uid": "P0FAC05DE14135586"
           },
           "exemplar": true,
-          "expr": "breakwater_fps",
+          "expr": "sum(rate(breakwater_pixels[1m])) * 8  or vector(0)",
           "interval": "",
           "legendFormat": "",
           "refId": "A"
         }
       ],
-      "title": "FPS",
+      "title": "Pixels / s",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P0FAC05DE14135586"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 3,
+        "x": 21,
+        "y": 0
+      },
+      "id": 17,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "8.3.4",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P0FAC05DE14135586"
+          },
+          "exemplar": true,
+          "expr": "sum(breakwater_pixels) or vector(0)",
+          "interval": "",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Pixels",
       "type": "stat"
     },
     {
@@ -641,7 +773,7 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
+        "x": 0,
         "y": 13
       },
       "id": 11,
@@ -675,9 +807,103 @@
       ],
       "title": "Connections / IP",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P0FAC05DE14135586"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "id": 18,
+      "options": {
+        "legend": {
+          "calcs": [
+            "last",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "sortBy": "Last",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P0FAC05DE14135586"
+          },
+          "exemplar": true,
+          "expr": "rate(breakwater_pixels[1m]) * 8",
+          "interval": "",
+          "legendFormat": "{{ip}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Pixels / s / IP",
+      "type": "timeseries"
     }
   ],
-  "refresh": "",
+  "refresh": false,
   "schemaVersion": 34,
   "style": "dark",
   "tags": [],
@@ -685,13 +911,13 @@
     "list": []
   },
   "time": {
-    "from": "now-15m",
+    "from": "now-1h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "Pixelflut overview",
   "uid": "74vj6rJ7z",
-  "version": 5,
+  "version": 2,
   "weekStart": ""
 }
