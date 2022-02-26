@@ -57,27 +57,21 @@ impl<'a> VncServer<'a> {
                     self.set_pixel(x, y, self.fb.get(x, y));
                 }
             }
-            self.draw_text(20_f32, 10_f32, 32_f32, self.text);
-            self.draw_text(20_f32, 50_f32, 32_f32,
-                           format!("{} connections by {} IPs ({} legacy)",
-                                   self.statistics.current_connections.load(Relaxed),
-                                   self.statistics.current_ips.load(Relaxed),
-                                   self.statistics.current_legacy_ips.load(Relaxed)
-                           ).as_str());
-            self.draw_text(20_f32, 90_f32, 32_f32,
-                           format!("{} Bit/s ({}B total)",
-                                   format_per_s(self.statistics.bytes_per_s.load(Relaxed) as f64 * 8.0),
-                                   format(self.statistics.current_bytes.load(Relaxed) as f64),
-                           ).as_str());
-            self.draw_text(20_f32, 130_f32, 32_f32,
-                           format!("{} Pixel/s ({} Pixels total)",
-                                   format_per_s(self.statistics.pixels_per_s.load(Relaxed) as f64),
-                                   format(self.statistics.current_pixels.load(Relaxed) as f64),
-                           ).as_str());
-            self.draw_text(20_f32, 170_f32, 32_f32,
-                           format!("{} FPS",
-                                   self.statistics.fps.load(Relaxed),
-                           ).as_str());
+            self.draw_rect(25, self.fb.height - 100, self.fb.width - 25, self.fb.height - 25, 0x0000_0000);
+            self.draw_text(30, self.fb.height - 100, 32_f32, 0x00ff_ffff, format!(
+                "{}. {} connections by {} IPs ({} legacy)",
+                self.text,
+                self.statistics.current_connections.load(Relaxed),
+                self.statistics.current_ips.load(Relaxed),
+                self.statistics.current_legacy_ips.load(Relaxed)
+            ).as_str());
+            self.draw_text(30, self.fb.height - 70, 32_f32, 0x00ff_ffff, format!(
+                "{} Bit/s ({}B total). {} Pixel/s ({} Pixels total)",
+               format_per_s(self.statistics.bytes_per_s.load(Relaxed) as f64 * 8.0),
+               format(self.statistics.current_bytes.load(Relaxed) as f64),
+               format_per_s(self.statistics.pixels_per_s.load(Relaxed) as f64),
+               format(self.statistics.current_pixels.load(Relaxed) as f64),
+            ).as_str());
             rfb_mark_rect_as_modified(self.screen, 0, 0, self.fb.width as i32, self.fb.height as i32);
 
             self.statistics.frame.fetch_add(1, Relaxed);
@@ -98,26 +92,35 @@ impl<'a> VncServer<'a> {
         }
     }
 
-    fn draw_text(&self, x: f32, y: f32, scale: f32, text: &str) {
+    fn draw_text(&self, x: usize, y: usize, scale: f32, rgba: u32, text: &str) {
         let scale = Scale::uniform(scale);
 
         let v_metrics = self.font.v_metrics(scale);
 
         let glyphs: Vec<_> = self.font
-            .layout(text, scale, point(x, y + v_metrics.ascent))
+            .layout(text, scale, point(x as f32, y as f32 + v_metrics.ascent))
             .collect();
 
         for glyph in glyphs {
             if let Some(bounding_box) = glyph.pixel_bounding_box() {
                 glyph.draw(|x, y, v| {
                     if v > 0.5 {
+                        // TODO Check for bounds
                         self.set_pixel(
                             x as usize + bounding_box.min.x as usize,
                             y as usize + bounding_box.min.y as usize,
-                            0x0000_ff00,
+                            rgba,
                         )
                     }
                 });
+            }
+        }
+    }
+
+    fn draw_rect(&self, start_x: usize, start_y: usize, end_x: usize, end_y: usize, rgba: u32) {
+        for x in start_x..end_x {
+            for y in start_y..end_y {
+                self.set_pixel(x, y, rgba);
             }
         }
     }
