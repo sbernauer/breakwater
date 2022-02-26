@@ -83,7 +83,7 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
         }
 
         let mut i = 0; // We can't use a for loop here because Rust don't lets use skip characters by incrementing i
-        while i <= loop_end {
+        while i < loop_end {
             i += 1;
             if buffer[i] == b'P' {
                 i += 1;
