@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering::Relaxed;
 pub struct FrameBuffer {
     pub width: usize,
     pub height: usize,
-    _vec: Vec<AtomicU32>,
+    _vec: Vec<AtomicU32>, // Every pixel is represented by 32 bits: aabbggrr
     slice: &'static mut [AtomicU32],
 }
 
