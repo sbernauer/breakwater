@@ -37,6 +37,12 @@ The default settings should provide you with a ready-to-use server.
 The get a list of options try
 ```bash
 cargo run --release -- --help
+```
+<details>
+  <summary>Output</summary>
+
+```bash
+cargo run --release -- --help
     Finished release [optimized] target(s) in 0.03s
      Running `target/release/breakwater --help`
 breakwater 0.0.1
@@ -79,6 +85,8 @@ OPTIONS:
     -w, --width <WIDTH>
             Width of the drawing surface [default: 1280]
 ```
+</details>
+
 You can also build the binary with `cargo build --release`. The binary will be placed at `target/release/breakwater`.
 
 # Run in docker container
