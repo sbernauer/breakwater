@@ -134,6 +134,23 @@ The servers were connected with two 40G and one 10G links, through which traffic
 | [Shoreline](https://github.com/TobleMiner/shoreline)  | C        | 34 Gbit/s           |
 | [Breakwater](https://github.com/sbernauer/breakwater) | Rust     | 52 Gbit/s           |
 
+## Usage of [Tokio](https://crates.io/crates/tokio)
+You can find a prototype with Tokio in the `tokio` branch.
+Performance measurements have shown that the usage of Tokio decreased the average performance from 22.9 to 21.6 Gbit/s.
+<details>
+  <summary>Used benchmark</summary>
+
+```bash
+for i in $(seq 1 20); do
+    for branch in master tokio; do
+        git checkout $branch
+        cargo run --release >/dev/null 2>/dev/null & sleep 2; ../sturmflut/sturmflut 127.0.0.1 ../sturmflut/cat.jpg -t 24 >/dev/null 2>/dev/null & sleep 10; bmon -b -p lo -o ascii:quitafter=3 | tail -n 1 | awk '{ print $2 }' | tee -a "perf/$branch"; killall sturmflut; killall breakwater
+        sleep 1
+    done
+done
+```
+</details>
+
 
 # TODOs
 * Implement proper ring buffer or at least complete parsing the current buffer.
