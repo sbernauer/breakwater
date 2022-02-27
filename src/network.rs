@@ -1,9 +1,9 @@
-use std::io::prelude::*;
-use std::net::TcpListener;
-use std::net::TcpStream;
+use std::net::SocketAddr;
 use std::str;
 use std::sync::Arc;
-use std::thread;
+
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener,TcpStream};
 
 use crate::framebuffer::FrameBuffer;
 use crate::Statistics;
@@ -35,37 +35,42 @@ impl<'a> Network<'a> {
         }
     }
 
-    pub fn listen(&self) {
-        let listener = TcpListener::bind(self.listen_address)
+    pub async fn listen(&self) {
+        let listener = TcpListener::bind(self.listen_address).await
             .expect(format!("Failed to listen on {}", self.listen_address).as_str());
         println!("Listening for Pixelflut connections on {}", self.listen_address);
 
-        for stream in listener.incoming() {
-            let stream = stream.unwrap();
+        loop {
+            let (stream, socket_addr) = listener.accept().await.unwrap();
 
-            self.statistics.inc_connections(stream.peer_addr().unwrap().ip());
-
+            self.statistics.inc_connections(socket_addr.ip());
             let fb = Arc::clone(&self.fb);
             let statistics = Arc::clone(&self.statistics);
-            thread::spawn(move || {
-                handle_connection(stream, fb, statistics);
+            tokio::spawn(async move {
+                handle_connection(stream, socket_addr, fb, statistics).await;
             });
         }
     }
 }
 
-fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Arc<Statistics>) {
-    let ip = stream.peer_addr().unwrap().ip();
-    let mut buffer = [0u8; NETWORK_BUFFER_SIZE];
+async fn handle_connection(mut stream: TcpStream, socket_addr: SocketAddr, fb: Arc<FrameBuffer>, statistics: Arc<Statistics>) {
+    let ip = socket_addr.ip();
+    let mut buffer = [0; NETWORK_BUFFER_SIZE];
     let mut output_written = false;
 
     loop {
-        let bytes = match stream.read(&mut buffer) {
-            Ok(bytes) => bytes,
-            Err(_) =>  {
+        let bytes = match stream.read(&mut buffer).await {
+            // Socket has been closed
+            Ok(n) if n == 0 => {
                 statistics.dec_connections(ip);
-                break;
+                return;
             },
+            Ok(n) => n,
+            Err(e) => {
+                eprintln!("failed to read from socket; err = {:?}", e);
+                statistics.dec_connections(ip);
+                return;
+            }
         };
 
         statistics.inc_bytes(ip, bytes as u64);
@@ -188,9 +193,8 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                                 // End of command to read Pixel value
                                 if buffer[i] == b'\n' {
                                     i += 1;
-                                    match stream.write(format!("PX {x} {y} {:06x}\n", fb.get(x, y).to_be() >> 8).as_bytes()) {
-                                        Ok(_) => (),
-                                        Err(_) => continue,
+                                    if let Err(e) = stream.write(format!("PX {x} {y} {:06x}\n", fb.get(x, y).to_be() >> 8).as_bytes()).await {
+                                        eprintln!("failed to write to socket; err = {:?}", e);
                                     }
                                     output_written = true;
                                 }
@@ -206,7 +210,9 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                         i += 1;
                         if buffer[i] == b'E' {
                             i += 1;
-                            stream.write(format!("SIZE {} {}\n", fb.width, fb.height).as_bytes()).unwrap();
+                            if let Err(e) = stream.write(format!("SIZE {} {}\n", fb.width, fb.height).as_bytes()).await {
+                                eprintln!("failed to write to socket; err = {:?}", e);
+                            }
                             output_written = true;
                         }
                     }
@@ -219,7 +225,9 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                         i += 1;
                         if buffer[i] == b'P' {
                             i += 1;
-                            stream.write(HELP_TEXT).unwrap();
+                            if let Err(e) = stream.write(HELP_TEXT).await {
+                                eprintln!("failed to write to socket; err = {:?}", e);
+                            }
                             output_written = true;
                         }
                     }
@@ -227,7 +235,9 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
             }
         }
         if output_written {
-            stream.flush().unwrap();
+            if let Err(e) =  stream.flush().await {
+                eprintln!("failed to flush socket; err = {:?}", e);
+            }
         }
     }
 }

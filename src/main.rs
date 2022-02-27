@@ -15,7 +15,8 @@ mod network;
 mod vnc;
 mod statistics;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = Args::parse();
 
     let fb = Arc::new(FrameBuffer::new(args.width, args.height));
@@ -26,9 +27,10 @@ fn main() {
     let network_listen_address = args.listen_address.clone(); // TODO: Somehow avoid clone
     let network_fb = Arc::clone(&fb);
     let network_statistics = Arc::clone(&statistics);
-    let network_thread = thread::spawn(move || {
+
+    let network_thread = tokio::spawn(async move {
         let network = Network::new(network_listen_address.as_str(), network_fb, network_statistics);
-        network.listen();
+        network.listen().await;
     });
 
     thread::spawn(move || {
@@ -37,5 +39,5 @@ fn main() {
         vnc_server.run();
     });
 
-    network_thread.join().unwrap();
+    network_thread.await.unwrap();
 }
