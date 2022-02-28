@@ -143,7 +143,7 @@ impl Statistics {
             let pixels_for_ip = self.pixels_for_ip.lock().unwrap();
             self.bytes_for_ip.lock().unwrap().iter()
                 .for_each(|(ip, bytes)|
-                    pixels_for_ip[&ip].store(bytes.load(Relaxed) / 18, Relaxed));
+                    pixels_for_ip[ip].store(bytes.load(Relaxed) / 18, Relaxed));
         }
         let new_pixels = self.get_pixels();
         self.pixels_per_s.store(new_pixels - self.current_pixels.load(Relaxed), Relaxed);
@@ -179,19 +179,18 @@ pub fn start_loop(statistics: Arc<Statistics>) {
 }
 
 pub fn start_prometheus_server(prometheus_listen_address: &str) {
-    prometheus_exporter::start(prometheus_listen_address.parse()
-        .expect(format!("Cannot parse prometheus listen address: {prometheus_listen_address}").as_str()))
+    prometheus_exporter::start(
+        prometheus_listen_address.parse()
+            .unwrap_or_else(|_| panic!("Cannot parse prometheus listen address: {}", prometheus_listen_address))
+        )
         .expect("Cannot start prometheus exporter");
     println!("Started Prometheus Exporter on {prometheus_listen_address}");
 }
 
 fn is_mapped_to_ipv6(ip: &IpAddr) -> bool {
     match ip {
-        IpAddr::V6(ip) => match ip.segments() {
-            // 5 * 16 `0` bits, 16 `1` bits, leftover is actual IPv4 addr
-            [0, 0, 0, 0, 0, 0xFFFF, ..] => true,
-            _ => false,
-        },
+        // 5 * 16 `0` bits, 16 `1` bits, leftover is actual IPv4 addr
+        IpAddr::V6(ip) => matches!(ip.segments(), [0, 0, 0, 0, 0, 0xFFFF, ..]),
         _ => false,
     }
 }

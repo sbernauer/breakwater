@@ -32,7 +32,8 @@ impl<'a> VncServer<'a> {
         rfb_init_server(screen);
         rfb_run_event_loop(screen, 1, 1);
 
-        let font_bytes = fs::read(font).expect(format!("Cannot read font file {font}").as_str());
+        let font_bytes = fs::read(font)
+            .unwrap_or_else(|_| panic!("Cannot read font file {}", font));
         let font = Font::try_from_vec(font_bytes).expect("Error constructing Font");
 
         VncServer {
