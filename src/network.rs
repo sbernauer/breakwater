@@ -37,7 +37,7 @@ impl<'a> Network<'a> {
 
     pub fn listen(&self) {
         let listener = TcpListener::bind(self.listen_address)
-            .expect(format!("Failed to listen on {}", self.listen_address).as_str());
+            .unwrap_or_else(|_| panic!("Failed to listen on {}", self.listen_address));
         println!("Listening for Pixelflut connections on {}", self.listen_address);
 
         for stream in listener.incoming() {
@@ -156,7 +156,7 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                                                 | (from_hex_char(buffer[i - 5]) as u32) << 12
                                                 | (from_hex_char(buffer[i - 4]) as u32) << 8
                                                 | (from_hex_char(buffer[i - 7]) as u32) << 4
-                                                | (from_hex_char(buffer[i - 6]) as u32) << 0;
+                                                | (from_hex_char(buffer[i - 6]) as u32);
 
                                         fb.set(x as usize, y as usize, rgba);
                                         if cfg!(feature="count_pixels") {
@@ -175,7 +175,7 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                                                 | (from_hex_char(buffer[i - 7]) as u32) << 12
                                                 | (from_hex_char(buffer[i - 6]) as u32) << 8
                                                 | (from_hex_char(buffer[i - 9]) as u32) << 4
-                                                | (from_hex_char(buffer[i - 8]) as u32) << 0;
+                                                | (from_hex_char(buffer[i - 8]) as u32);
 
                                         fb.set(x as usize, y as usize, rgba);
                                         if cfg!(feature="count_pixels") {
@@ -188,7 +188,7 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                                 // End of command to read Pixel value
                                 if buffer[i] == b'\n' {
                                     i += 1;
-                                    match stream.write(format!("PX {x} {y} {:06x}\n", fb.get(x, y).to_be() >> 8).as_bytes()) {
+                                    match stream.write_all(format!("PX {x} {y} {:06x}\n", fb.get(x, y).to_be() >> 8).as_bytes()) {
                                         Ok(_) => (),
                                         Err(_) => continue,
                                     }
@@ -206,7 +206,7 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                         i += 1;
                         if buffer[i] == b'E' {
                             i += 1;
-                            stream.write(format!("SIZE {} {}\n", fb.width, fb.height).as_bytes()).unwrap();
+                            stream.write_all(format!("SIZE {} {}\n", fb.width, fb.height).as_bytes()).unwrap();
                             output_written = true;
                         }
                     }
@@ -219,7 +219,7 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                         i += 1;
                         if buffer[i] == b'P' {
                             i += 1;
-                            stream.write(HELP_TEXT).unwrap();
+                            stream.write_all(HELP_TEXT).unwrap();
                             output_written = true;
                         }
                     }
