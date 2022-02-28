@@ -38,12 +38,16 @@ impl<'a> Network<'a> {
     pub fn listen(&self) {
         let listener = TcpListener::bind(self.listen_address)
             .unwrap_or_else(|_| panic!("Failed to listen on {}", self.listen_address));
-        println!("Listening for Pixelflut connections on {}", self.listen_address);
+        println!(
+            "Listening for Pixelflut connections on {}",
+            self.listen_address
+        );
 
         for stream in listener.incoming() {
             let stream = stream.unwrap();
 
-            self.statistics.inc_connections(stream.peer_addr().unwrap().ip());
+            self.statistics
+                .inc_connections(stream.peer_addr().unwrap().ip());
 
             let fb = Arc::clone(&self.fb);
             let statistics = Arc::clone(&self.statistics);
@@ -62,10 +66,10 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
     loop {
         let bytes = match stream.read(&mut buffer) {
             Ok(bytes) => bytes,
-            Err(_) =>  {
+            Err(_) => {
                 statistics.dec_connections(ip);
                 break;
-            },
+            }
         };
 
         statistics.inc_bytes(ip, bytes as u64);
@@ -150,16 +154,15 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                                     if buffer[i + 6] == b'\n' {
                                         i += 7;
 
-                                        let rgba: u32 =
-                                            (from_hex_char(buffer[i - 3]) as u32) << 20
-                                                | (from_hex_char(buffer[i - 2]) as u32) << 16
-                                                | (from_hex_char(buffer[i - 5]) as u32) << 12
-                                                | (from_hex_char(buffer[i - 4]) as u32) << 8
-                                                | (from_hex_char(buffer[i - 7]) as u32) << 4
-                                                | (from_hex_char(buffer[i - 6]) as u32);
+                                        let rgba: u32 = (from_hex_char(buffer[i - 3]) as u32) << 20
+                                            | (from_hex_char(buffer[i - 2]) as u32) << 16
+                                            | (from_hex_char(buffer[i - 5]) as u32) << 12
+                                            | (from_hex_char(buffer[i - 4]) as u32) << 8
+                                            | (from_hex_char(buffer[i - 7]) as u32) << 4
+                                            | (from_hex_char(buffer[i - 6]) as u32);
 
                                         fb.set(x as usize, y as usize, rgba);
-                                        if cfg!(feature="count_pixels") {
+                                        if cfg!(feature = "count_pixels") {
                                             statistics.inc_pixels(ip);
                                         }
                                         continue;
@@ -169,16 +172,15 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                                     if buffer[i + 8] == b'\n' {
                                         i += 9;
 
-                                        let rgba: u32 =
-                                            (from_hex_char(buffer[i - 5]) as u32) << 20
-                                                | (from_hex_char(buffer[i - 4]) as u32) << 16
-                                                | (from_hex_char(buffer[i - 7]) as u32) << 12
-                                                | (from_hex_char(buffer[i - 6]) as u32) << 8
-                                                | (from_hex_char(buffer[i - 9]) as u32) << 4
-                                                | (from_hex_char(buffer[i - 8]) as u32);
+                                        let rgba: u32 = (from_hex_char(buffer[i - 5]) as u32) << 20
+                                            | (from_hex_char(buffer[i - 4]) as u32) << 16
+                                            | (from_hex_char(buffer[i - 7]) as u32) << 12
+                                            | (from_hex_char(buffer[i - 6]) as u32) << 8
+                                            | (from_hex_char(buffer[i - 9]) as u32) << 4
+                                            | (from_hex_char(buffer[i - 8]) as u32);
 
                                         fb.set(x as usize, y as usize, rgba);
-                                        if cfg!(feature="count_pixels") {
+                                        if cfg!(feature = "count_pixels") {
                                             statistics.inc_pixels(ip);
                                         }
                                         continue;
@@ -188,7 +190,10 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                                 // End of command to read Pixel value
                                 if buffer[i] == b'\n' {
                                     i += 1;
-                                    match stream.write_all(format!("PX {x} {y} {:06x}\n", fb.get(x, y).to_be() >> 8).as_bytes()) {
+                                    match stream.write_all(
+                                        format!("PX {x} {y} {:06x}\n", fb.get(x, y).to_be() >> 8)
+                                            .as_bytes(),
+                                    ) {
                                         Ok(_) => (),
                                         Err(_) => continue,
                                     }
@@ -206,7 +211,9 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                         i += 1;
                         if buffer[i] == b'E' {
                             i += 1;
-                            stream.write_all(format!("SIZE {} {}\n", fb.width, fb.height).as_bytes()).unwrap();
+                            stream
+                                .write_all(format!("SIZE {} {}\n", fb.width, fb.height).as_bytes())
+                                .unwrap();
                             output_written = true;
                         }
                     }
@@ -237,6 +244,6 @@ fn from_hex_char(char: u8) -> u8 {
         b'0'..=b'9' => char - b'0',
         b'a'..=b'f' => char - b'a' + 10,
         b'A'..=b'F' => char - b'A' + 10,
-        _ => 0
+        _ => 0,
     }
 }
