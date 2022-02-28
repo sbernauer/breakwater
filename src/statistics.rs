@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicU32, AtomicU64};
 use std::sync::atomic::Ordering::Relaxed;
+use std::sync::atomic::{AtomicU32, AtomicU64};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use prometheus::{register_int_gauge, register_int_gauge_vec};
 use prometheus::core::{AtomicI64, GenericGauge, GenericGaugeVec};
+use prometheus::{register_int_gauge, register_int_gauge_vec};
 
 pub struct Statistics {
     // These statistics are always up to date
@@ -55,12 +55,35 @@ impl Statistics {
             pixels_per_s: AtomicU64::new(0),
             fps: AtomicU64::new(0),
 
-            metric_connections: register_int_gauge_vec!("breakwater_connections", "Number of client connections", &["ip"]).unwrap(),
+            metric_connections: register_int_gauge_vec!(
+                "breakwater_connections",
+                "Number of client connections",
+                &["ip"]
+            )
+            .unwrap(),
             metric_ips: register_int_gauge!("breakwater_ips", "Number of IPs connected").unwrap(),
-            metric_legacy_ips: register_int_gauge!("breakwater_legacy_ips", "Number of legacy (v4) IPs connected").unwrap(),
-            metric_bytes: register_int_gauge_vec!("breakwater_bytes", "Number of bytes received", &["ip"]).unwrap(),
-            metric_pixels: register_int_gauge_vec!("breakwater_pixels", "Number of Pixels set", &["ip"]).unwrap(),
-            metric_fps: register_int_gauge!("breakwater_fps", "Frames per second of the VNC server").unwrap(),
+            metric_legacy_ips: register_int_gauge!(
+                "breakwater_legacy_ips",
+                "Number of legacy (v4) IPs connected"
+            )
+            .unwrap(),
+            metric_bytes: register_int_gauge_vec!(
+                "breakwater_bytes",
+                "Number of bytes received",
+                &["ip"]
+            )
+            .unwrap(),
+            metric_pixels: register_int_gauge_vec!(
+                "breakwater_pixels",
+                "Number of Pixels set",
+                &["ip"]
+            )
+            .unwrap(),
+            metric_fps: register_int_gauge!(
+                "breakwater_fps",
+                "Frames per second of the VNC server"
+            )
+            .unwrap(),
         }
     }
 
@@ -70,8 +93,16 @@ impl Statistics {
         connections_for_ip.entry(ip).or_insert(AtomicU32::new(0));
 
         // Initialize counters for ip
-        self.bytes_for_ip.lock().unwrap().entry(ip).or_insert(AtomicU64::new(0));
-        self.pixels_for_ip.lock().unwrap().entry(ip).or_insert(AtomicU64::new(0));
+        self.bytes_for_ip
+            .lock()
+            .unwrap()
+            .entry(ip)
+            .or_insert(AtomicU64::new(0));
+        self.pixels_for_ip
+            .lock()
+            .unwrap()
+            .entry(ip)
+            .or_insert(AtomicU64::new(0));
 
         connections_for_ip[&ip].fetch_add(1, Relaxed);
     }
@@ -79,14 +110,19 @@ impl Statistics {
     pub fn dec_connections(&self, ip: IpAddr) {
         let mut connections_for_ip = self.connections_for_ip.lock().unwrap();
         let remaining_connections_for_ip = connections_for_ip[&ip].fetch_sub(1, Relaxed);
-        if remaining_connections_for_ip <= 1 { // We check for 1 instead of 1 as we get the value before decrementing
+        if remaining_connections_for_ip <= 1 {
+            // We check for 1 instead of 1 as we get the value before decrementing
             connections_for_ip.remove(&ip);
-            self.metric_connections.remove_label_values(&[&ip.to_string()]).ok();
+            self.metric_connections
+                .remove_label_values(&[&ip.to_string()])
+                .ok();
         }
     }
 
     fn get_connections(&self) -> u32 {
-        self.connections_for_ip.lock().unwrap()
+        self.connections_for_ip
+            .lock()
+            .unwrap()
             .values()
             .map(|i| i.load(Relaxed))
             .sum()
@@ -97,7 +133,10 @@ impl Statistics {
     }
 
     fn get_ip_count_legacy(&self) -> u32 {
-        self.connections_for_ip.lock().unwrap().keys()
+        self.connections_for_ip
+            .lock()
+            .unwrap()
+            .keys()
             .filter(|ip| ip.is_ipv4() || (ip.is_ipv6() && is_mapped_to_ipv6(ip)))
             .count() as u32
     }
@@ -115,75 +154,105 @@ impl Statistics {
     }
 
     fn get_bytes(&self) -> u64 {
-        self.bytes_for_ip.lock().unwrap()
+        self.bytes_for_ip
+            .lock()
+            .unwrap()
             .values()
             .map(|i| i.load(Relaxed))
             .sum()
     }
 
     fn get_pixels(&self) -> u64 {
-        self.pixels_for_ip.lock().unwrap()
-                .values()
-                .map(|i| i.load(Relaxed))
-                .sum()
+        self.pixels_for_ip
+            .lock()
+            .unwrap()
+            .values()
+            .map(|i| i.load(Relaxed))
+            .sum()
     }
 
     fn update(&self) {
         // Calculate statistics
-        self.current_connections.store(self.get_connections(), Relaxed);
+        self.current_connections
+            .store(self.get_connections(), Relaxed);
         self.current_ips.store(self.get_ip_count(), Relaxed);
-        self.current_legacy_ips.store(self.get_ip_count_legacy(), Relaxed);
+        self.current_legacy_ips
+            .store(self.get_ip_count_legacy(), Relaxed);
 
         let new_bytes = self.get_bytes();
-        self.bytes_per_s.store(new_bytes - self.current_bytes.load(Relaxed), Relaxed);
+        self.bytes_per_s
+            .store(new_bytes - self.current_bytes.load(Relaxed), Relaxed);
         self.current_bytes.store(new_bytes, Relaxed);
 
-        if cfg!(not(feature="count_pixels")) {
+        if cfg!(not(feature = "count_pixels")) {
             // Do a crude estimation if actual pixel count is not available. Average Pixel is about |PX XXX YYY rrggbb\n| = 18 bytes
             let pixels_for_ip = self.pixels_for_ip.lock().unwrap();
-            self.bytes_for_ip.lock().unwrap().iter()
-                .for_each(|(ip, bytes)|
-                    pixels_for_ip[ip].store(bytes.load(Relaxed) / 18, Relaxed));
+            self.bytes_for_ip
+                .lock()
+                .unwrap()
+                .iter()
+                .for_each(|(ip, bytes)| pixels_for_ip[ip].store(bytes.load(Relaxed) / 18, Relaxed));
         }
         let new_pixels = self.get_pixels();
-        self.pixels_per_s.store(new_pixels - self.current_pixels.load(Relaxed), Relaxed);
+        self.pixels_per_s
+            .store(new_pixels - self.current_pixels.load(Relaxed), Relaxed);
         self.current_pixels.store(new_pixels, Relaxed);
 
         let new_frame = self.frame.load(Relaxed);
-        self.fps.store(new_frame - self.current_frame.load(Relaxed), Relaxed);
+        self.fps
+            .store(new_frame - self.current_frame.load(Relaxed), Relaxed);
         self.current_frame.store(new_frame, Relaxed);
 
         // Put statistics into Prometheus metrics
-        self.connections_for_ip.lock().unwrap().iter()
-            .for_each(|(ip, bytes)|
-                self.metric_connections.with_label_values(&[&ip.to_string()]).set(bytes.load(Relaxed) as i64));
+        self.connections_for_ip
+            .lock()
+            .unwrap()
+            .iter()
+            .for_each(|(ip, bytes)| {
+                self.metric_connections
+                    .with_label_values(&[&ip.to_string()])
+                    .set(bytes.load(Relaxed) as i64)
+            });
         self.metric_ips.set(self.current_ips.load(Relaxed) as i64);
-        self.metric_legacy_ips.set(self.current_legacy_ips.load(Relaxed) as i64);
-        self.bytes_for_ip.lock().unwrap().iter()
-            .for_each(|(ip, bytes)|
-                self.metric_bytes.with_label_values(&[&ip.to_string()]).set(bytes.load(Relaxed) as i64));
-        self.pixels_for_ip.lock().unwrap().iter()
-            .for_each(|(ip, pixels)|
-                self.metric_pixels.with_label_values(&[&ip.to_string()]).set(pixels.load(Relaxed) as i64));
+        self.metric_legacy_ips
+            .set(self.current_legacy_ips.load(Relaxed) as i64);
+        self.bytes_for_ip
+            .lock()
+            .unwrap()
+            .iter()
+            .for_each(|(ip, bytes)| {
+                self.metric_bytes
+                    .with_label_values(&[&ip.to_string()])
+                    .set(bytes.load(Relaxed) as i64)
+            });
+        self.pixels_for_ip
+            .lock()
+            .unwrap()
+            .iter()
+            .for_each(|(ip, pixels)| {
+                self.metric_pixels
+                    .with_label_values(&[&ip.to_string()])
+                    .set(pixels.load(Relaxed) as i64)
+            });
         self.metric_fps.set(self.fps.load(Relaxed) as i64);
     }
 }
 
 pub fn start_loop(statistics: Arc<Statistics>) {
-    thread::spawn(move || {
-        loop {
-            thread::sleep(Duration::from_secs(1));
-            statistics.update();
-        }
+    thread::spawn(move || loop {
+        thread::sleep(Duration::from_secs(1));
+        statistics.update();
     });
 }
 
 pub fn start_prometheus_server(prometheus_listen_address: &str) {
-    prometheus_exporter::start(
-        prometheus_listen_address.parse()
-            .unwrap_or_else(|_| panic!("Cannot parse prometheus listen address: {}", prometheus_listen_address))
+    prometheus_exporter::start(prometheus_listen_address.parse().unwrap_or_else(|_| {
+        panic!(
+            "Cannot parse prometheus listen address: {}",
+            prometheus_listen_address
         )
-        .expect("Cannot start prometheus exporter");
+    }))
+    .expect("Cannot start prometheus exporter");
     println!("Started Prometheus Exporter on {prometheus_listen_address}");
 }
 

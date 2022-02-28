@@ -12,8 +12,8 @@ use crate::vnc::VncServer;
 mod args;
 mod framebuffer;
 mod network;
-mod vnc;
 mod statistics;
+mod vnc;
 
 fn main() {
     let args = Args::parse();
@@ -27,13 +27,24 @@ fn main() {
     let network_fb = Arc::clone(&fb);
     let network_statistics = Arc::clone(&statistics);
     let network_thread = thread::spawn(move || {
-        let network = Network::new(network_listen_address.as_str(), network_fb, network_statistics);
+        let network = Network::new(
+            network_listen_address.as_str(),
+            network_fb,
+            network_statistics,
+        );
         network.listen();
     });
 
     thread::spawn(move || {
         let vnc_text = format!("{} on {}", args.text, args.listen_address);
-        let vnc_server = VncServer::new(&fb, args.vnc_port, args.fps, &vnc_text, &statistics, &args.font);
+        let vnc_server = VncServer::new(
+            &fb,
+            args.vnc_port,
+            args.fps,
+            &vnc_text,
+            &statistics,
+            &args.font,
+        );
         vnc_server.run();
     });
 

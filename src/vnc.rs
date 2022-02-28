@@ -5,7 +5,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use number_prefix::NumberPrefix;
-use rusttype::{Font, point, Scale};
+use rusttype::{point, Font, Scale};
 use vncserver::*;
 
 use crate::framebuffer::FrameBuffer;
@@ -21,19 +21,29 @@ pub struct VncServer<'a> {
 }
 
 impl<'a> VncServer<'a> {
-    pub fn new(fb: &'a FrameBuffer, port: u32, fps: u32, text: &'a str, statistics: &'a Statistics, font: &'a str) -> Self {
+    pub fn new(
+        fb: &'a FrameBuffer,
+        port: u32,
+        fps: u32,
+        text: &'a str,
+        statistics: &'a Statistics,
+        font: &'a str,
+    ) -> Self {
         let screen = rfb_get_screen(fb.width as i32, fb.height as i32, 8, 3, 4);
         unsafe {
             (*screen).port = port as i32;
             (*screen).ipv6port = port as i32;
         }
 
-        rfb_framebuffer_malloc(screen, (fb.width * fb.height * 4 /* bytes per pixel */) as u64);
+        rfb_framebuffer_malloc(
+            screen,
+            (fb.width * fb.height * 4/* bytes per pixel */) as u64,
+        );
         rfb_init_server(screen);
         rfb_run_event_loop(screen, 1, 1);
 
-        let font_bytes = fs::read(font)
-            .unwrap_or_else(|_| panic!("Cannot read font file {}", font));
+        let font_bytes =
+            fs::read(font).unwrap_or_else(|_| panic!("Cannot read font file {}", font));
         let font = Font::try_from_vec(font_bytes).expect("Error constructing Font");
 
         VncServer {
@@ -58,28 +68,56 @@ impl<'a> VncServer<'a> {
                     self.set_pixel(x, y, self.fb.get(x, y));
                 }
             }
-            self.draw_rect(25, self.fb.height - 100, self.fb.width - 25, self.fb.height - 25, 0x0000_0000);
-            self.draw_text(30, self.fb.height - 100, 32_f32, 0x00ff_ffff, format!(
-                "{}. {} connections by {} IPs ({} legacy)",
-                self.text,
-                self.statistics.current_connections.load(Relaxed),
-                self.statistics.current_ips.load(Relaxed),
-                self.statistics.current_legacy_ips.load(Relaxed)
-            ).as_str());
-            self.draw_text(30, self.fb.height - 70, 32_f32, 0x00ff_ffff, format!(
-                "{} Bit/s ({}B total). {} Pixel/s ({} Pixels total)",
-               format_per_s(self.statistics.bytes_per_s.load(Relaxed) as f64 * 8.0),
-               format(self.statistics.current_bytes.load(Relaxed) as f64),
-               format_per_s(self.statistics.pixels_per_s.load(Relaxed) as f64),
-               format(self.statistics.current_pixels.load(Relaxed) as f64),
-            ).as_str());
-            rfb_mark_rect_as_modified(self.screen, 0, 0, self.fb.width as i32, self.fb.height as i32);
+            self.draw_rect(
+                25,
+                self.fb.height - 100,
+                self.fb.width - 25,
+                self.fb.height - 25,
+                0x0000_0000,
+            );
+            self.draw_text(
+                30,
+                self.fb.height - 100,
+                32_f32,
+                0x00ff_ffff,
+                format!(
+                    "{}. {} connections by {} IPs ({} legacy)",
+                    self.text,
+                    self.statistics.current_connections.load(Relaxed),
+                    self.statistics.current_ips.load(Relaxed),
+                    self.statistics.current_legacy_ips.load(Relaxed)
+                )
+                .as_str(),
+            );
+            self.draw_text(
+                30,
+                self.fb.height - 70,
+                32_f32,
+                0x00ff_ffff,
+                format!(
+                    "{} Bit/s ({}B total). {} Pixel/s ({} Pixels total)",
+                    format_per_s(self.statistics.bytes_per_s.load(Relaxed) as f64 * 8.0),
+                    format(self.statistics.current_bytes.load(Relaxed) as f64),
+                    format_per_s(self.statistics.pixels_per_s.load(Relaxed) as f64),
+                    format(self.statistics.current_pixels.load(Relaxed) as f64),
+                )
+                .as_str(),
+            );
+            rfb_mark_rect_as_modified(
+                self.screen,
+                0,
+                0,
+                self.fb.width as i32,
+                self.fb.height as i32,
+            );
 
             self.statistics.frame.fetch_add(1, Relaxed);
 
             let duration_ms = start.elapsed().as_millis();
             if duration_ms < desired_loop_time_ms {
-                thread::sleep(Duration::from_millis((desired_loop_time_ms - duration_ms) as u64));
+                thread::sleep(Duration::from_millis(
+                    (desired_loop_time_ms - duration_ms) as u64,
+                ));
             }
         }
     }
@@ -98,7 +136,8 @@ impl<'a> VncServer<'a> {
 
         let v_metrics = self.font.v_metrics(scale);
 
-        let glyphs: Vec<_> = self.font
+        let glyphs: Vec<_> = self
+            .font
             .layout(text, scale, point(x as f32, y as f32 + v_metrics.ascent))
             .collect();
 
@@ -135,7 +174,7 @@ fn format_per_s(value: f64) -> String {
 }
 
 fn format(value: f64) -> String {
-    match NumberPrefix::decimal(value ) {
+    match NumberPrefix::decimal(value) {
         NumberPrefix::Prefixed(prefix, n) => format!("{n:.1}{prefix}"),
         NumberPrefix::Standalone(n) => format!("{n}"),
     }
