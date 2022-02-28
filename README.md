@@ -89,6 +89,15 @@ OPTIONS:
 
 You can also build the binary with `cargo build --release`. The binary will be placed at `target/release/breakwater`.
 
+## Compile time features
+Breakwater also has some compile-time features for performance reasons.
+You can get the list of available features by looking at the [Cargo.toml](Cargo.toml).
+To e.g. count the actual pixels colored by every IP enable the future `count_pixels` as follows.
+Please note that this will have a very larger performance penality.
+```bash
+cargo run --release --features count_pixels
+```
+
 # Run in docker container
 This command will start the Pixelflut server in a docker container
 ```bash
