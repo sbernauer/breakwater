@@ -1,6 +1,6 @@
 use core::slice;
 use std::fs;
-use std::sync::atomic::Ordering::Relaxed;
+use std::sync::atomic::Ordering::{AcqRel, Acquire};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -83,9 +83,9 @@ impl<'a> VncServer<'a> {
                 format!(
                     "{}. {} connections by {} IPs ({} legacy)",
                     self.text,
-                    self.statistics.current_connections.load(Relaxed),
-                    self.statistics.current_ips.load(Relaxed),
-                    self.statistics.current_legacy_ips.load(Relaxed)
+                    self.statistics.current_connections.load(Acquire),
+                    self.statistics.current_ips.load(Acquire),
+                    self.statistics.current_legacy_ips.load(Acquire)
                 )
                 .as_str(),
             );
@@ -96,10 +96,10 @@ impl<'a> VncServer<'a> {
                 0x00ff_ffff,
                 format!(
                     "{} Bit/s ({}B total). {} Pixel/s ({} Pixels total)",
-                    format_per_s(self.statistics.bytes_per_s.load(Relaxed) as f64 * 8.0),
-                    format(self.statistics.current_bytes.load(Relaxed) as f64),
-                    format_per_s(self.statistics.pixels_per_s.load(Relaxed) as f64),
-                    format(self.statistics.current_pixels.load(Relaxed) as f64),
+                    format_per_s(self.statistics.bytes_per_s.load(Acquire) as f64 * 8.0),
+                    format(self.statistics.current_bytes.load(Acquire) as f64),
+                    format_per_s(self.statistics.pixels_per_s.load(Acquire) as f64),
+                    format(self.statistics.current_pixels.load(Acquire) as f64),
                 )
                 .as_str(),
             );
@@ -111,7 +111,7 @@ impl<'a> VncServer<'a> {
                 self.fb.height as i32,
             );
 
-            self.statistics.frame.fetch_add(1, Relaxed);
+            self.statistics.frame.fetch_add(1, AcqRel);
 
             let duration_ms = start.elapsed().as_millis();
             if duration_ms < desired_loop_time_ms {
