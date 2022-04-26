@@ -31,6 +31,13 @@ impl<'a> VncServer<'a> {
     ) -> Self {
         let screen = rfb_get_screen(fb.width as i32, fb.height as i32, 8, 3, 4);
         unsafe {
+            // We need to set bitsPerPixel and depth to the correct values,
+            // otherwise some VNC clients (like gstreamer) won't work
+            (*screen).bitsPerPixel = 32;
+            (*screen).depth = 24;
+            (*screen).serverFormat.depth = 24;
+        }
+        unsafe {
             (*screen).port = port as i32;
             (*screen).ipv6port = port as i32;
         }
