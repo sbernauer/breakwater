@@ -61,7 +61,6 @@ impl<'a> Network<'a> {
 fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Arc<Statistics>) {
     let ip = stream.peer_addr().unwrap().ip();
     let mut buffer = [0u8; NETWORK_BUFFER_SIZE];
-    let mut output_written = false;
 
     loop {
         let bytes = match stream.read(&mut buffer) {
@@ -196,7 +195,6 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                                         Ok(_) => (),
                                         Err(_) => continue,
                                     }
-                                    output_written = true;
                                 }
                             }
                         }
@@ -213,7 +211,6 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                             stream
                                 .write_all(format!("SIZE {} {}\n", fb.width, fb.height).as_bytes())
                                 .unwrap();
-                            output_written = true;
                         }
                     }
                 }
@@ -226,15 +223,11 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                         if buffer[i] == b'P' {
                             i += 1;
                             stream.write_all(HELP_TEXT).unwrap();
-                            output_written = true;
                         }
                     }
                 }
             }
             i += 1;
-        }
-        if output_written {
-            stream.flush().unwrap();
         }
     }
 }
