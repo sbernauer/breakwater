@@ -137,6 +137,7 @@ These are the results of different Pixelflut servers:
 |-------------------------------------------------------------------------|----------|--------------------------|-------------------------|
 | [Pixelnuke](https://github.com/defnull/pixelflut/tree/master/pixelnuke) | C        | 1.1 Gbit/s               | 1 Gbit/s                |
 | [Pixelwar](https://github.com/defnull/pixelflut/tree/master/pixelwar)   | Java     | 2.1 Gbit/s               | 1.6 Gbit/s              |
+| [pixelpwnr-server](https://github.com/timvisee/pixelpwnr-server)        | Rust     | 6.3 Gbit/s               | 4.6 Gbit/s             |
 | [Shoreline](https://github.com/TobleMiner/shoreline)                    | C        | 15 Gbit/s                | 12 Gbit/s               |
 | [Breakwater](https://github.com/sbernauer/breakwater)                   | Rust     | 30 Gbit/s                | 22 Gbit/s               |
 
