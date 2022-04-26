@@ -212,10 +212,10 @@ impl Statistics {
             .lock()
             .unwrap()
             .iter()
-            .for_each(|(ip, bytes)| {
+            .for_each(|(ip, connections)| {
                 self.metric_connections
                     .with_label_values(&[&ip.to_string()])
-                    .set(bytes.load(Acquire) as i64)
+                    .set(connections.load(Acquire) as i64)
             });
         self.metric_ips.set(self.current_ips.load(Acquire) as i64);
         self.metric_legacy_ips
