@@ -26,7 +26,7 @@ impl FrameBuffer {
     #[inline(always)]
     pub fn get(&self, x: usize, y: usize) -> u32 {
         if x < self.width && y < self.height {
-            self.slice[x + y * self.width].load(Relaxed)
+            self.slice[x + y * self.width].load(Relaxed) // Using Relaxed here for best performance
         } else {
             0
         }
@@ -35,7 +35,7 @@ impl FrameBuffer {
     #[inline(always)]
     pub fn set(&self, x: usize, y: usize, val: u32) {
         if x < self.width && y < self.height {
-            self.slice[x + y * self.width].store(val, Relaxed);
+            self.slice[x + y * self.width].store(val, Relaxed); // Using Relaxed here for best performance
         }
     }
 }

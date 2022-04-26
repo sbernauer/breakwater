@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::sync::atomic::Ordering::Relaxed;
+use std::sync::atomic::Ordering::{AcqRel, Acquire, Release};
 use std::sync::atomic::{AtomicU32, AtomicU64};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -104,12 +104,12 @@ impl Statistics {
             .entry(ip)
             .or_insert(AtomicU64::new(0));
 
-        connections_for_ip[&ip].fetch_add(1, Relaxed);
+        connections_for_ip[&ip].fetch_add(1, AcqRel);
     }
 
     pub fn dec_connections(&self, ip: IpAddr) {
         let mut connections_for_ip = self.connections_for_ip.lock().unwrap();
-        let remaining_connections_for_ip = connections_for_ip[&ip].fetch_sub(1, Relaxed);
+        let remaining_connections_for_ip = connections_for_ip[&ip].fetch_sub(1, AcqRel);
         if remaining_connections_for_ip <= 1 {
             // We check for 1 instead of 1 as we get the value before decrementing
             connections_for_ip.remove(&ip);
@@ -124,7 +124,7 @@ impl Statistics {
             .lock()
             .unwrap()
             .values()
-            .map(|i| i.load(Relaxed))
+            .map(|i| i.load(Acquire))
             .sum()
     }
 
@@ -141,16 +141,20 @@ impl Statistics {
             .count() as u32
     }
 
+    #[inline(always)]
     pub fn inc_bytes(&self, ip: IpAddr, bytes: u64) {
         // We don't have to check if the entry exists, as inc_connections() will create it for us
         let bytes_for_ip = self.bytes_for_ip.lock().unwrap();
-        bytes_for_ip[&ip].fetch_add(bytes, Relaxed);
+        bytes_for_ip[&ip].fetch_add(bytes, AcqRel);
     }
 
+    /// Expensive!
+    /// Should only be called when feature `count_pixels` is enabled
+    #[inline(always)]
     pub fn inc_pixels(&self, ip: IpAddr) {
         // We don't have to check if the entry exists, as inc_connections() will create it for us
         let pixels_for_ip = self.pixels_for_ip.lock().unwrap();
-        pixels_for_ip[&ip].fetch_add(1, Relaxed);
+        pixels_for_ip[&ip].fetch_add(1, AcqRel);
     }
 
     fn get_bytes(&self) -> u64 {
@@ -158,7 +162,7 @@ impl Statistics {
             .lock()
             .unwrap()
             .values()
-            .map(|i| i.load(Relaxed))
+            .map(|i| i.load(Acquire))
             .sum()
     }
 
@@ -167,22 +171,22 @@ impl Statistics {
             .lock()
             .unwrap()
             .values()
-            .map(|i| i.load(Relaxed))
+            .map(|i| i.load(Acquire))
             .sum()
     }
 
     fn update(&self) {
         // Calculate statistics
         self.current_connections
-            .store(self.get_connections(), Relaxed);
-        self.current_ips.store(self.get_ip_count(), Relaxed);
+            .store(self.get_connections(), Release);
+        self.current_ips.store(self.get_ip_count(), Release);
         self.current_legacy_ips
-            .store(self.get_ip_count_legacy(), Relaxed);
+            .store(self.get_ip_count_legacy(), Release);
 
         let new_bytes = self.get_bytes();
         self.bytes_per_s
-            .store(new_bytes - self.current_bytes.load(Relaxed), Relaxed);
-        self.current_bytes.store(new_bytes, Relaxed);
+            .store(new_bytes - self.current_bytes.load(Acquire), Release);
+        self.current_bytes.store(new_bytes, Release);
 
         if cfg!(not(feature = "count_pixels")) {
             // Do a crude estimation if actual pixel count is not available. Average Pixel is about |PX XXX YYY rrggbb\n| = 18 bytes
@@ -191,17 +195,17 @@ impl Statistics {
                 .lock()
                 .unwrap()
                 .iter()
-                .for_each(|(ip, bytes)| pixels_for_ip[ip].store(bytes.load(Relaxed) / 18, Relaxed));
+                .for_each(|(ip, bytes)| pixels_for_ip[ip].store(bytes.load(Acquire) / 18, Release));
         }
         let new_pixels = self.get_pixels();
         self.pixels_per_s
-            .store(new_pixels - self.current_pixels.load(Relaxed), Relaxed);
-        self.current_pixels.store(new_pixels, Relaxed);
+            .store(new_pixels - self.current_pixels.load(Acquire), Release);
+        self.current_pixels.store(new_pixels, Release);
 
-        let new_frame = self.frame.load(Relaxed);
+        let new_frame = self.frame.load(Acquire);
         self.fps
-            .store(new_frame - self.current_frame.load(Relaxed), Relaxed);
-        self.current_frame.store(new_frame, Relaxed);
+            .store(new_frame - self.current_frame.load(Acquire), Release);
+        self.current_frame.store(new_frame, Release);
 
         // Put statistics into Prometheus metrics
         self.connections_for_ip
@@ -211,11 +215,11 @@ impl Statistics {
             .for_each(|(ip, bytes)| {
                 self.metric_connections
                     .with_label_values(&[&ip.to_string()])
-                    .set(bytes.load(Relaxed) as i64)
+                    .set(bytes.load(Acquire) as i64)
             });
-        self.metric_ips.set(self.current_ips.load(Relaxed) as i64);
+        self.metric_ips.set(self.current_ips.load(Acquire) as i64);
         self.metric_legacy_ips
-            .set(self.current_legacy_ips.load(Relaxed) as i64);
+            .set(self.current_legacy_ips.load(Acquire) as i64);
         self.bytes_for_ip
             .lock()
             .unwrap()
@@ -223,7 +227,7 @@ impl Statistics {
             .for_each(|(ip, bytes)| {
                 self.metric_bytes
                     .with_label_values(&[&ip.to_string()])
-                    .set(bytes.load(Relaxed) as i64)
+                    .set(bytes.load(Acquire) as i64)
             });
         self.pixels_for_ip
             .lock()
@@ -232,9 +236,9 @@ impl Statistics {
             .for_each(|(ip, pixels)| {
                 self.metric_pixels
                     .with_label_values(&[&ip.to_string()])
-                    .set(pixels.load(Relaxed) as i64)
+                    .set(pixels.load(Acquire) as i64)
             });
-        self.metric_fps.set(self.fps.load(Relaxed) as i64);
+        self.metric_fps.set(self.fps.load(Acquire) as i64);
     }
 }
 
