@@ -145,7 +145,7 @@ impl Statistics {
             .lock()
             .unwrap()
             .keys()
-            .filter(|ip| ip.is_ipv4() || (ip.is_ipv6() && is_mapped_to_ipv6(ip)))
+            .filter(|ip| ip.is_ipv4())
             .count() as u32
     }
 
@@ -270,12 +270,4 @@ pub fn start_prometheus_server(prometheus_listen_address: &str) {
     }))
     .expect("Failed to start prometheus exporter");
     println!("Started Prometheus Exporter on {prometheus_listen_address}");
-}
-
-fn is_mapped_to_ipv6(ip: &IpAddr) -> bool {
-    match ip {
-        // 5 * 16 `0` bits, 16 `1` bits, leftover is actual IPv4 addr
-        IpAddr::V6(ip) => matches!(ip.segments(), [0, 0, 0, 0, 0, 0xFFFF, ..]),
-        _ => false,
-    }
 }
