@@ -18,7 +18,7 @@ Commands must be sent newline-separated, for more details see [Pixelflut](https:
 * `SIZE`: Get the size of the drawing surface
 
 # Usage
-The easiest way is to continue with the provided [Ready to use Docker setup](#ready-to-use-docker-setup) below.
+The easiest way is to continue with the provided [Ready to use Docker setup](#run-in-docker-container) below.
 
 If you prefer the manual way (the best performance) you need to have [Rust installed](https://www.rust-lang.org/tools/install).
 You may need to install some additional packages with `sudo apt install pkg-config libvncserver-dev `
@@ -125,7 +125,7 @@ You should now have access to the following services
 | 80   | Grafana                     |
 
 If you visit the Grafana server (user=admin, password=admin) you will have access to dashboards like the dashboard below.
-![Grafana screenshit](docs/images/Screenshot_20220210_215752.png)
+![Grafana screenshot](docs/images/Screenshot_20220210_215752.png)
 
 # Performance
 ## Laptop
