@@ -1,5 +1,5 @@
 use std::io::prelude::*;
-use std::net::TcpListener;
+use std::net::{IpAddr, Ipv4Addr, TcpListener};
 use std::net::TcpStream;
 use std::str;
 use std::sync::Arc;
@@ -45,21 +45,26 @@ impl<'a> Network<'a> {
 
         for stream in listener.incoming() {
             let stream = stream.expect("Failed to get tcp stream from listener");
+            let ip = stream
+                .peer_addr()
+                .expect("Failed to get peer address from tcp connection")
+                .ip();
+            // If you connect via IPv4 you often show up as embedded inside an IPv6 address
+            // Extracting the embedded information here, so we get the real (TM) address
+            let ip = ip_to_canonical(ip);
 
-            self.statistics
-                .inc_connections(stream.peer_addr().expect("Failed to get peer address from tcp connection").ip());
+            self.statistics.inc_connections(ip);
 
             let fb = Arc::clone(&self.fb);
             let statistics = Arc::clone(&self.statistics);
             thread::spawn(move || {
-                handle_connection(stream, fb, statistics);
+                handle_connection(stream, ip, fb, statistics);
             });
         }
     }
 }
 
-fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Arc<Statistics>) {
-    let ip = stream.peer_addr().expect("Failed to get peer address from tcp connection").ip();
+fn handle_connection(mut stream: TcpStream, ip: IpAddr, fb: Arc<FrameBuffer>, statistics: Arc<Statistics>) {
     let mut buffer = [0u8; NETWORK_BUFFER_SIZE];
 
     loop {
@@ -222,7 +227,9 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                         i += 1;
                         if buffer[i] == b'P' {
                             i += 1;
-                            stream.write_all(HELP_TEXT).expect("Failed to write bytes to tcp socket");
+                            stream
+                                .write_all(HELP_TEXT)
+                                .expect("Failed to write bytes to tcp socket");
                         }
                     }
                 }
@@ -238,5 +245,40 @@ fn from_hex_char(char: u8) -> u8 {
         b'a'..=b'f' => char - b'a' + 10,
         b'A'..=b'F' => char - b'A' + 10,
         _ => 0,
+    }
+}
+
+/// TODO: Switch to official ip.to_canonical() method when it is stable. **If** it gets stable sometime ;)
+/// See https://doc.rust-lang.org/std/net/enum.IpAddr.html#method.to_canonical
+fn ip_to_canonical(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V4(_) => ip,
+        IpAddr::V6(v6) => match v6.octets() {
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, a, b, c, d] => {
+                IpAddr::V4(Ipv4Addr::new(a, b, c, d))
+            }
+            _ => ip,
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::network::*;
+    use rstest::rstest;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+    #[rstest]
+    #[case(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), "0.0.0.0")]
+    #[case(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), "127.0.0.1")]
+    #[case(IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0)), "fe80::")]
+    #[case(
+        IpAddr::V6(Ipv6Addr::new(0x2001, 0x0db8, 0x85a3, 0x0000, 0x0000, 0x8a2e, 0x0370, 0x7334)),
+        "2001:db8:85a3::8a2e:370:7334"
+    )]
+    #[case(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0xFFFF, 0, 1)), "0.0.0.1")]
+    #[case(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0xFFFF, 127 << 8, 1)), "127.0.0.1")]
+    fn test_ip_to_string_respect_mapped_v4(#[case] input: IpAddr, #[case] expected: String) {
+        assert_eq!(expected, ip_to_canonical(input).to_string());
     }
 }
