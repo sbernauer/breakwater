@@ -1,6 +1,6 @@
 use core::slice;
 use std::fs;
-use std::sync::atomic::Ordering::{AcqRel, Acquire};
+use std::sync::atomic::Ordering::{AcqRel, Acquire, SeqCst};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -10,6 +10,8 @@ use vncserver::*;
 
 use crate::framebuffer::FrameBuffer;
 use crate::Statistics;
+
+const STATS_HEIGHT: usize = 65;
 
 pub struct VncServer<'a> {
     fb: &'a FrameBuffer,
@@ -69,54 +71,28 @@ impl<'a> VncServer<'a> {
             let start = Instant::now();
 
             for x in 0..self.fb.width {
-                for y in 0..self.fb.height {
-                    // We don't use this as the wrapper method only exists for 16 bit, not for 32 bit :/
-                    // rfb_framebuffer_set_rgb16(vnc_server, x as i32, y as i32, fb.get(x, y));
-                    self.set_pixel(x, y, self.fb.get(x, y));
+                for y in 0..(self.fb.height - STATS_HEIGHT) {
+                    self.set_pixel_unchecked(x, y, self.fb.get(x, y));
                 }
             }
-            self.draw_rect(
-                25,
-                self.fb.height - 100,
-                self.fb.width - 25,
-                self.fb.height - 25,
-                0x0000_0000,
-            );
-            self.draw_text(
-                30,
-                self.fb.height - 100,
-                32_f32,
-                0x00ff_ffff,
-                format!(
-                    "{}. {} connections by {} IPs ({} legacy)",
-                    self.text,
-                    self.statistics.current_connections.load(Acquire),
-                    self.statistics.current_ips.load(Acquire),
-                    self.statistics.current_legacy_ips.load(Acquire)
-                )
-                .as_str(),
-            );
-            self.draw_text(
-                30,
-                self.fb.height - 70,
-                32_f32,
-                0x00ff_ffff,
-                format!(
-                    "{} Bit/s ({}B total). {} Pixel/s ({} Pixels total)",
-                    format_per_s(self.statistics.bytes_per_s.load(Acquire) as f64 * 8.0),
-                    format(self.statistics.current_bytes.load(Acquire) as f64),
-                    format_per_s(self.statistics.pixels_per_s.load(Acquire) as f64),
-                    format(self.statistics.current_pixels.load(Acquire) as f64),
-                )
-                .as_str(),
-            );
+            // Only refresh the drawing surface, not the stats surface
             rfb_mark_rect_as_modified(
                 self.screen,
                 0,
                 0,
                 self.fb.width as i32,
-                self.fb.height as i32,
+                // A line less because the (height - STATS_SURFACE_HEIGHT) belongs to the stats and get refreshed by them
+                (self.fb.height - STATS_HEIGHT - 1) as i32,
             );
+
+            // If the statistics thread has produced new stats it flags this for us so that we can re-draw the stats *once*.
+            // If we draw them every frame we get a flickering and produce unnecessary VNC updates.
+            if !self.statistics.stats_on_screen_are_up_to_date.load(SeqCst) {
+                self.statistics
+                    .stats_on_screen_are_up_to_date
+                    .store(true, SeqCst);
+                self.update_stats();
+            }
 
             self.statistics.frame.fetch_add(1, AcqRel);
 
@@ -129,8 +105,8 @@ impl<'a> VncServer<'a> {
         }
     }
 
-    // We don't check for bounds as the only input is from this struct
-    fn set_pixel(&self, x: usize, y: usize, rgba: u32) {
+    /// Don't check for bounds as input is assumed to be safe for performance reasons
+    fn set_pixel_unchecked(&self, x: usize, y: usize, rgba: u32) {
         unsafe {
             let addr = (*self.screen).frameBuffer as *mut u32;
             let slice: &mut [u32] = slice::from_raw_parts_mut(addr, self.fb.width * self.fb.height);
@@ -138,7 +114,66 @@ impl<'a> VncServer<'a> {
         }
     }
 
-    fn draw_text(&self, x: usize, y: usize, scale: f32, rgba: u32, text: &str) {
+    /// Check for bounds. If out of bound do nothing.
+    fn set_pixel_checked(&self, x: usize, y: usize, rgba: u32) {
+        if x < self.fb.width && y < self.fb.height {
+            unsafe {
+                let addr = (*self.screen).frameBuffer as *mut u32;
+                let slice: &mut [u32] =
+                    slice::from_raw_parts_mut(addr, self.fb.width * self.fb.height);
+                slice[x + self.fb.width * y] = rgba;
+            }
+        }
+    }
+
+    pub fn update_stats(&self) {
+        self.draw_rect(
+            0,
+            self.fb.height - STATS_HEIGHT,
+            self.fb.width,
+            self.fb.height,
+            0x0000_0000,
+        );
+        self.draw_text(
+            25,
+            self.fb.height - 63,
+            27_f32,
+            0x00ff_ffff,
+            format!(
+                "{}. {} connections by {} IPs ({} legacy)",
+                self.text,
+                self.statistics.current_connections.load(Acquire),
+                self.statistics.current_ips.load(Acquire),
+                self.statistics.current_legacy_ips.load(Acquire)
+            )
+            .as_str(),
+        );
+        self.draw_text(
+            25,
+            self.fb.height - 37,
+            27_f32,
+            0x00ff_ffff,
+            format!(
+                "{} Bit/s ({}B total). {} Pixel/s ({} Pixels total)",
+                format_per_s(self.statistics.bytes_per_s.load(Acquire) as f64 * 8.0),
+                format(self.statistics.current_bytes.load(Acquire) as f64),
+                format_per_s(self.statistics.pixels_per_s.load(Acquire) as f64),
+                format(self.statistics.current_pixels.load(Acquire) as f64),
+            )
+            .as_str(),
+        );
+
+        // Only refresh the stats surface, not the drawing surface
+        rfb_mark_rect_as_modified(
+            self.screen,
+            0,
+            (self.fb.height - STATS_HEIGHT) as i32,
+            self.fb.width as i32,
+            self.fb.height as i32,
+        );
+    }
+
+    fn draw_text(&self, x: usize, y: usize, scale: f32, text_rgba: u32, text: &str) {
         let scale = Scale::uniform(scale);
 
         let v_metrics = self.font.v_metrics(scale);
@@ -152,11 +187,10 @@ impl<'a> VncServer<'a> {
             if let Some(bounding_box) = glyph.pixel_bounding_box() {
                 glyph.draw(|x, y, v| {
                     if v > 0.5 {
-                        // TODO Check for bounds
-                        self.set_pixel(
+                        self.set_pixel_checked(
                             x as usize + bounding_box.min.x as usize,
                             y as usize + bounding_box.min.y as usize,
-                            rgba,
+                            text_rgba,
                         )
                     }
                 });
@@ -167,7 +201,7 @@ impl<'a> VncServer<'a> {
     fn draw_rect(&self, start_x: usize, start_y: usize, end_x: usize, end_y: usize, rgba: u32) {
         for x in start_x..end_x {
             for y in start_y..end_y {
-                self.set_pixel(x, y, rgba);
+                self.set_pixel_checked(x, y, rgba);
             }
         }
     }
