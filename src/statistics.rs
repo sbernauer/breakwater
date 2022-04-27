@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::atomic::Ordering::{AcqRel, Acquire, Release};
-use std::sync::atomic::{AtomicU32, AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -16,6 +16,11 @@ pub struct Statistics {
     pixels_for_ip: Mutex<HashMap<IpAddr, AtomicU64>>,
     pub frame: AtomicU64,
 
+    // Whether the current stats have been printed to the screen.
+    // With this we can only draw the stats one - directly after updating them - and not every frame
+    // By doing so we avoid flickering stats and don't need to mark the rect as modified every frame besides nothing having changed
+    pub stats_on_screen_are_up_to_date: AtomicBool,
+
     // Variables to hold the statistics at the last time gathered
     pub current_connections: AtomicU32,
     pub current_ips: AtomicU32,
@@ -28,6 +33,7 @@ pub struct Statistics {
     pub pixels_per_s: AtomicU64,
     pub fps: AtomicU64,
 
+    // Prometheus metrics
     metric_connections: GenericGaugeVec<AtomicI64>,
     metric_ips: GenericGauge<AtomicI64>,
     metric_legacy_ips: GenericGauge<AtomicI64>,
@@ -43,6 +49,8 @@ impl Statistics {
             bytes_for_ip: Mutex::new(HashMap::new()),
             pixels_for_ip: Mutex::new(HashMap::new()),
             frame: AtomicU64::new(0),
+
+            stats_on_screen_are_up_to_date: AtomicBool::new(false),
 
             current_connections: AtomicU32::new(0),
             current_ips: AtomicU32::new(0),
@@ -239,6 +247,10 @@ impl Statistics {
                     .set(pixels.load(Acquire) as i64)
             });
         self.metric_fps.set(self.fps.load(Acquire) as i64);
+
+        // Force re-draw of stats on screen
+        self.stats_on_screen_are_up_to_date
+            .store(false, Ordering::SeqCst);
     }
 }
 
