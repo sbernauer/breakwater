@@ -44,5 +44,5 @@ fn main() {
         vnc_server.run();
     });
 
-    network_thread.join().unwrap();
+    network_thread.join().expect("Failed to join network thread");
 }

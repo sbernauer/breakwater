@@ -37,17 +37,17 @@ impl<'a> Network<'a> {
 
     pub fn listen(&self) {
         let listener = TcpListener::bind(self.listen_address)
-            .unwrap_or_else(|_| panic!("Failed to listen on {}", self.listen_address));
+            .unwrap_or_else(|err| panic!("Failed to listen on {}: {}", self.listen_address, err));
         println!(
             "Listening for Pixelflut connections on {}",
             self.listen_address
         );
 
         for stream in listener.incoming() {
-            let stream = stream.unwrap();
+            let stream = stream.expect("Failed to get tcp stream from listener");
 
             self.statistics
-                .inc_connections(stream.peer_addr().unwrap().ip());
+                .inc_connections(stream.peer_addr().expect("Failed to get peer address from tcp connection").ip());
 
             let fb = Arc::clone(&self.fb);
             let statistics = Arc::clone(&self.statistics);
@@ -59,7 +59,7 @@ impl<'a> Network<'a> {
 }
 
 fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Arc<Statistics>) {
-    let ip = stream.peer_addr().unwrap().ip();
+    let ip = stream.peer_addr().expect("Failed to get peer address from tcp connection").ip();
     let mut buffer = [0u8; NETWORK_BUFFER_SIZE];
 
     loop {
@@ -210,7 +210,7 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                             i += 1;
                             stream
                                 .write_all(format!("SIZE {} {}\n", fb.width, fb.height).as_bytes())
-                                .unwrap();
+                                .expect("Failed to write bytes to tcp socket");
                         }
                     }
                 }
@@ -222,7 +222,7 @@ fn handle_connection(mut stream: TcpStream, fb: Arc<FrameBuffer>, statistics: Ar
                         i += 1;
                         if buffer[i] == b'P' {
                             i += 1;
-                            stream.write_all(HELP_TEXT).unwrap();
+                            stream.write_all(HELP_TEXT).expect("Failed to write bytes to tcp socket");
                         }
                     }
                 }
