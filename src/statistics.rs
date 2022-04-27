@@ -264,11 +264,11 @@ pub fn start_loop(statistics: Arc<Statistics>) {
 pub fn start_prometheus_server(prometheus_listen_address: &str) {
     prometheus_exporter::start(prometheus_listen_address.parse().unwrap_or_else(|_| {
         panic!(
-            "Cannot parse prometheus listen address: {}",
+            "Failed to parse prometheus listen address: {}",
             prometheus_listen_address
         )
     }))
-    .expect("Cannot start prometheus exporter");
+    .expect("Failed to start prometheus exporter");
     println!("Started Prometheus Exporter on {prometheus_listen_address}");
 }
 
