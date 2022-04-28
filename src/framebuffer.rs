@@ -33,9 +33,9 @@ impl FrameBuffer {
     }
 
     #[inline(always)]
-    pub fn set(&self, x: usize, y: usize, val: u32) {
+    pub fn set(&self, x: usize, y: usize, rgba: u32) {
         if x < self.width && y < self.height {
-            self.slice[x + y * self.width].store(val, Relaxed); // Using Relaxed here for best performance
+            self.slice[x + y * self.width].store(rgba, Relaxed); // Using Relaxed here for best performance
         }
     }
 }

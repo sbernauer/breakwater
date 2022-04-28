@@ -13,6 +13,7 @@ mod args;
 mod framebuffer;
 mod network;
 mod statistics;
+mod test;
 mod vnc;
 
 fn main() {
