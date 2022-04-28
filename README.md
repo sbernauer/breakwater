@@ -172,9 +172,4 @@ done
 
 
 # TODOs
-* Implement proper ring buffer or at least complete parsing the current buffer.
-Currently, if the buffer will be filled with all - 128,000 bytes - the last 21 bytes are skipped so that we don't need to check for buffer boundaries
-This is done for performance reasons. This will cause 1 of about 6,100 commands to be dropped (like 0,016%).
-Ideally we would save us the remaining few bytes and add them to beginning of the next processing loop.
-* Implement Alpha channel feature. For performance reasons there should be a compile-time switch (similar to `#ifdef`).
-Actually haven't checked if Rust supports this ;)
+* Implement Alpha channel feature. For performance reasons there should be a compile-time switch (similar to `#ifdef` in C)

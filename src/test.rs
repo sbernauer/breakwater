@@ -27,12 +27,8 @@ mod test {
     }
 
     #[fixture]
-    fn ip(statistics: Arc<Statistics>) -> IpAddr {
-        let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        // We need to increase the connections for this IP, as this normally would be handled by code that is not part of this test
-        // If we won't increase the connections, the HashMap will be missing the keys
-        statistics.inc_connections(ip);
-        ip
+    fn ip() -> IpAddr {
+        IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))
     }
 
     #[rstest]
@@ -92,24 +88,63 @@ mod test {
     }
 
     #[rstest]
-    fn test_drawing_whole_screen(ip: IpAddr, fb: Arc<FrameBuffer>, statistics: Arc<Statistics>) {
+    #[case(5, 5, 0, 0)]
+    #[case(6, 6, 0, 0)]
+    #[case(7, 7, 0, 0)]
+    #[case(8, 8, 0, 0)]
+    #[case(9, 9, 0, 0)]
+    #[case(10, 10, 0, 0)]
+    #[case(10, 10, 100, 200)]
+    #[case(10, 10, 510, 520)]
+    #[case(100, 100, 0, 0)]
+    #[case(100, 100, 300, 400)]
+    #[case(479, 361, 721, 391)]
+    #[case(500, 500, 0, 0)]
+    #[case(500, 500, 300, 400)]
+    #[case(fb().width, fb().height, 0, 0)]
+    #[case(fb().width - 1, fb().height - 1, 1, 1)]
+    fn test_drawing_rect(
+        #[case] width: usize,
+        #[case] height: usize,
+        #[case] offset_x: usize,
+        #[case] offset_y: usize,
+        ip: IpAddr,
+        fb: Arc<FrameBuffer>,
+        statistics: Arc<Statistics>,
+    ) {
         let mut color: u32 = 0;
-        let mut input = String::new();
-        let mut output = String::new();
+        let mut fill_commands = String::new();
+        let mut read_commands = String::new();
+        let mut combined_commands = String::new();
+        let mut combined_commands_expected = String::new();
 
-        // TODO: Iterate over whole drawing surface when handle_connection implements a kind of ring buffer
-        for x in 0..50 {
-            for y in 0..50 {
-                input += format!("PX {x} {y} {color:06x}\nPX {x} {y}\n").as_str();
-                output += format!("PX {x} {y} {color:06x}\n").as_str();
+        for x in offset_x..(offset_x + width) {
+            for y in offset_y..(offset_y + height) {
+                fill_commands += &format!("PX {x} {y} {color:06x}\n");
+                read_commands += &format!("PX {x} {y}\n");
+
+                color += 1; // Use another color for the next testcase
+                combined_commands += &format!("PX {x} {y} {color:06x}\nPX {x} {y}\n");
+                combined_commands_expected += &format!("PX {x} {y} {color:06x}\n");
+
                 color += 1;
             }
         }
 
-        let mut stream = MockTcpStream::from_input(&input);
-        network::handle_connection(&mut stream, ip, fb, statistics);
+        // Color the pixels
+        let mut stream = MockTcpStream::from_input(&fill_commands);
+        network::handle_connection(&mut stream, ip, Arc::clone(&fb), Arc::clone(&statistics));
+        assert_eq!("", stream.get_output());
 
-        assert_eq!(output, stream.get_output());
+        // Read the pixels again
+        let mut stream = MockTcpStream::from_input(&read_commands);
+        network::handle_connection(&mut stream, ip, Arc::clone(&fb), Arc::clone(&statistics));
+        assert_eq!(fill_commands, stream.get_output());
+
+        // We can also do coloring and reading in a single connection
+        let mut stream = MockTcpStream::from_input(&combined_commands);
+        network::handle_connection(&mut stream, ip, Arc::clone(&fb), Arc::clone(&statistics));
+        assert_eq!(combined_commands_expected, stream.get_output());
     }
 
     #[derive(Debug)]

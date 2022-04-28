@@ -7,9 +7,9 @@ use std::thread;
 use crate::framebuffer::FrameBuffer;
 use crate::Statistics;
 
-const NETWORK_BUFFER_SIZE: usize = 128_000;
+const NETWORK_BUFFER_SIZE: usize = 256_000;
 pub const HELP_TEXT: &[u8] = "\
-Pixelflut server powered by Breakwater https://github.com/sbernauer/breakwater
+Pixelflut server powered by breakwater https://github.com/sbernauer/breakwater
 Available commands:
 HELP: Show this help
 PX x y rrggbb: Color the pixel (x,y) with the given hexadecimal color
@@ -70,9 +70,16 @@ pub fn handle_connection(
     statistics: Arc<Statistics>,
 ) {
     let mut buffer = [0u8; NETWORK_BUFFER_SIZE];
+    // Number bytes left over **on the first bytes of the buffer** from the previous loop iteration
+    let mut leftover_bytes_in_buffer = 0;
+
+    let mut x: usize;
+    let mut y: usize;
 
     loop {
-        let bytes = match stream.read(&mut buffer) {
+        // Fill the buffer up with new data from the socket
+        // If there are any bytes left over from the previous loop iteration leave them as is and but the new data behind
+        let bytes = match stream.read(&mut buffer[leftover_bytes_in_buffer..]) {
             Ok(bytes) => bytes,
             Err(_) => {
                 statistics.dec_connections(ip);
@@ -81,17 +88,26 @@ pub fn handle_connection(
         };
 
         statistics.inc_bytes(ip, bytes as u64);
+
+        let mut loop_end = leftover_bytes_in_buffer + bytes;
         if bytes == 0 {
-            statistics.dec_connections(ip);
-            break;
-        }
+            if leftover_bytes_in_buffer == 0 {
+                // We read no data and the previous loop did consume all data
+                // Nothing to do here, closing connection
+                statistics.dec_connections(ip);
+                break;
+            }
 
-        let mut x: usize;
-        let mut y: usize;
-
-        let mut loop_end = bytes;
-        if bytes + LOOP_LOOKAHEAD >= NETWORK_BUFFER_SIZE {
-            loop_end -= LOOP_LOOKAHEAD; // We need to subtract XXX as the for loop can advance by max XXX bytes
+            // No new data from socket, read to the end and everything should be fine
+            leftover_bytes_in_buffer = 0;
+        } else {
+            // Read some data, process it
+            if loop_end >= NETWORK_BUFFER_SIZE {
+                leftover_bytes_in_buffer = LOOP_LOOKAHEAD;
+                loop_end -= leftover_bytes_in_buffer;
+            } else {
+                leftover_bytes_in_buffer = 0;
+            }
         }
 
         let mut i = 0; // We can't use a for loop here because Rust don't lets use skip characters by incrementing i
@@ -241,6 +257,11 @@ pub fn handle_connection(
                 }
             }
             i += 1;
+        }
+
+        if leftover_bytes_in_buffer > 0 {
+            // We need to move the leftover bytes to the beginning of the buffer so that the next loop iteration con work on them
+            buffer.copy_within(NETWORK_BUFFER_SIZE - leftover_bytes_in_buffer.., 0);
         }
     }
 }

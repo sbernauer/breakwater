@@ -96,34 +96,27 @@ impl Statistics {
     }
 
     pub fn inc_connections(&self, ip: IpAddr) {
-        // Initialize connection counter
-        let mut connections_for_ip = self.connections_for_ip.lock().unwrap();
-        connections_for_ip.entry(ip).or_insert(AtomicU32::new(0));
-
-        // Initialize counters for ip
-        self.bytes_for_ip
+        self.connections_for_ip
             .lock()
             .unwrap()
             .entry(ip)
-            .or_insert(AtomicU64::new(0));
-        self.pixels_for_ip
-            .lock()
-            .unwrap()
-            .entry(ip)
-            .or_insert(AtomicU64::new(0));
-
-        connections_for_ip[&ip].fetch_add(1, AcqRel);
+            .or_insert(AtomicU32::new(0))
+            .fetch_add(1, AcqRel);
     }
 
     pub fn dec_connections(&self, ip: IpAddr) {
         let mut connections_for_ip = self.connections_for_ip.lock().unwrap();
-        let remaining_connections_for_ip = connections_for_ip[&ip].fetch_sub(1, AcqRel);
-        if remaining_connections_for_ip <= 1 {
-            // We check for 1 instead of 1 as we get the value before decrementing
-            connections_for_ip.remove(&ip);
-            self.metric_connections
-                .remove_label_values(&[&ip.to_string()])
-                .ok();
+        match connections_for_ip.get(&ip) {
+            None => {}
+            Some(connections) => {
+                let previous_connections_for_ip = connections.fetch_sub(1, AcqRel);
+                if previous_connections_for_ip <= 1 {
+                    connections_for_ip.remove(&ip);
+                    self.metric_connections
+                        .remove_label_values(&[&ip.to_string()])
+                        .ok();
+                }
+            }
         }
     }
 
@@ -151,18 +144,24 @@ impl Statistics {
 
     #[inline(always)]
     pub fn inc_bytes(&self, ip: IpAddr, bytes: u64) {
-        // We don't have to check if the entry exists, as inc_connections() will create it for us
-        let bytes_for_ip = self.bytes_for_ip.lock().unwrap();
-        bytes_for_ip[&ip].fetch_add(bytes, AcqRel);
+        self.bytes_for_ip
+            .lock()
+            .unwrap()
+            .entry(ip)
+            .or_insert(AtomicU64::new(0))
+            .fetch_add(bytes, AcqRel);
     }
 
     /// Expensive!
     /// Should only be called when feature `count_pixels` is enabled
     #[inline(always)]
     pub fn inc_pixels(&self, ip: IpAddr) {
-        // We don't have to check if the entry exists, as inc_connections() will create it for us
-        let pixels_for_ip = self.pixels_for_ip.lock().unwrap();
-        pixels_for_ip[&ip].fetch_add(1, AcqRel);
+        self.pixels_for_ip
+            .lock()
+            .unwrap()
+            .entry(ip)
+            .or_insert(AtomicU64::new(0))
+            .fetch_add(1, AcqRel);
     }
 
     fn get_bytes(&self) -> u64 {
@@ -198,12 +197,18 @@ impl Statistics {
 
         if cfg!(not(feature = "count_pixels")) {
             // Do a crude estimation if actual pixel count is not available. Average Pixel is about |PX XXX YYY rrggbb\n| = 18 bytes
-            let pixels_for_ip = self.pixels_for_ip.lock().unwrap();
             self.bytes_for_ip
                 .lock()
                 .unwrap()
                 .iter()
-                .for_each(|(ip, bytes)| pixels_for_ip[ip].store(bytes.load(Acquire) / 18, Release));
+                .for_each(|(ip, bytes)| {
+                    self.pixels_for_ip
+                        .lock()
+                        .unwrap()
+                        .entry(*ip)
+                        .or_insert(AtomicU64::new(0))
+                        .store(bytes.load(Acquire) / 18, Release)
+                });
         }
         let new_pixels = self.get_pixels();
         self.pixels_per_s
