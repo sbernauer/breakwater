@@ -39,8 +39,10 @@ mod test {
     #[case("SIZE", "SIZE 1920 1080\n")]
     #[case("SIZE\n", "SIZE 1920 1080\n")]
     #[case("SIZE\nSIZE\n", "SIZE 1920 1080\nSIZE 1920 1080\n")]
+    #[case("SIZE", "SIZE 1920 1080\n")]
     #[case("HELP", str::from_utf8(HELP_TEXT).unwrap())]
     #[case("HELP\n", str::from_utf8(HELP_TEXT).unwrap())]
+    #[case("bla bla bla\nSIZE\nblub\nbla", "SIZE 1920 1080\n")]
     fn test_correct_responses_to_general_commands(
         #[case] input: &str,
         #[case] expected: &str,
@@ -68,7 +70,11 @@ mod test {
     #[case("PX 1 0 abcdefaa\nPX 1 0\n", "PX 1 0 abcdef\n")]
     // Tests invalid bounds
     #[case("PX 9999 0 abcdef\nPX 9999 0\n", "")] // Parsable but outside screen size
-    #[case("PX 99999 0 abcdef\nPX 99999 0\n", "")] // Not even parsable because to many digits
+    #[case("PX 0 9999 abcdef\nPX 9999 0\n", "")]
+    #[case("PX 9999 9999 abcdef\nPX 9999 9999\n", "")]
+    #[case("PX 99999 0 abcdef\nPX 0 99999\n", "")] // Not even parsable because to many digits
+    #[case("PX 0 99999 abcdef\nPX 0 99999\n", "")]
+    #[case("PX 99999 99999 abcdef\nPX 99999 99999\n", "")]
     // Test invalid inputs
     #[case("PX 0 abcdef\nPX 0 0\n", "PX 0 0 000000\n")]
     #[case("PX 0 1 2 abcdef\nPX 0 0\n", "PX 0 0 000000\n")]
