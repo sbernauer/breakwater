@@ -196,8 +196,7 @@ pub fn handle_connection(
                                     }
 
                                     // End of command to read Pixel value
-                                    if buffer[i] == b'\n' {
-                                        // i += 1;
+                                    if buffer[i] == b'\n' && x < fb.width && y < fb.height {
                                         match stream.write_all(
                                             format!(
                                                 "PX {x} {y} {:06x}\n",
