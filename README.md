@@ -2,6 +2,7 @@
 breakwater is a very fast [Pixelflut](https://wiki.cccgoe.de/wiki/Pixelflut) server written in Rust. It is heavily inspired by [Shoreline](https://github.com/TobleMiner/shoreline).
 
 It claims to be **the fastest Pixelflut server in existence** - at least at the time of writing 02/2022.
+![breakwater logo](docs/images/breakwater.png)
 
 # Features
 1. Accepts Pixelflut commands
@@ -177,4 +178,3 @@ This is done for performance reasons. This will cause 1 of about 6,100 commands 
 Ideally we would save us the remaining few bytes and add them to beginning of the next processing loop.
 * Implement Alpha channel feature. For performance reasons there should be a compile-time switch (similar to `#ifdef`).
 Actually haven't checked if Rust supports this ;)
-* Finish Docker compose setup with VncMux
