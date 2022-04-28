@@ -11,7 +11,7 @@ use vncserver::*;
 use crate::framebuffer::FrameBuffer;
 use crate::Statistics;
 
-const STATS_HEIGHT: usize = 65;
+const STATS_HEIGHT: usize = 35;
 
 pub struct VncServer<'a> {
     fb: &'a FrameBuffer,
@@ -135,30 +135,18 @@ impl<'a> VncServer<'a> {
             0x0000_0000,
         );
         self.draw_text(
-            25,
-            self.fb.height - 63,
+            20,
+            self.fb.height - STATS_HEIGHT + 2,
             27_f32,
             0x00ff_ffff,
             format!(
-                "{}. {} connections by {} IPs ({} legacy)",
+                "{}. {} Bit/s ({}B total) by {} connections from {} IPs ({} legacy)",
                 self.text,
-                self.statistics.current_connections.load(Acquire),
-                self.statistics.current_ips.load(Acquire),
-                self.statistics.current_legacy_ips.load(Acquire)
-            )
-            .as_str(),
-        );
-        self.draw_text(
-            25,
-            self.fb.height - 37,
-            27_f32,
-            0x00ff_ffff,
-            format!(
-                "{} Bit/s ({}B total). {} Pixel/s ({} Pixels total)",
                 format_per_s(self.statistics.bytes_per_s.load(Acquire) as f64 * 8.0),
                 format(self.statistics.current_bytes.load(Acquire) as f64),
-                format_per_s(self.statistics.pixels_per_s.load(Acquire) as f64),
-                format(self.statistics.current_pixels.load(Acquire) as f64),
+                self.statistics.current_connections.load(Acquire),
+                self.statistics.current_ips.load(Acquire),
+                self.statistics.current_legacy_ips.load(Acquire),
             )
             .as_str(),
         );

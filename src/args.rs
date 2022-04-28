@@ -26,7 +26,7 @@ pub struct Args {
 
     /// Text to display on the screen.
     /// The text will be followed by "on <listen_address>"
-    #[clap(short, long, default_value = "Breakwater Pixelflut server")]
+    #[clap(short, long, default_value = "Pixelflut server (breakwater)")]
     pub text: String,
 
     /// The font used to render the text on the screen.
