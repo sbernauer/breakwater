@@ -13,6 +13,7 @@ mod args;
 mod framebuffer;
 mod network;
 mod statistics;
+#[cfg(test)]
 mod test;
 mod vnc;
 
