@@ -3,19 +3,11 @@ use std::thread;
 
 use clap::Parser;
 
-use crate::args::Args;
-use crate::framebuffer::FrameBuffer;
-use crate::network::Network;
-use crate::statistics::Statistics;
-use crate::vnc::VncServer;
-
-mod args;
-mod framebuffer;
-mod network;
-mod statistics;
-#[cfg(test)]
-mod test;
-mod vnc;
+use breakwater::args::Args;
+use breakwater::framebuffer::FrameBuffer;
+use breakwater::network::Network;
+use breakwater::statistics::{self, Statistics};
+use breakwater::vnc::VncServer;
 
 fn main() {
     let args = Args::parse();

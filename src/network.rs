@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::thread;
 
 use crate::framebuffer::FrameBuffer;
-use crate::Statistics;
+use crate::statistics::Statistics;
 
 const NETWORK_BUFFER_SIZE: usize = 256_000;
 pub const HELP_TEXT: &[u8] = "\

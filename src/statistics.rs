@@ -259,6 +259,12 @@ impl Statistics {
     }
 }
 
+impl Default for Statistics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub fn start_loop(statistics: Arc<Statistics>) {
     thread::spawn(move || loop {
         thread::sleep(Duration::from_secs(1));

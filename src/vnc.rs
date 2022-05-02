@@ -9,7 +9,7 @@ use rusttype::{point, Font, Scale};
 use vncserver::*;
 
 use crate::framebuffer::FrameBuffer;
-use crate::Statistics;
+use crate::statistics::Statistics;
 
 const STATS_HEIGHT: usize = 35;
 

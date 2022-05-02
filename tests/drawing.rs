@@ -1,5 +1,6 @@
-use crate::network::{self, HELP_TEXT};
-use crate::{FrameBuffer, Statistics};
+use breakwater::framebuffer::FrameBuffer;
+use breakwater::network;
+use breakwater::statistics::Statistics;
 use clap::lazy_static::lazy_static;
 use rstest::{fixture, rstest};
 use std::cmp::min;
@@ -38,8 +39,8 @@ fn ip() -> IpAddr {
 #[case("SIZE\n", "SIZE 1920 1080\n")]
 #[case("SIZE\nSIZE\n", "SIZE 1920 1080\nSIZE 1920 1080\n")]
 #[case("SIZE", "SIZE 1920 1080\n")]
-#[case("HELP", str::from_utf8(HELP_TEXT).unwrap())]
-#[case("HELP\n", str::from_utf8(HELP_TEXT).unwrap())]
+#[case("HELP", str::from_utf8(breakwater::network::HELP_TEXT).unwrap())]
+#[case("HELP\n", str::from_utf8(breakwater::network::HELP_TEXT).unwrap())]
 #[case("bla bla bla\nSIZE\nblub\nbla", "SIZE 1920 1080\n")]
 fn test_correct_responses_to_general_commands(
     #[case] input: &str,
@@ -131,7 +132,7 @@ fn test_drawing_rect(
                 fill_commands += &format!("PX {x} {y} {color:06x}\n");
                 read_commands += &format!("PX {x} {y}\n");
 
-                color += 1; // Use another color for the next testcase
+                color += 1; // Use another color for the next test case
                 combined_commands += &format!("PX {x} {y} {color:06x}\nPX {x} {y}\n");
                 combined_commands_expected += &format!("PX {x} {y} {color:06x}\n");
 
