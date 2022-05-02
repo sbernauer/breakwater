@@ -1,10 +1,11 @@
+mod common;
+
 use breakwater::framebuffer::FrameBuffer;
 use breakwater::network;
 use breakwater::statistics::Statistics;
 use clap::lazy_static::lazy_static;
+use common::MockTcpStream;
 use rstest::{fixture, rstest};
-use std::cmp::min;
-use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr};
 use std::str;
 use std::string::String;
@@ -164,44 +165,4 @@ fn test_drawing_rect(
     let mut stream = MockTcpStream::from_input(&read_other_pixels_commands);
     network::handle_connection(&mut stream, ip, Arc::clone(&fb), Arc::clone(&statistics));
     assert_eq!(read_other_pixels_commands_expected, stream.get_output());
-}
-
-#[derive(Debug)]
-struct MockTcpStream {
-    read_data: Vec<u8>,
-    write_data: Vec<u8>,
-}
-
-impl MockTcpStream {
-    fn from_input(input: &str) -> Self {
-        MockTcpStream {
-            read_data: input.as_bytes().to_vec(),
-            write_data: Vec::new(),
-        }
-    }
-
-    fn get_output(self) -> String {
-        String::from_utf8(self.write_data).unwrap()
-    }
-}
-
-impl Read for MockTcpStream {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let size: usize = min(self.read_data.len(), buf.len());
-        buf[..size].copy_from_slice(&self.read_data[..size]);
-
-        self.read_data.drain(..size);
-        Ok(size)
-    }
-}
-
-impl Write for MockTcpStream {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.write_data.extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
 }
