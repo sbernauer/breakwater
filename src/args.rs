@@ -38,4 +38,18 @@ pub struct Args {
     /// The default value will listen on all interfaces for IPv4 and v6 packets.
     #[clap(short, long, default_value = "[::]:9100")]
     pub prometheus_listen_address: String,
+
+    /// Save file where statistics are periodically saved.
+    /// The save file will be read during startup and statistics are restored.
+    /// To reset the statistics simply remove the file.
+    #[clap(long, default_value = "statistics.json")]
+    pub statistics_save_file: String,
+
+    /// Interval (in seconds) in which the save file should be updated.
+    #[clap(long, default_value = "10")]
+    pub statistics_save_interval_s: u64,
+
+    /// Disable periodical saving of statistics into save file.
+    #[clap(long)]
+    pub disable_statistics_save_file: bool,
 }

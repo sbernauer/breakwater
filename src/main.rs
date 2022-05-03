@@ -13,8 +13,14 @@ fn main() {
     let args = Args::parse();
 
     let fb = Arc::new(FrameBuffer::new(args.width, args.height));
-    let statistics = Arc::new(Statistics::new());
-    statistics::start_loop(Arc::clone(&statistics));
+    let statistics = if args.disable_statistics_save_file {
+        Arc::new(Statistics::new(None))
+    } else {
+        Arc::new(Statistics::from_save_file_or_new(
+            &args.statistics_save_file,
+        ))
+    };
+    statistics::start_loop(Arc::clone(&statistics), args.statistics_save_interval_s);
     statistics::start_prometheus_server(args.prometheus_listen_address.as_str());
 
     let network_listen_address = args.listen_address.clone();

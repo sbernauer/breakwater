@@ -12,7 +12,7 @@ use std::string::String;
 use std::sync::Arc;
 
 lazy_static! {
-    pub static ref STATISTICS: Arc<Statistics> = Arc::new(Statistics::new());
+    pub static ref STATISTICS: Arc<Statistics> = Arc::new(Statistics::new(None));
 }
 
 #[fixture]
