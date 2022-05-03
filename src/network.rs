@@ -276,7 +276,7 @@ fn from_hex_char(char: u8) -> u8 {
 }
 
 /// TODO: Switch to official ip.to_canonical() method when it is stable. **If** it gets stable sometime ;)
-/// See https://doc.rust-lang.org/std/net/enum.IpAddr.html#method.to_canonical
+/// See <https://doc.rust-lang.org/std/net/enum.IpAddr.html#method.to_canonical>
 fn ip_to_canonical(ip: IpAddr) -> IpAddr {
     match ip {
         IpAddr::V4(_) => ip,
