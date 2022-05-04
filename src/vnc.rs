@@ -51,9 +51,20 @@ impl<'a> VncServer<'a> {
         rfb_init_server(screen);
         rfb_run_event_loop(screen, 1, 1);
 
-        let font_bytes =
-            fs::read(font).unwrap_or_else(|err| panic!("Cannot read font file {}: {}", font, err));
-        let font = Font::try_from_vec(font_bytes).expect("Error constructing Font");
+        let font = match font {
+            // We ship our own copy of Arial.ttf, so that users don't need to download and provide it
+            "Arial.ttf" => {
+                let font_bytes = include_bytes!("../Arial.ttf");
+                Font::try_from_bytes(font_bytes)
+                    .unwrap_or_else(|| panic!("Failed to construct Font from Arial.ttf"))
+            }
+            _ => {
+                let font_bytes = fs::read(font)
+                    .unwrap_or_else(|err| panic!("Failed to read font file {font}: {err}"));
+                Font::try_from_vec(font_bytes)
+                    .unwrap_or_else(|| panic!("Failed to construct Font from font file {font}"))
+            }
+        };
 
         VncServer {
             fb,

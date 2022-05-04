@@ -31,6 +31,7 @@ pub struct Args {
 
     /// The font used to render the text on the screen.
     /// Should be a ttf file.
+    /// If you use the default value a copy that ships with breakwater will be used - no need to download and provide the font.
     #[clap(long, default_value = "Arial.ttf")]
     pub font: String,
 
