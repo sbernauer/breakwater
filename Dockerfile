@@ -1,8 +1,9 @@
-FROM rust:1.58.0 as builder
+FROM rust:1.60.0 as builder
 
 WORKDIR /breakwater
 COPY src/ src/
 COPY Cargo.toml .
+COPY Arial.ttf .
 
 RUN apt-get update && \
     apt-get install -y clang libvncserver-dev && \
@@ -14,5 +15,5 @@ RUN apt-get update && \
     apt-get install -y libvncserver1 && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=builder /usr/local/cargo/bin/breakwater /usr/local/bin/breakwater
-COPY Arial.ttf .
+
 ENTRYPOINT ["breakwater"]
