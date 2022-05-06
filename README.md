@@ -102,11 +102,11 @@ cargo run --release --features count_pixels
 # Run in docker container
 This command will start the Pixelflut server in a docker container
 ```bash
-docker run -p 1234:1234 -p 5900:5900 -p 9100:9100 sbernauer/breakwater # --help
+docker run --rm -p 1234:1234 -p 5900:5900 -p 9100:9100 sbernauer/breakwater # --help
 ```
 The following command stops the server again (if there are some problems with SIGINT)
 ```bash
-docker ps -q --filter ancestor=sbernauer/breakwater | xargs docker kill
+docker stop $(docker ps -q --filter ancestor=sbernauer/breakwater)
 ```
 
 # Ready to use Docker compose setup
