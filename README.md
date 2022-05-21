@@ -16,7 +16,8 @@ Commands must be sent newline-separated, for more details see [Pixelflut](https:
 * `PX x y rrggbb`: Color the pixel (x,y) with the given hexadecimal color, e.g. `PX 10 10 ff0000`
 * `PX x y rrggbbaa`: Color the pixel (x,y) with the given hexadecimal color rrggbb (alpha channel is ignored for now), e.g. `PX 10 10 ff0000ff`
 * `PX x y`: Get the color value of the pixel (x,y), e.g. `PX 10 10`
-* `SIZE`: Get the size of the drawing surface
+* `SIZE`: Get the size of the drawing surface, e.g. `SIZE 1920 1080`
+* `OFFSET x y`: Apply offset (x,y) to all further pixel draws on this connection
 
 # Usage
 The easiest way is to continue with the provided [Ready to use Docker setup](#run-in-docker-container) below.

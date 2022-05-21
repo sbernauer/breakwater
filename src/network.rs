@@ -15,7 +15,8 @@ HELP: Show this help
 PX x y rrggbb: Color the pixel (x,y) with the given hexadecimal color
 PX x y rrggbbaa: Color the pixel (x,y) with the given hexadecimal color rrggbb (alpha channel is ignored for now)
 PX x y: Get the color value of the pixel (x,y)
-SIZE: Get the size of the drawing surface
+SIZE: Get the size of the drawing surface, e.g. `SIZE 1920 1080`
+OFFSET x y: Apply offset (x,y) to all further pixel draws on this connection
 ".as_bytes();
 const LOOP_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len();
 
@@ -75,6 +76,8 @@ pub fn handle_connection(
 
     let mut x: usize;
     let mut y: usize;
+    let mut x_offset = 0;
+    let mut y_offset = 0;
 
     loop {
         // Fill the buffer up with new data from the socket
@@ -168,6 +171,9 @@ pub fn handle_connection(
                                         }
                                     }
 
+                                    x += x_offset;
+                                    y += y_offset;
+
                                     // Separator between coordinates and color
                                     if buffer[i] == b' ' {
                                         i += 1;
@@ -215,7 +221,10 @@ pub fn handle_connection(
                                     if buffer[i] == b'\n' && x < fb.width && y < fb.height {
                                         match stream.write_all(
                                             format!(
-                                                "PX {x} {y} {:06x}\n",
+                                                "PX {} {} {:06x}\n",
+                                                // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
+                                                x - x_offset,
+                                                y - y_offset,
                                                 fb.get(x, y).to_be() >> 8
                                             )
                                             .as_bytes(),
@@ -255,7 +264,77 @@ pub fn handle_connection(
                         }
                     }
                 }
+            } else if buffer[i] == b'O'
+                && buffer[i + 1] == b'F'
+                && buffer[i + 2] == b'F'
+                && buffer[i + 3] == b'S'
+                && buffer[i + 4] == b'E'
+                && buffer[i + 5] == b'T'
+            {
+                i += 6;
+                if buffer[i] == b' ' {
+                    i += 1;
+                    // Parse first x coordinate char
+                    if buffer[i] >= b'0' && buffer[i] <= b'9' {
+                        x = (buffer[i] - b'0') as usize;
+                        i += 1;
+
+                        // Parse optional second x coordinate char
+                        if buffer[i] >= b'0' && buffer[i] <= b'9' {
+                            x = 10 * x + (buffer[i] - b'0') as usize;
+                            i += 1;
+
+                            // Parse optional third x coordinate char
+                            if buffer[i] >= b'0' && buffer[i] <= b'9' {
+                                x = 10 * x + (buffer[i] - b'0') as usize;
+                                i += 1;
+
+                                // Parse optional forth x coordinate char
+                                if buffer[i] >= b'0' && buffer[i] <= b'9' {
+                                    x = 10 * x + (buffer[i] - b'0') as usize;
+                                    i += 1;
+                                }
+                            }
+                        }
+
+                        // Separator between x and y
+                        if buffer[i] == b' ' {
+                            i += 1;
+
+                            // Parse first y coordinate char
+                            if buffer[i] >= b'0' && buffer[i] <= b'9' {
+                                y = (buffer[i] - b'0') as usize;
+                                i += 1;
+
+                                // Parse optional second y coordinate char
+                                if buffer[i] >= b'0' && buffer[i] <= b'9' {
+                                    y = 10 * y + (buffer[i] - b'0') as usize;
+                                    i += 1;
+
+                                    // Parse optional third y coordinate char
+                                    if buffer[i] >= b'0' && buffer[i] <= b'9' {
+                                        y = 10 * y + (buffer[i] - b'0') as usize;
+                                        i += 1;
+
+                                        // Parse optional forth y coordinate char
+                                        if buffer[i] >= b'0' && buffer[i] <= b'9' {
+                                            y = 10 * y + (buffer[i] - b'0') as usize;
+                                            i += 1;
+                                        }
+                                    }
+                                }
+
+                                // End of command to set offset
+                                if buffer[i] == b'\n' {
+                                    x_offset = x;
+                                    y_offset = y;
+                                }
+                            }
+                        }
+                    }
+                }
             }
+
             i += 1;
         }
 

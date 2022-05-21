@@ -80,6 +80,12 @@ fn test_correct_responses_to_general_commands(
 #[case("PX 0 1 2 abcdef\nPX 0 0\n", "PX 0 0 000000\n")]
 #[case("PX -1 0 abcdef\nPX 0 0\n", "PX 0 0 000000\n")]
 #[case("bla bla bla\nPX 0 0\n", "PX 0 0 000000\n")]
+// Test offset
+#[case(
+    "OFFSET 10 10\nPX 0 0 ffffff\nPX 0 0\nPX 42 42\n",
+    "PX 0 0 ffffff\nPX 42 42 000000\n"
+)] // The get pixel result is also offseted
+#[case("OFFSET 0 0\nPX 0 42 abcdef\nPX 0 42\n", "PX 0 42 abcdef\n")]
 fn test_setting_pixel(
     #[case] input: &str,
     #[case] expected: &str,
