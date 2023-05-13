@@ -190,7 +190,7 @@ pub fn handle_connection(
                                                 | (from_hex_char(buffer[i - 7]) as u32) << 4
                                                 | (from_hex_char(buffer[i - 6]) as u32);
 
-                                            fb.set(x as usize, y as usize, rgba);
+                                            fb.set(x, y, rgba);
                                             if cfg!(feature = "count_pixels") {
                                                 statistics.inc_pixels(ip);
                                             }
@@ -209,7 +209,7 @@ pub fn handle_connection(
                                                 | (from_hex_char(buffer[i - 9]) as u32) << 4
                                                 | (from_hex_char(buffer[i - 8]) as u32);
 
-                                            fb.set(x as usize, y as usize, rgba);
+                                            fb.set(x, y, rgba);
                                             if cfg!(feature = "count_pixels") {
                                                 statistics.inc_pixels(ip);
                                             }
