@@ -1,27 +1,46 @@
 [package]
 name = "breakwater"
-version = "0.0.1"
+version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-clap = { version = "3.2", features = ["derive"] }
+clap = { version = "4.3", features = ["derive"] }
 rusttype = "0.9"
 number_prefix = "0.4"
-prometheus = "0.13"
+env_logger = "0.10"
+lazy_static = "1.4"
+log = "0.4"
 prometheus_exporter = "0.8"
-serde_json = "1.0"
+rstest = "0.17"
 serde = { version = "1.0", features = ["derive"] }
-vncserver = "0.2"
+serde_json = "1.0"
+simple_moving_average = "0.1"
+thread-priority = "0.13"
+tokio = { version = "1.28", features = ["fs", "rt-multi-thread", "net", "io-util", "macros", "process", "signal", "sync", "time"] }
+vncserver = { version ="0.2", optional = true}
+chrono = "0.4.26"
 
 [dev-dependencies]
-rstest = "0.12"
-lazy_static = "1.4"
+criterion = {version = "0.5", features = ["async_tokio"]}
+
+[features]
+default = ["vnc"]
+vnc = ["dep:vncserver"]
+
+[lib]
+name = "breakwater"
+path = "src/lib.rs"
+
+[[bin]]
+name = "breakwater"
+path = "src/main.rs"
+
+[[bench]]
+name = "benchmarks"
+harness = false
 
 [profile.dev]
 opt-level = 3
 
 [profile.release]
 opt-level = 3
-
-[features]
-count_pixels = []

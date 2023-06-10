@@ -1,357 +1,168 @@
-use std::io::prelude::*;
-use std::net::{IpAddr, Ipv4Addr, TcpListener};
-use std::str;
-use std::sync::Arc;
-use std::thread;
-
-use crate::framebuffer::FrameBuffer;
-use crate::statistics::Statistics;
+use crate::{
+    framebuffer::FrameBuffer,
+    parser::{parse_pixelflut_commands, ParserState, PARSER_LOOKAHEAD},
+    statistics::StatisticsEvent,
+};
+use log::{debug, info};
+use std::{
+    cmp::min,
+    net::{IpAddr, Ipv4Addr},
+    sync::Arc,
+    time::Duration,
+};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpListener,
+    sync::mpsc::Sender,
+    time::Instant,
+};
 
 const NETWORK_BUFFER_SIZE: usize = 256_000;
-pub const HELP_TEXT: &[u8] = "\
-Pixelflut server powered by breakwater https://github.com/sbernauer/breakwater
-Available commands:
-HELP: Show this help
-PX x y rrggbb: Color the pixel (x,y) with the given hexadecimal color
-PX x y rrggbbaa: Color the pixel (x,y) with the given hexadecimal color rrggbb (alpha channel is ignored for now)
-PX x y: Get the color value of the pixel (x,y)
-SIZE: Get the size of the drawing surface, e.g. `SIZE 1920 1080`
-OFFSET x y: Apply offset (x,y) to all further pixel draws on this connection
-".as_bytes();
-const LOOP_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len();
+// Every client connection spawns a new thread, so we need to limit the number of stat events we send
+const STATISTICS_REPORT_INTERVAL: Duration = Duration::from_millis(250);
 
-pub struct Network<'a> {
-    listen_address: &'a str,
+pub struct Network {
+    listen_address: String,
     fb: Arc<FrameBuffer>,
-    statistics: Arc<Statistics>,
+    statistics_tx: Sender<StatisticsEvent>,
 }
 
-impl<'a> Network<'a> {
-    pub fn new(listen_address: &'a str, fb: Arc<FrameBuffer>, statistics: Arc<Statistics>) -> Self {
+impl Network {
+    pub fn new(
+        listen_address: &str,
+        fb: Arc<FrameBuffer>,
+        statistics_tx: Sender<StatisticsEvent>,
+    ) -> Self {
         Network {
-            listen_address,
+            listen_address: listen_address.to_string(),
             fb,
-            statistics,
+            statistics_tx,
         }
     }
 
-    pub fn listen(&self) {
-        let listener = TcpListener::bind(self.listen_address)
-            .unwrap_or_else(|err| panic!("Failed to listen on {}: {}", self.listen_address, err));
-        println!(
-            "Listening for Pixelflut connections on {}",
-            self.listen_address
-        );
+    pub async fn listen(&self) -> tokio::io::Result<()> {
+        let listener = TcpListener::bind(&self.listen_address).await?;
+        info!("Started Pixelflut server on {}", self.listen_address);
 
-        for stream in listener.incoming() {
-            let stream = stream.expect("Failed to get tcp stream from listener");
-            let ip = stream
-                .peer_addr()
-                .expect("Failed to get peer address from tcp connection")
-                .ip();
+        loop {
+            let (socket, socket_addr) = listener.accept().await?;
             // If you connect via IPv4 you often show up as embedded inside an IPv6 address
             // Extracting the embedded information here, so we get the real (TM) address
-            let ip = ip_to_canonical(ip);
+            let ip = ip_to_canonical(socket_addr.ip());
 
-            self.statistics.inc_connections(ip);
-
-            let fb = Arc::clone(&self.fb);
-            let statistics = Arc::clone(&self.statistics);
-            thread::spawn(move || {
-                handle_connection(stream, ip, fb, statistics);
+            let fb_for_thread = Arc::clone(&self.fb);
+            let statistics_tx_for_thread = self.statistics_tx.clone();
+            tokio::spawn(async move {
+                handle_connection(socket, ip, fb_for_thread, statistics_tx_for_thread).await;
             });
         }
     }
 }
 
-pub fn handle_connection(
-    mut stream: impl Read + Write + Unpin,
+pub async fn handle_connection(
+    mut stream: impl AsyncReadExt + AsyncWriteExt + Unpin,
     ip: IpAddr,
     fb: Arc<FrameBuffer>,
-    statistics: Arc<Statistics>,
+    statistics_tx: Sender<StatisticsEvent>,
 ) {
+    debug!("Handling connection from {ip}");
+
+    statistics_tx
+        .send(StatisticsEvent::ConnectionCreated { ip })
+        .await
+        .expect("Statistics channel disconnected");
+
+    // TODO: Try performance of Vec<> on heap instead of stack. Also bigger buffer
     let mut buffer = [0u8; NETWORK_BUFFER_SIZE];
     // Number bytes left over **on the first bytes of the buffer** from the previous loop iteration
     let mut leftover_bytes_in_buffer = 0;
 
-    let mut x: usize;
-    let mut y: usize;
-    let mut x_offset = 0;
-    let mut y_offset = 0;
+    // We have to keep the some things - such as connection offset - for the whole connection lifetime, so let's define them here
+    let mut parser_state = ParserState::default();
+
+    // If we send e.g. an StatisticsEvent::BytesRead for every time we read something from the socket the statistics thread would go crazy.
+    // Instead we bulk the statistics and send them pre-aggregated.
+    let mut last_statistics = Instant::now();
+    let mut statistics_bytes_read: u64 = 0;
 
     loop {
         // Fill the buffer up with new data from the socket
         // If there are any bytes left over from the previous loop iteration leave them as is and but the new data behind
-        let bytes = match stream.read(&mut buffer[leftover_bytes_in_buffer..]) {
-            Ok(bytes) => bytes,
+        let bytes_read = match stream
+            .read(&mut buffer[leftover_bytes_in_buffer..NETWORK_BUFFER_SIZE - PARSER_LOOKAHEAD])
+            .await
+        {
+            Ok(bytes_read) => bytes_read,
             Err(_) => {
-                statistics.dec_connections(ip);
                 break;
             }
         };
 
-        statistics.inc_bytes(ip, bytes as u64);
+        statistics_bytes_read += bytes_read as u64;
+        if last_statistics.elapsed() > STATISTICS_REPORT_INTERVAL {
+            statistics_tx
+                // We use a blocking call here as we want to process the stats.
+                // Otherwise the stats will lag behind resulting in weird spikes in bytes/s statistics.
+                // As the statistics calculation should be trivial let's wait for it
+                .send(StatisticsEvent::BytesRead {
+                    ip,
+                    bytes: statistics_bytes_read,
+                })
+                .await
+                .expect("Statistics channel disconnected");
+            last_statistics = Instant::now();
+            statistics_bytes_read = 0;
+        }
 
-        let mut loop_end = leftover_bytes_in_buffer + bytes;
-        if bytes == 0 {
+        let data_end = leftover_bytes_in_buffer + bytes_read;
+        if bytes_read == 0 {
             if leftover_bytes_in_buffer == 0 {
                 // We read no data and the previous loop did consume all data
                 // Nothing to do here, closing connection
-                statistics.dec_connections(ip);
                 break;
             }
 
             // No new data from socket, read to the end and everything should be fine
             leftover_bytes_in_buffer = 0;
         } else {
-            // Read some data, process it
-            if loop_end >= NETWORK_BUFFER_SIZE {
-                leftover_bytes_in_buffer = LOOP_LOOKAHEAD;
-                loop_end -= leftover_bytes_in_buffer;
-            } else {
-                leftover_bytes_in_buffer = 0;
-            }
-        }
+            // We have read some data, process it
 
-        let mut i = 0; // We can't use a for loop here because Rust don't lets use skip characters by incrementing i
-        while i < loop_end {
-            if buffer[i] == b'P' {
-                i += 1;
-                if buffer[i] == b'X' {
-                    i += 1;
-                    if buffer[i] == b' ' {
-                        i += 1;
-                        // Parse first x coordinate char
-                        if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                            x = (buffer[i] - b'0') as usize;
-                            i += 1;
-
-                            // Parse optional second x coordinate char
-                            if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                                x = 10 * x + (buffer[i] - b'0') as usize;
-                                i += 1;
-
-                                // Parse optional third x coordinate char
-                                if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                                    x = 10 * x + (buffer[i] - b'0') as usize;
-                                    i += 1;
-
-                                    // Parse optional forth x coordinate char
-                                    if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                                        x = 10 * x + (buffer[i] - b'0') as usize;
-                                        i += 1;
-                                    }
-                                }
-                            }
-
-                            // Separator between x and y
-                            if buffer[i] == b' ' {
-                                i += 1;
-
-                                // Parse first y coordinate char
-                                if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                                    y = (buffer[i] - b'0') as usize;
-                                    i += 1;
-
-                                    // Parse optional second y coordinate char
-                                    if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                                        y = 10 * y + (buffer[i] - b'0') as usize;
-                                        i += 1;
-
-                                        // Parse optional third y coordinate char
-                                        if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                                            y = 10 * y + (buffer[i] - b'0') as usize;
-                                            i += 1;
-
-                                            // Parse optional forth y coordinate char
-                                            if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                                                y = 10 * y + (buffer[i] - b'0') as usize;
-                                                i += 1;
-                                            }
-                                        }
-                                    }
-
-                                    x += x_offset;
-                                    y += y_offset;
-
-                                    // Separator between coordinates and color
-                                    if buffer[i] == b' ' {
-                                        i += 1;
-
-                                        // Must be followed by 6 bytes RGB and newline or ...
-                                        if buffer[i + 6] == b'\n' {
-                                            i += 7; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
-
-                                            let rgba: u32 = (from_hex_char(buffer[i - 3]) as u32)
-                                                << 20
-                                                | (from_hex_char(buffer[i - 2]) as u32) << 16
-                                                | (from_hex_char(buffer[i - 5]) as u32) << 12
-                                                | (from_hex_char(buffer[i - 4]) as u32) << 8
-                                                | (from_hex_char(buffer[i - 7]) as u32) << 4
-                                                | (from_hex_char(buffer[i - 6]) as u32);
-
-                                            fb.set(x, y, rgba);
-                                            if cfg!(feature = "count_pixels") {
-                                                statistics.inc_pixels(ip);
-                                            }
-                                            continue;
-                                        }
-
-                                        // ... or must be followed by 8 bytes RGBA and newline
-                                        if buffer[i + 8] == b'\n' {
-                                            i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
-
-                                            let rgba: u32 = (from_hex_char(buffer[i - 5]) as u32)
-                                                << 20
-                                                | (from_hex_char(buffer[i - 4]) as u32) << 16
-                                                | (from_hex_char(buffer[i - 7]) as u32) << 12
-                                                | (from_hex_char(buffer[i - 6]) as u32) << 8
-                                                | (from_hex_char(buffer[i - 9]) as u32) << 4
-                                                | (from_hex_char(buffer[i - 8]) as u32);
-
-                                            fb.set(x, y, rgba);
-                                            if cfg!(feature = "count_pixels") {
-                                                statistics.inc_pixels(ip);
-                                            }
-                                            continue;
-                                        }
-                                    }
-
-                                    // End of command to read Pixel value
-                                    if buffer[i] == b'\n' && x < fb.width && y < fb.height {
-                                        match stream.write_all(
-                                            format!(
-                                                "PX {} {} {:06x}\n",
-                                                // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
-                                                x - x_offset,
-                                                y - y_offset,
-                                                fb.get(x, y).to_be() >> 8
-                                            )
-                                            .as_bytes(),
-                                        ) {
-                                            Ok(_) => (),
-                                            Err(_) => continue,
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            } else if buffer[i] == b'S' {
-                i += 1;
-                if buffer[i] == b'I' {
-                    i += 1;
-                    if buffer[i] == b'Z' {
-                        i += 1;
-                        if buffer[i] == b'E' {
-                            stream
-                                .write_all(format!("SIZE {} {}\n", fb.width, fb.height).as_bytes())
-                                .expect("Failed to write bytes to tcp socket");
-                        }
-                    }
-                }
-            } else if buffer[i] == b'H' {
-                i += 1;
-                if buffer[i] == b'E' {
-                    i += 1;
-                    if buffer[i] == b'L' {
-                        i += 1;
-                        if buffer[i] == b'P' {
-                            stream
-                                .write_all(HELP_TEXT)
-                                .expect("Failed to write bytes to tcp socket");
-                        }
-                    }
-                }
-            } else if buffer[i] == b'O'
-                && buffer[i + 1] == b'F'
-                && buffer[i + 2] == b'F'
-                && buffer[i + 3] == b'S'
-                && buffer[i + 4] == b'E'
-                && buffer[i + 5] == b'T'
-            {
-                i += 6;
-                if buffer[i] == b' ' {
-                    i += 1;
-                    // Parse first x coordinate char
-                    if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                        x = (buffer[i] - b'0') as usize;
-                        i += 1;
-
-                        // Parse optional second x coordinate char
-                        if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                            x = 10 * x + (buffer[i] - b'0') as usize;
-                            i += 1;
-
-                            // Parse optional third x coordinate char
-                            if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                                x = 10 * x + (buffer[i] - b'0') as usize;
-                                i += 1;
-
-                                // Parse optional forth x coordinate char
-                                if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                                    x = 10 * x + (buffer[i] - b'0') as usize;
-                                    i += 1;
-                                }
-                            }
-                        }
-
-                        // Separator between x and y
-                        if buffer[i] == b' ' {
-                            i += 1;
-
-                            // Parse first y coordinate char
-                            if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                                y = (buffer[i] - b'0') as usize;
-                                i += 1;
-
-                                // Parse optional second y coordinate char
-                                if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                                    y = 10 * y + (buffer[i] - b'0') as usize;
-                                    i += 1;
-
-                                    // Parse optional third y coordinate char
-                                    if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                                        y = 10 * y + (buffer[i] - b'0') as usize;
-                                        i += 1;
-
-                                        // Parse optional forth y coordinate char
-                                        if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                                            y = 10 * y + (buffer[i] - b'0') as usize;
-                                            i += 1;
-                                        }
-                                    }
-                                }
-
-                                // End of command to set offset
-                                if buffer[i] == b'\n' {
-                                    x_offset = x;
-                                    y_offset = y;
-                                }
-                            }
-                        }
-                    }
-                }
+            // We need to zero the PARSER_LOOKAHEAD bytes, so the parser does not detect any command left over from a previous loop iteration
+            for i in &mut buffer[data_end..data_end + PARSER_LOOKAHEAD] {
+                *i = 0;
             }
 
-            i += 1;
+            parser_state = parse_pixelflut_commands(
+                &buffer[..data_end + PARSER_LOOKAHEAD],
+                &fb,
+                &mut stream,
+                parser_state,
+            )
+            .await;
+
+            // IMPORTANT: We have to subtract 1 here, as e.g. we have "PX 0 0\n" data_end is 7 and parser_state.last_byte_parsed is 6.
+            // This happens, because last_byte_parsed is an index starting at 0, so index 6 is from an array of length 7
+            leftover_bytes_in_buffer = data_end - parser_state.last_byte_parsed() - 1;
+
+            // There is no need to leave anything longer than a command can take
+            // This prevents malicious clients from sending gibberish and the buffer not getting drained
+            leftover_bytes_in_buffer = min(leftover_bytes_in_buffer, PARSER_LOOKAHEAD);
         }
 
         if leftover_bytes_in_buffer > 0 {
             // We need to move the leftover bytes to the beginning of the buffer so that the next loop iteration con work on them
-            buffer.copy_within(NETWORK_BUFFER_SIZE - leftover_bytes_in_buffer.., 0);
+            buffer.copy_within(
+                parser_state.last_byte_parsed() + 1
+                    ..parser_state.last_byte_parsed() + 1 + leftover_bytes_in_buffer,
+                0,
+            );
         }
     }
-}
 
-fn from_hex_char(char: u8) -> u8 {
-    match char {
-        b'0'..=b'9' => char - b'0',
-        b'a'..=b'f' => char - b'a' + 10,
-        b'A'..=b'F' => char - b'A' + 10,
-        _ => 0,
-    }
+    statistics_tx
+        .send(StatisticsEvent::ConnectionClosed { ip })
+        .await
+        .expect("Statistics channel disconnected");
 }
 
 /// TODO: Switch to official ip.to_canonical() method when it is stable. **If** it gets stable sometime ;)
@@ -369,22 +180,196 @@ fn ip_to_canonical(ip: IpAddr) -> IpAddr {
 }
 
 #[cfg(test)]
-mod tests {
-    use crate::network::*;
-    use rstest::rstest;
-    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+mod test {
+    use super::*;
+    use crate::test::helpers::MockTcpStream;
+    use rstest::{fixture, rstest};
+    use std::time::Duration;
+    use tokio::sync::mpsc::{self, Receiver};
+
+    #[fixture]
+    fn ip() -> IpAddr {
+        IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))
+    }
+
+    #[fixture]
+    fn fb() -> Arc<FrameBuffer> {
+        Arc::new(FrameBuffer::new(1920, 1080))
+    }
+
+    #[fixture]
+    fn statistics_channel() -> (Sender<StatisticsEvent>, Receiver<StatisticsEvent>) {
+        mpsc::channel(10000)
+    }
 
     #[rstest]
-    #[case(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), "0.0.0.0")]
-    #[case(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), "127.0.0.1")]
-    #[case(IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0)), "fe80::")]
+    #[timeout(Duration::from_secs(1))]
+    #[case("", "")]
+    #[case("\n", "")]
+    #[case("not a pixelflut command", "")]
+    #[case("not a pixelflut command with newline\n", "")]
+    #[case("SIZE", "SIZE 1920 1080\n")]
+    #[case("SIZE\n", "SIZE 1920 1080\n")]
+    #[case("SIZE\nSIZE\n", "SIZE 1920 1080\nSIZE 1920 1080\n")]
+    #[case("SIZE", "SIZE 1920 1080\n")]
+    #[case("HELP", std::str::from_utf8(crate::parser::HELP_TEXT).unwrap())]
+    #[case("HELP\n", std::str::from_utf8(crate::parser::HELP_TEXT).unwrap())]
+    #[case("bla bla bla\nSIZE\nblub\nbla", "SIZE 1920 1080\n")]
+    #[tokio::test]
+    async fn test_correct_responses_to_general_commands(
+        #[case] input: &str,
+        #[case] expected: &str,
+        ip: IpAddr,
+        fb: Arc<FrameBuffer>,
+        statistics_channel: (Sender<StatisticsEvent>, Receiver<StatisticsEvent>),
+    ) {
+        let mut stream = MockTcpStream::from_input(input);
+        handle_connection(&mut stream, ip, fb, statistics_channel.0).await;
+
+        assert_eq!(expected, stream.get_output());
+    }
+
+    #[rstest]
+    // Without alpha
+    #[case("PX 0 0 ffffff\nPX 0 0\n", "PX 0 0 ffffff\n")]
+    #[case("PX 0 0 abcdef\nPX 0 0\n", "PX 0 0 abcdef\n")]
+    #[case("PX 0 42 abcdef\nPX 0 42\n", "PX 0 42 abcdef\n")]
+    #[case("PX 42 0 abcdef\nPX 42 0\n", "PX 42 0 abcdef\n")]
+    // With alpha
+    // TODO: At the moment alpha channel is not supported and silently ignored (pixels are painted with 0% transparency)
+    #[case("PX 0 0 ffffffaa\nPX 0 0\n", "PX 0 0 ffffff\n")]
+    #[case("PX 0 0 abcdefaa\nPX 0 0\n", "PX 0 0 abcdef\n")]
+    #[case("PX 0 1 abcdefaa\nPX 0 1\n", "PX 0 1 abcdef\n")]
+    #[case("PX 1 0 abcdefaa\nPX 1 0\n", "PX 1 0 abcdef\n")]
+    // Tests invalid bounds
+    #[case("PX 9999 0 abcdef\nPX 9999 0\n", "")] // Parsable but outside screen size
+    #[case("PX 0 9999 abcdef\nPX 9999 0\n", "")]
+    #[case("PX 9999 9999 abcdef\nPX 9999 9999\n", "")]
+    #[case("PX 99999 0 abcdef\nPX 0 99999\n", "")] // Not even parsable because to many digits
+    #[case("PX 0 99999 abcdef\nPX 0 99999\n", "")]
+    #[case("PX 99999 99999 abcdef\nPX 99999 99999\n", "")]
+    // Test invalid inputs
+    #[case("PX 0 abcdef\nPX 0 0\n", "PX 0 0 000000\n")]
+    #[case("PX 0 1 2 abcdef\nPX 0 0\n", "PX 0 0 000000\n")]
+    #[case("PX -1 0 abcdef\nPX 0 0\n", "PX 0 0 000000\n")]
+    #[case("bla bla bla\nPX 0 0\n", "PX 0 0 000000\n")]
+    // Test offset
     #[case(
-        IpAddr::V6(Ipv6Addr::new(0x2001, 0x0db8, 0x85a3, 0x0000, 0x0000, 0x8a2e, 0x0370, 0x7334)),
-        "2001:db8:85a3::8a2e:370:7334"
-    )]
-    #[case(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0xFFFF, 0, 1)), "0.0.0.1")]
-    #[case(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0xFFFF, 127 << 8, 1)), "127.0.0.1")]
-    fn test_ip_to_string_respect_mapped_v4(#[case] input: IpAddr, #[case] expected: String) {
-        assert_eq!(expected, ip_to_canonical(input).to_string());
+        "OFFSET 10 10\nPX 0 0 ffffff\nPX 0 0\nPX 42 42\n",
+        "PX 0 0 ffffff\nPX 42 42 000000\n"
+    )] // The get pixel result is also offseted
+    #[case("OFFSET 0 0\nPX 0 42 abcdef\nPX 0 42\n", "PX 0 42 abcdef\n")]
+    #[tokio::test]
+    async fn test_setting_pixel(
+        #[case] input: &str,
+        #[case] expected: &str,
+        ip: IpAddr,
+        fb: Arc<FrameBuffer>,
+        statistics_channel: (Sender<StatisticsEvent>, Receiver<StatisticsEvent>),
+    ) {
+        let mut stream = MockTcpStream::from_input(input);
+        handle_connection(&mut stream, ip, fb, statistics_channel.0).await;
+
+        assert_eq!(expected, stream.get_output());
+    }
+
+    #[rstest]
+    #[case(5, 5, 0, 0)]
+    #[case(6, 6, 0, 0)]
+    #[case(7, 7, 0, 0)]
+    #[case(8, 8, 0, 0)]
+    #[case(9, 9, 0, 0)]
+    #[case(10, 10, 0, 0)]
+    #[case(10, 10, 100, 200)]
+    #[case(10, 10, 510, 520)]
+    #[case(100, 100, 0, 0)]
+    #[case(100, 100, 300, 400)]
+    #[case(479, 361, 721, 391)]
+    #[case(500, 500, 0, 0)]
+    #[case(500, 500, 300, 400)]
+    #[case(fb().get_width(), fb().get_height(), 0, 0)]
+    #[case(fb().get_width() - 1, fb().get_height() - 1, 1, 1)]
+    #[tokio::test]
+    async fn test_drawing_rect(
+        #[case] width: usize,
+        #[case] height: usize,
+        #[case] offset_x: usize,
+        #[case] offset_y: usize,
+        ip: IpAddr,
+        fb: Arc<FrameBuffer>,
+        statistics_channel: (Sender<StatisticsEvent>, Receiver<StatisticsEvent>),
+    ) {
+        let mut color: u32 = 0;
+        let mut fill_commands = String::new();
+        let mut read_commands = String::new();
+        let mut combined_commands = String::new();
+        let mut combined_commands_expected = String::new();
+        let mut read_other_pixels_commands = String::new();
+        let mut read_other_pixels_commands_expected = String::new();
+
+        for x in 0..fb.get_width() {
+            for y in 0..height {
+                // Inside the rect
+                if x >= offset_x && x <= offset_x + width && y >= offset_y && y <= offset_y + height
+                {
+                    fill_commands += &format!("PX {x} {y} {color:06x}\n");
+                    read_commands += &format!("PX {x} {y}\n");
+
+                    color += 1; // Use another color for the next test case
+                    combined_commands += &format!("PX {x} {y} {color:06x}\nPX {x} {y}\n");
+                    combined_commands_expected += &format!("PX {x} {y} {color:06x}\n");
+
+                    color += 1;
+                } else {
+                    // Non touched pixels must remain black
+                    read_other_pixels_commands += &format!("PX {x} {y}\n");
+                    read_other_pixels_commands_expected += &format!("PX {x} {y} 000000\n");
+                }
+            }
+        }
+
+        // Color the pixels
+        let mut stream = MockTcpStream::from_input(&fill_commands);
+        handle_connection(
+            &mut stream,
+            ip,
+            Arc::clone(&fb),
+            statistics_channel.0.clone(),
+        )
+        .await;
+        assert_eq!("", stream.get_output());
+
+        // Read the pixels again
+        let mut stream = MockTcpStream::from_input(&read_commands);
+        handle_connection(
+            &mut stream,
+            ip,
+            Arc::clone(&fb),
+            statistics_channel.0.clone(),
+        )
+        .await;
+        assert_eq!(fill_commands, stream.get_output());
+
+        // We can also do coloring and reading in a single connection
+        let mut stream = MockTcpStream::from_input(&combined_commands);
+        handle_connection(
+            &mut stream,
+            ip,
+            Arc::clone(&fb),
+            statistics_channel.0.clone(),
+        )
+        .await;
+        assert_eq!(combined_commands_expected, stream.get_output());
+
+        // Check that nothing else was colored
+        let mut stream = MockTcpStream::from_input(&read_other_pixels_commands);
+        handle_connection(
+            &mut stream,
+            ip,
+            Arc::clone(&fb),
+            statistics_channel.0.clone(),
+        )
+        .await;
+        assert_eq!(read_other_pixels_commands_expected, stream.get_output());
     }
 }

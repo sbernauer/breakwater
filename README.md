@@ -1,14 +1,15 @@
 # breakwater
 breakwater is a very fast [Pixelflut](https://wiki.cccgoe.de/wiki/Pixelflut) server written in Rust. It is heavily inspired by [Shoreline](https://github.com/TobleMiner/shoreline).
 
-It claims to be **the fastest Pixelflut server in existence** - at least at the time of writing 02/2022.
+It claims to be the fastest Pixelflut server in existence - at least at the time of writing 02/2022.
 ![breakwater logo](docs/images/breakwater.png)
 
 # Features
 1. Accepts Pixelflut commands
-2. Provides VNC server so that everybody can watch
-3. Exposes Prometheus metrics
-4. IPv6 and legacy IP support
+2. Can provide a VNC server so that everybody can watch
+3. As an alternative it can stream to a RTMP sink, so that you can e.g. directly live-stream into Twitch or YouTube
+4. Exposes Prometheus metrics
+5. IPv6 and legacy IP support
 
 # Available Pixelflut commands
 Commands must be sent newline-separated, for more details see [Pixelflut](https://wiki.cccgoe.de/wiki/Pixelflut)
@@ -45,47 +46,41 @@ cargo run --release -- --help
 
 ```bash
 cargo run --release -- --help
-    Finished release [optimized] target(s) in 0.03s
+    Finished release [optimized] target(s) in 0.04s
      Running `target/release/breakwater --help`
-breakwater 0.0.1
+Usage: breakwater [OPTIONS]
 
-USAGE:
-    breakwater [OPTIONS]
-
-OPTIONS:
-    -f, --fps <FPS>
-            Frames per second the VNC server should aim for [default: 30]
-
-        --font <FONT>
-            The font used to render the text on the screen. Should be a ttf file [default:
-            Arial.ttf]
-
-    -h, --height <HEIGHT>
-            Height of the drawing surface [default: 720]
-
-        --help
-            Print help information
-
-    -l, --listen-address <LISTEN_ADDRESS>
-            Listen address to bind to. The default value will listen on all interfaces for IPv4 and
-            v6 packets [default: [::]:1234]
-
-    -p, --prometheus-listen-address <PROMETHEUS_LISTEN_ADDRESS>
-            Listen address zhe prometheus exporter should listen om. The default value will listen
-            on all interfaces for IPv4 and v6 packets [default: [::]:9100]
-
-    -t, --text <TEXT>
-            Text to display on the screen. The text will be followed by "on <listen_address>"
-            [default: "Breakwater Pixelflut server"]
-
-    -v, --vnc-port <VNC_PORT>
-            Port of the VNC server [default: 5900]
-
-    -V, --version
-            Print version information
-
-    -w, --width <WIDTH>
-            Width of the drawing surface [default: 1280]
+Options:
+  -l, --listen-address <LISTEN_ADDRESS>
+          Listen address to bind to. The default value will listen on all interfaces for IPv4 and IPv6 packets [default: [::]:1234]
+      --width <WIDTH>
+          Width of the drawing surface [default: 1280]
+      --height <HEIGHT>
+          Height of the drawing surface [default: 720]
+  -f, --fps <FPS>
+          Frames per second the server should aim for [default: 30]
+  -t, --text <TEXT>
+          Text to display on the screen. The text will be followed by "on <listen_address>" [default: "Pixelflut server (breakwater)"]
+      --font <FONT>
+          The font used to render the text on the screen. Should be a ttf file. If you use the default value a copy that ships with breakwater will be used - no need to download and provide the font [default: Arial.ttf]
+  -p, --prometheus-listen-address <PROMETHEUS_LISTEN_ADDRESS>
+          Listen address the prometheus exporter should listen on [default: [::]:9100]
+      --statistics-save-file <STATISTICS_SAVE_FILE>
+          Save file where statistics are periodically saved. The save file will be read during startup and statistics are restored. To reset the statistics simply remove the file [default: statistics.json]
+      --statistics-save-interval-s <STATISTICS_SAVE_INTERVAL_S>
+          Interval (in seconds) in which the statistics save file should be updated [default: 10]
+      --disable-statistics-save-file
+          Disable periodical saving of statistics into save file
+      --rtmp-address <RTMP_ADDRESS>
+          Enable rtmp streaming to configured address, e.g. `rtmp://127.0.0.1:1935/live/test`
+      --save-video-to-file
+          Enable dump of video stream into file. File name will be `pixelflut_dump_{timestamp}.mp4
+  -v, --vnc-port <VNC_PORT>
+          Port of the VNC server [default: 5900]
+  -h, --help
+          Print help
+  -V, --version
+          Print version
 ```
 </details>
 
@@ -94,10 +89,14 @@ You can also build the binary with `cargo build --release`. The binary will be p
 ## Compile time features
 Breakwater also has some compile-time features for performance reasons.
 You can get the list of available features by looking at the [Cargo.toml](Cargo.toml).
-To e.g. count the actual pixels colored by every IP enable the future `count_pixels` as follows.
-Please note that this will have a very larger performance penality.
+As of writing the following features are supported
+
+* `vnc` (enabled by default): Starts a VNC server, where users can connect to. Needs `libvncserver-dev` to be installed. Please note that the VNC server offers basically no latency, but consumes quite some CPU.
+
+To e.g. turn the VNS server off, build with
+
 ```bash
-cargo run --release --features count_pixels
+cargo run --release --no-default-features # --features feature-to-enable
 ```
 
 # Run in docker container
@@ -105,7 +104,7 @@ This command will start the Pixelflut server in a docker container
 ```bash
 docker run --rm -p 1234:1234 -p 5900:5900 -p 9100:9100 sbernauer/breakwater # --help
 ```
-The following command stops the server again (if there are some problems with SIGINT)
+The following command stops the server again (if there are some problems with `SIGINT`)
 ```bash
 docker stop $(docker ps -q --filter ancestor=sbernauer/breakwater)
 ```
@@ -154,23 +153,5 @@ The servers were connected with two 40G and one 10G links, through which traffic
 | [Shoreline](https://github.com/TobleMiner/shoreline)  | C        | 34 Gbit/s           |
 | [Breakwater](https://github.com/sbernauer/breakwater) | Rust     | 52 Gbit/s           |
 
-## Usage of [Tokio](https://crates.io/crates/tokio)
-You can find a prototype with Tokio in the `tokio` branch.
-Performance measurements have shown that the usage of Tokio decreased the average performance from 22.9 to 21.6 Gbit/s.
-<details>
-  <summary>Used benchmark</summary>
-
-```bash
-for i in $(seq 1 20); do
-    for branch in master tokio; do
-        git checkout $branch
-        cargo run --release >/dev/null 2>/dev/null & sleep 2; ../sturmflut/sturmflut 127.0.0.1 ../sturmflut/cat.jpg -t 24 >/dev/null 2>/dev/null & sleep 10; bmon -b -p lo -o ascii:quitafter=3 | tail -n 1 | awk '{ print $2 }' | tee -a "perf/$branch"; killall sturmflut; killall breakwater
-        sleep 1
-    done
-done
-```
-</details>
-
-
 # TODOs
-* Implement Alpha channel feature. For performance reasons there should be a compile-time switch (similar to `#ifdef` in C)
+* Implement Alpha channel feature. For performance reasons there should be a compile-time switch for it
