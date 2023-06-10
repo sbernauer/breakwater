@@ -236,11 +236,16 @@ mod test {
     #[case("PX 0 42 abcdef\nPX 0 42\n", "PX 0 42 abcdef\n")]
     #[case("PX 42 0 abcdef\nPX 42 0\n", "PX 42 0 abcdef\n")]
     // With alpha
-    // TODO: At the moment alpha channel is not supported and silently ignored (pixels are painted with 0% transparency)
-    #[case("PX 0 0 ffffffaa\nPX 0 0\n", "PX 0 0 ffffff\n")]
-    #[case("PX 0 0 abcdefaa\nPX 0 0\n", "PX 0 0 abcdef\n")]
-    #[case("PX 0 1 abcdefaa\nPX 0 1\n", "PX 0 1 abcdef\n")]
-    #[case("PX 1 0 abcdefaa\nPX 1 0\n", "PX 1 0 abcdef\n")]
+    #[case("PX 0 0 ffffff00\nPX 0 0\n", if cfg!(feature = "alpha") {"PX 0 0 000000\n"} else {"PX 0 0 ffffff\n"})]
+    #[case("PX 0 0 ffffffff\nPX 0 0\n", "PX 0 0 ffffff\n")]
+    #[case("PX 0 1 abcdef00\nPX 0 1\n", if cfg!(feature = "alpha") {"PX 0 1 000000\n"} else {"PX 0 1 abcdef\n"})]
+    #[case("PX 1 0 abcdefff\nPX 1 0\n", "PX 1 0 abcdef\n")]
+    #[case("PX 0 0 ffffff88\nPX 0 0\n", if cfg!(feature = "alpha") {"PX 0 0 888888\n"} else {"PX 0 0 ffffff\n"})]
+    #[case("PX 0 0 ffffff11\nPX 0 0\n", if cfg!(feature = "alpha") {"PX 0 0 111111\n"} else {"PX 0 0 ffffff\n"})]
+    #[case("PX 0 0 abcdef80\nPX 0 0\n", if cfg!(feature = "alpha") {"PX 0 0 556677\n"} else {"PX 0 0 abcdef\n"})]
+    // 0xab = 171, 0x88 = 136
+    // (171 * 136) / 255 = 91 = 0x5b
+    #[case("PX 0 0 abcdef88\nPX 0 0\n", if cfg!(feature = "alpha") {"PX 0 0 5b6d7f\n"} else {"PX 0 0 abcdef\n"})]
     // Short commands
     #[case("PX 0 0 00\nPX 0 0\n", "PX 0 0 000000\n")]
     #[case("PX 0 0 ff\nPX 0 0\n", "PX 0 0 ffffff\n")]

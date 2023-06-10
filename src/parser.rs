@@ -10,7 +10,7 @@ Pixelflut server powered by breakwater https://github.com/sbernauer/breakwater
 Available commands:
 HELP: Show this help
 PX x y rrggbb: Color the pixel (x,y) with the given hexadecimal color rrggbb
-PX x y rrggbbaa: Color the pixel (x,y) with the given hexadecimal color rrggbb (alpha channel is ignored for now)
+PX x y rrggbbaa: Color the pixel (x,y) with the given hexadecimal color rrggbb (alpha channel is ignored by default, unless breakwater is compiled with \"--feature alpha\". This is for performance reasons)
 PX x y gg: Color the pixel (x,y) with the hexadecimal color gggggg. Basically this is the same as the other commands, but is a more efficient way of filling white, black or gray areas
 PX x y: Get the color value of the pixel (x,y)
 SIZE: Get the size of the drawing surface, e.g. `SIZE 1920 1080`
@@ -148,13 +148,11 @@ pub async fn parse_pixelflut_commands(
                                         | (ASCII_HEXADECIMAL_VALUES[buffer[i - 6] as usize] as u32);
 
                                 fb.set(x, y, rgba);
-                                if cfg!(feature = "count_pixels") {
-                                    // statistics.inc_pixels(ip);
-                                }
                                 continue;
                             }
 
                             // ... or must be followed by 8 bytes RGBA and newline
+                            #[cfg(not(feature = "alpha"))]
                             if buffer[i + 8] == b'\n' {
                                 last_byte_parsed = i + 8;
                                 i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
@@ -172,10 +170,42 @@ pub async fn parse_pixelflut_commands(
                                         | (ASCII_HEXADECIMAL_VALUES[buffer[i - 8] as usize] as u32);
 
                                 fb.set(x, y, rgba);
-                                if cfg!(feature = "count_pixels") {
-                                    // statistics.inc_pixels(ip);
+
+                                continue;
+                            }
+                            #[cfg(feature = "alpha")]
+                            if buffer[i + 8] == b'\n' {
+                                last_byte_parsed = i + 8;
+                                i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
+
+                                let alpha =
+                                    (ASCII_HEXADECIMAL_VALUES[buffer[i - 3] as usize] as u32) << 4
+                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 2] as usize] as u32);
+
+                                if alpha == 0 || x >= fb.get_width() || y >= fb.get_height() {
+                                    continue;
                                 }
 
+                                let alpha_comp = 0xff - alpha;
+                                let current = fb.get_unchecked(x, y);
+                                let r = (ASCII_HEXADECIMAL_VALUES[buffer[i - 5] as usize] as u32)
+                                    << 4
+                                    | (ASCII_HEXADECIMAL_VALUES[buffer[i - 4] as usize] as u32);
+                                let g = (ASCII_HEXADECIMAL_VALUES[buffer[i - 7] as usize] as u32)
+                                    << 4
+                                    | (ASCII_HEXADECIMAL_VALUES[buffer[i - 6] as usize] as u32);
+                                let b = (ASCII_HEXADECIMAL_VALUES[buffer[i - 9] as usize] as u32)
+                                    << 4
+                                    | (ASCII_HEXADECIMAL_VALUES[buffer[i - 8] as usize] as u32);
+
+                                let r: u32 =
+                                    (((current >> 24) & 0xff) * alpha_comp + r * alpha) / 0xff;
+                                let g: u32 =
+                                    (((current >> 16) & 0xff) * alpha_comp + g * alpha) / 0xff;
+                                let b: u32 =
+                                    (((current >> 8) & 0xff) * alpha_comp + b * alpha) / 0xff;
+
+                                fb.set(x, y, r << 16 | g << 8 | b);
                                 continue;
                             }
 
@@ -197,9 +227,6 @@ pub async fn parse_pixelflut_commands(
                                         | (ASCII_HEXADECIMAL_VALUES[buffer[i - 2] as usize] as u32);
 
                                 fb.set(x, y, rgba);
-                                if cfg!(feature = "count_pixels") {
-                                    // statistics.inc_pixels(ip);
-                                }
 
                                 continue;
                             }

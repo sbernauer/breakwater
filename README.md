@@ -93,11 +93,12 @@ You can get the list of available features by looking at the [Cargo.toml](Cargo.
 As of writing the following features are supported
 
 * `vnc` (enabled by default): Starts a VNC server, where users can connect to. Needs `libvncserver-dev` to be installed. Please note that the VNC server offers basically no latency, but consumes quite some CPU.
+* `alpha` (disabled by default): Respect alpha values during `PX` commands. Disabled by default as this can cause performance degradation.
 
 To e.g. turn the VNS server off, build with
 
 ```bash
-cargo run --release --no-default-features # --features feature-to-enable
+cargo run --release --no-default-features # --features alpha,vnc to explicitly enable
 ```
 
 # Run in docker container
@@ -153,6 +154,3 @@ The servers were connected with two 40G and one 10G links, through which traffic
 |-------------------------------------------------------|----------|---------------------|
 | [Shoreline](https://github.com/TobleMiner/shoreline)  | C        | 34 Gbit/s           |
 | [Breakwater](https://github.com/sbernauer/breakwater) | Rust     | 52 Gbit/s           |
-
-# TODOs
-* Implement Alpha channel feature. For performance reasons there should be a compile-time switch for it

@@ -26,6 +26,7 @@ rstest = "0.17"
 [features]
 default = ["vnc"]
 vnc = ["dep:vncserver"]
+alpha = []
 
 [lib]
 name = "breakwater"
