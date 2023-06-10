@@ -241,6 +241,11 @@ mod test {
     #[case("PX 0 0 abcdefaa\nPX 0 0\n", "PX 0 0 abcdef\n")]
     #[case("PX 0 1 abcdefaa\nPX 0 1\n", "PX 0 1 abcdef\n")]
     #[case("PX 1 0 abcdefaa\nPX 1 0\n", "PX 1 0 abcdef\n")]
+    // Short commands
+    #[case("PX 0 0 00\nPX 0 0\n", "PX 0 0 000000\n")]
+    #[case("PX 0 0 ff\nPX 0 0\n", "PX 0 0 ffffff\n")]
+    #[case("PX 0 1 12\nPX 0 1\n", "PX 0 1 121212\n")]
+    #[case("PX 0 1 34\nPX 0 1\n", "PX 0 1 343434\n")]
     // Tests invalid bounds
     #[case("PX 9999 0 abcdef\nPX 9999 0\n", "")] // Parsable but outside screen size
     #[case("PX 0 9999 abcdef\nPX 9999 0\n", "")]

@@ -9,11 +9,12 @@ pub const HELP_TEXT: &[u8] = "\
 Pixelflut server powered by breakwater https://github.com/sbernauer/breakwater
 Available commands:
 HELP: Show this help
-PX x y rrggbb: Color the pixel (x,y) with the given hexadecimal color
+PX x y rrggbb: Color the pixel (x,y) with the given hexadecimal color rrggbb
 PX x y rrggbbaa: Color the pixel (x,y) with the given hexadecimal color rrggbb (alpha channel is ignored for now)
+PX x y gg: Color the pixel (x,y) with the hexadecimal color gggggg. Basically this is the same as the other commands, but is a more efficient way of filling white, black or gray areas
 PX x y: Get the color value of the pixel (x,y)
 SIZE: Get the size of the drawing surface, e.g. `SIZE 1920 1080`
-OFFSET x y: Apply offset (x,y) to all further pixel draws on this connection
+OFFSET x y: Apply offset (x,y) to all further pixel draws on this connection. This can e.g. be used to pre-calculate an image/animation and simply use the OFFSET command to move it around the screen without the need to re-calculate it
 ".as_bytes();
 
 #[derive(Clone, Default, Debug)]
@@ -120,7 +121,7 @@ pub async fn parse_pixelflut_commands(
                         if buffer[i] == b' ' {
                             i += 1;
 
-                            // TODO: Determine what clients use more: RGB or RGBA.
+                            // TODO: Determine what clients use more: RGB, RGBA or gg variant.
                             // If RGBA is used more often move the RGB code below the RGBA code
 
                             // Must be followed by 6 bytes RGB and newline or ...
@@ -169,6 +170,31 @@ pub async fn parse_pixelflut_commands(
                                         | (ASCII_HEXADECIMAL_VALUES[buffer[i - 9] as usize] as u32)
                                             << 4
                                         | (ASCII_HEXADECIMAL_VALUES[buffer[i - 8] as usize] as u32);
+
+                                fb.set(x, y, rgba);
+                                if cfg!(feature = "count_pixels") {
+                                    // statistics.inc_pixels(ip);
+                                }
+
+                                continue;
+                            }
+
+                            // ... for the efficient/lazy clients
+                            if buffer[i + 2] == b'\n' {
+                                last_byte_parsed = i + 2;
+                                i += 3; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
+
+                                let rgba: u32 =
+                                    (ASCII_HEXADECIMAL_VALUES[buffer[i - 3] as usize] as u32) << 20
+                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 2] as usize] as u32)
+                                            << 16
+                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 3] as usize] as u32)
+                                            << 12
+                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 2] as usize] as u32)
+                                            << 8
+                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 3] as usize] as u32)
+                                            << 4
+                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 2] as usize] as u32);
 
                                 fb.set(x, y, rgba);
                                 if cfg!(feature = "count_pixels") {
