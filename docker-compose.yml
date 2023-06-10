@@ -19,7 +19,7 @@ services:
 
   prometheus:
     restart: unless-stopped
-    image: prom/prometheus:v2.32.1
+    image: prom/prometheus:v2.44.0
     volumes:
       - "./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml"
       - "prometheus-data:/prometheus"
@@ -30,7 +30,7 @@ services:
 
   grafana:
     restart: unless-stopped
-    image: grafana/grafana:8.3.4
+    image: grafana/grafana:9.5.3
     volumes:
       - "./grafana/provisioning:/etc/grafana/provisioning/"
       - "grafana-data:/var/lib/grafana"
