@@ -1,10 +1,18 @@
 use std::sync::Arc;
 
 use tokio::io::AsyncWriteExt;
+#[cfg(feature = "token")]
+use uuid::Uuid;
 
 use crate::framebuffer::FrameBuffer;
 
-pub const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
+pub const PARSER_LOOKAHEAD: usize = if cfg!(not(feature = "token")) {
+    "PX 1234 1234 rrggbbaa\n".len()
+} else {
+    "PX 1234 1234 rrggbbaa 67e55044-10b1-426f-9247-bb680e5fe0c8\n".len()
+}; // Longest possible command
+pub const TOKEN_LIFETIME_IN_PIXEL_SETS: usize = 1000;
+
 pub const HELP_TEXT: &[u8] = "\
 Pixelflut server powered by breakwater https://github.com/sbernauer/breakwater
 Available commands:
@@ -22,6 +30,10 @@ pub struct ParserState {
     connection_x_offset: usize,
     connection_y_offset: usize,
     last_byte_parsed: usize,
+    #[cfg(feature = "token")]
+    token: String,
+    #[cfg(feature = "token")]
+    token_remaining_draws: usize,
 }
 
 impl ParserState {
@@ -47,6 +59,11 @@ pub async fn parse_pixelflut_commands(
     let mut connection_x_offset = parser_state.connection_x_offset;
     let mut connection_y_offset = parser_state.connection_y_offset;
 
+    #[cfg(feature = "token")]
+    let mut token_remaining_draws = parser_state.token_remaining_draws;
+    #[cfg(feature = "token")]
+    let mut token = parser_state.token;
+
     let mut x: usize;
     let mut y: usize;
 
@@ -54,6 +71,36 @@ pub async fn parse_pixelflut_commands(
     let loop_end = buffer.len().saturating_sub(PARSER_LOOKAHEAD); // Let's extract the .len() call and the subtraction into it's own variable so we only compute it once
 
     while i < loop_end {
+        #[cfg(feature = "token")]
+        {
+            // FIXME: Normally we would want to check the TOKEN command after the PX command (as the later is used more often),
+            // but Rust macro stuff...
+
+            // Check for buffer[i] = "TOKEN\n"
+            if unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() }
+                & 0x0000_ffff_ffff_ffff
+                == 0x544f_4b45_4e0a_0000_u64.swap_bytes()
+            {
+                i += 6;
+
+                token = if cfg!(test) {
+                    // Hardcoded value to make tests easier
+                    "67e55044-10b1-426f-9247-bb680e5fe0c8".to_string()
+                } else {
+                    Uuid::new_v4().to_string()
+                };
+                dbg!(&token);
+                token_remaining_draws = TOKEN_LIFETIME_IN_PIXEL_SETS;
+
+                stream
+                    .write_all(format!("TOKEN {} {}\n", &token, &token_remaining_draws).as_bytes())
+                    .await
+                    .expect("Failed to write bytes to tcp socket");
+
+                continue;
+            }
+        }
+
         // Check for buffer[i] = "PX "
         if unsafe { (buffer.as_ptr().add(i) as *const u32).read_unaligned() } & 0x00ff_ffff
             == 0x50582000_u32.swap_bytes()
@@ -125,9 +172,53 @@ pub async fn parse_pixelflut_commands(
                             // If RGBA is used more often move the RGB code below the RGBA code
 
                             // Must be followed by 6 bytes RGB and newline or ...
-                            if buffer[i + 6] == b'\n' {
-                                last_byte_parsed = i + 6;
-                                i += 7; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
+                            // 6, chars normally ("rrggbb"), 43 chars with token ("rrggbb 67e55044-10b1-426f-9247-bb680e5fe0c8")
+                            if buffer[i + if cfg!(not(feature = "token")) { 6 } else { 43 }]
+                                == b'\n'
+                            {
+                                last_byte_parsed =
+                                    i + if cfg!(not(feature = "token")) { 6 } else { 43 };
+                                i += if cfg!(not(feature = "token")) { 7 } else { 44 }; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
+
+                                #[cfg(feature = "token")]
+                                {
+                                    // Checking for this first, as this is much faster and we can run into this pretty often
+                                    if token_remaining_draws == 0 {
+                                        stream
+                                            .write_all(
+                                                "ERROR: Token has used all available draws (or no token requested)\n"
+                                                    .as_bytes(),
+                                            )
+                                            .await
+                                            .expect("Failed to write bytes to tcp socket");
+                                        continue;
+                                    }
+                                    if &buffer[i - 37..i - 1]
+                                        != if cfg!(test) {
+                                            // Hardcoded value to make tests easier
+                                            "67e55044-10b1-426f-9247-bb680e5fe0c8".as_bytes()
+                                        } else {
+                                            token.as_bytes()
+                                        }
+                                    {
+                                        stream
+                                            .write_all(
+                                                format!(
+                                                    "ERROR: Wrong TOKEN, expected {} with {} draws left, got {}\n",
+                                                    &token,
+                                                    token_remaining_draws,
+                                                    std::str::from_utf8(&buffer[i - 37..i - 1])
+                                                        .unwrap_or_default(),
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await
+                                            .expect("Failed to write bytes to tcp socket");
+                                        continue;
+                                    }
+
+                                    token_remaining_draws -= 1;
+                                }
 
                                 // 30% slower (38,334 ms vs 29,385 ms)
                                 // let str = unsafe {
@@ -135,30 +226,48 @@ pub async fn parse_pixelflut_commands(
                                 // };
                                 // let rgba = u32::from_str_radix(str, 16).unwrap();
 
-                                let rgba: u32 =
-                                    (ASCII_HEXADECIMAL_VALUES[buffer[i - 3] as usize] as u32) << 20
-                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 2] as usize] as u32)
-                                            << 16
-                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 5] as usize] as u32)
-                                            << 12
-                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 4] as usize] as u32)
-                                            << 8
-                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 7] as usize] as u32)
-                                            << 4
-                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 6] as usize] as u32);
+                                let rgba: u32 = (ASCII_HEXADECIMAL_VALUES[buffer
+                                    [i - if cfg!(not(feature = "token")) { 3 } else { 40 }]
+                                    as usize]
+                                    as u32)
+                                    << 20
+                                    | (ASCII_HEXADECIMAL_VALUES[buffer
+                                        [i - if cfg!(not(feature = "token")) { 2 } else { 39 }]
+                                        as usize] as u32)
+                                        << 16
+                                    | (ASCII_HEXADECIMAL_VALUES[buffer
+                                        [i - if cfg!(not(feature = "token")) { 5 } else { 42 }]
+                                        as usize] as u32)
+                                        << 12
+                                    | (ASCII_HEXADECIMAL_VALUES[buffer
+                                        [i - if cfg!(not(feature = "token")) { 4 } else { 41 }]
+                                        as usize] as u32)
+                                        << 8
+                                    | (ASCII_HEXADECIMAL_VALUES[buffer
+                                        [i - if cfg!(not(feature = "token")) { 7 } else { 44 }]
+                                        as usize] as u32)
+                                        << 4
+                                    | (ASCII_HEXADECIMAL_VALUES[buffer
+                                        [i - if cfg!(not(feature = "token")) { 6 } else { 43 }]
+                                        as usize] as u32);
 
                                 fb.set(x, y, rgba);
                                 continue;
                             }
 
-                            // ... or must be followed by 8 bytes RGBA and newline
-                            #[cfg(not(feature = "alpha"))]
-                            if buffer[i + 8] == b'\n' {
-                                last_byte_parsed = i + 8;
-                                i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
+                            // Alpha and grayscale commands are not available in combination with tokens
+                            #[cfg(not(feature = "token"))]
+                            {
+                                // ... or must be followed by 8 bytes RGBA and newline
+                                #[cfg(not(feature = "alpha"))]
+                                if buffer[i + 8] == b'\n' {
+                                    last_byte_parsed = i + 8;
+                                    i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                                let rgba: u32 =
-                                    (ASCII_HEXADECIMAL_VALUES[buffer[i - 5] as usize] as u32) << 20
+                                    let rgba: u32 = (ASCII_HEXADECIMAL_VALUES
+                                        [buffer[i - 5] as usize]
+                                        as u32)
+                                        << 20
                                         | (ASCII_HEXADECIMAL_VALUES[buffer[i - 4] as usize] as u32)
                                             << 16
                                         | (ASCII_HEXADECIMAL_VALUES[buffer[i - 7] as usize] as u32)
@@ -169,53 +278,59 @@ pub async fn parse_pixelflut_commands(
                                             << 4
                                         | (ASCII_HEXADECIMAL_VALUES[buffer[i - 8] as usize] as u32);
 
-                                fb.set(x, y, rgba);
+                                    fb.set(x, y, rgba);
 
-                                continue;
-                            }
-                            #[cfg(feature = "alpha")]
-                            if buffer[i + 8] == b'\n' {
-                                last_byte_parsed = i + 8;
-                                i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
+                                    continue;
+                                }
+                                #[cfg(feature = "alpha")]
+                                if buffer[i + 8] == b'\n' {
+                                    last_byte_parsed = i + 8;
+                                    i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                                let alpha =
-                                    (ASCII_HEXADECIMAL_VALUES[buffer[i - 3] as usize] as u32) << 4
+                                    let alpha = (ASCII_HEXADECIMAL_VALUES[buffer[i - 3] as usize]
+                                        as u32)
+                                        << 4
                                         | (ASCII_HEXADECIMAL_VALUES[buffer[i - 2] as usize] as u32);
 
-                                if alpha == 0 || x >= fb.get_width() || y >= fb.get_height() {
+                                    if alpha == 0 || x >= fb.get_width() || y >= fb.get_height() {
+                                        continue;
+                                    }
+
+                                    let alpha_comp = 0xff - alpha;
+                                    let current = fb.get_unchecked(x, y);
+                                    let r = (ASCII_HEXADECIMAL_VALUES[buffer[i - 5] as usize]
+                                        as u32)
+                                        << 4
+                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 4] as usize] as u32);
+                                    let g = (ASCII_HEXADECIMAL_VALUES[buffer[i - 7] as usize]
+                                        as u32)
+                                        << 4
+                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 6] as usize] as u32);
+                                    let b = (ASCII_HEXADECIMAL_VALUES[buffer[i - 9] as usize]
+                                        as u32)
+                                        << 4
+                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 8] as usize] as u32);
+
+                                    let r: u32 =
+                                        (((current >> 24) & 0xff) * alpha_comp + r * alpha) / 0xff;
+                                    let g: u32 =
+                                        (((current >> 16) & 0xff) * alpha_comp + g * alpha) / 0xff;
+                                    let b: u32 =
+                                        (((current >> 8) & 0xff) * alpha_comp + b * alpha) / 0xff;
+
+                                    fb.set(x, y, r << 16 | g << 8 | b);
                                     continue;
                                 }
 
-                                let alpha_comp = 0xff - alpha;
-                                let current = fb.get_unchecked(x, y);
-                                let r = (ASCII_HEXADECIMAL_VALUES[buffer[i - 5] as usize] as u32)
-                                    << 4
-                                    | (ASCII_HEXADECIMAL_VALUES[buffer[i - 4] as usize] as u32);
-                                let g = (ASCII_HEXADECIMAL_VALUES[buffer[i - 7] as usize] as u32)
-                                    << 4
-                                    | (ASCII_HEXADECIMAL_VALUES[buffer[i - 6] as usize] as u32);
-                                let b = (ASCII_HEXADECIMAL_VALUES[buffer[i - 9] as usize] as u32)
-                                    << 4
-                                    | (ASCII_HEXADECIMAL_VALUES[buffer[i - 8] as usize] as u32);
+                                // ... for the efficient/lazy clients
+                                if buffer[i + 2] == b'\n' {
+                                    last_byte_parsed = i + 2;
+                                    i += 3; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                                let r: u32 =
-                                    (((current >> 24) & 0xff) * alpha_comp + r * alpha) / 0xff;
-                                let g: u32 =
-                                    (((current >> 16) & 0xff) * alpha_comp + g * alpha) / 0xff;
-                                let b: u32 =
-                                    (((current >> 8) & 0xff) * alpha_comp + b * alpha) / 0xff;
-
-                                fb.set(x, y, r << 16 | g << 8 | b);
-                                continue;
-                            }
-
-                            // ... for the efficient/lazy clients
-                            if buffer[i + 2] == b'\n' {
-                                last_byte_parsed = i + 2;
-                                i += 3; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
-
-                                let rgba: u32 =
-                                    (ASCII_HEXADECIMAL_VALUES[buffer[i - 3] as usize] as u32) << 20
+                                    let rgba: u32 = (ASCII_HEXADECIMAL_VALUES
+                                        [buffer[i - 3] as usize]
+                                        as u32)
+                                        << 20
                                         | (ASCII_HEXADECIMAL_VALUES[buffer[i - 2] as usize] as u32)
                                             << 16
                                         | (ASCII_HEXADECIMAL_VALUES[buffer[i - 3] as usize] as u32)
@@ -226,9 +341,10 @@ pub async fn parse_pixelflut_commands(
                                             << 4
                                         | (ASCII_HEXADECIMAL_VALUES[buffer[i - 2] as usize] as u32);
 
-                                fb.set(x, y, rgba);
+                                    fb.set(x, y, rgba);
 
-                                continue;
+                                    continue;
+                                }
                             }
                         }
 
@@ -273,7 +389,7 @@ pub async fn parse_pixelflut_commands(
             continue;
         // Check for buffer[i] = "HELP"
         } else if unsafe { (buffer.as_ptr().add(i) as *const u32).read_unaligned() }
-            == 0x48454c50_u32.swap_bytes()
+            == 0x4845_4c50_u32.swap_bytes()
         {
             i += 4;
             last_byte_parsed = i - 1;
@@ -285,8 +401,8 @@ pub async fn parse_pixelflut_commands(
             continue;
         // Check for buffer[i] = "OFFSET "
         } else if unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() }
-            & 0x0000_ffff_ffff_ffff
-            == 0x4f464653455420_u64.swap_bytes()
+            & 0x00ff_ffff_ffff_ffff
+            == 0x4f46_4653_4554_2000_u64.swap_bytes()
         {
             i += 7;
             // Parse first x coordinate char
@@ -358,6 +474,10 @@ pub async fn parse_pixelflut_commands(
         connection_x_offset,
         connection_y_offset,
         last_byte_parsed,
+        #[cfg(feature = "token")]
+        token,
+        #[cfg(feature = "token")]
+        token_remaining_draws,
     }
 }
 

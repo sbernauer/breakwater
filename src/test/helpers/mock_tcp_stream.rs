@@ -13,6 +13,10 @@ pub struct MockTcpStream {
 }
 
 impl MockTcpStream {
+    pub fn new() -> Self {
+        MockTcpStream::default()
+    }
+
     pub fn from_input(input: &str) -> Self {
         MockTcpStream {
             read_data: input.as_bytes().to_vec(),
@@ -20,8 +24,12 @@ impl MockTcpStream {
         }
     }
 
-    pub fn get_output(self) -> String {
-        String::from_utf8(self.write_data).unwrap()
+    pub fn write_input(&mut self, input: &str) {
+        self.read_data.extend(input.as_bytes());
+    }
+
+    pub fn get_output(&mut self) -> String {
+        String::from_utf8(self.write_data.drain(..).collect()).unwrap()
     }
 }
 

@@ -229,6 +229,7 @@ mod test {
         assert_eq!(expected, stream.get_output());
     }
 
+    #[cfg(not(feature = "token"))]
     #[rstest]
     // Without alpha
     #[case("PX 0 0 ffffff\nPX 0 0\n", "PX 0 0 ffffff\n")]
@@ -283,6 +284,7 @@ mod test {
         assert_eq!(expected, stream.get_output());
     }
 
+    #[cfg(not(feature = "token"))]
     #[rstest]
     #[case(5, 5, 0, 0)]
     #[case(6, 6, 0, 0)]
@@ -381,5 +383,61 @@ mod test {
         )
         .await;
         assert_eq!(read_other_pixels_commands_expected, stream.get_output());
+    }
+
+    #[cfg(feature = "token")]
+    #[rstest]
+    // Token missing
+    #[case("PX 0 0 ffffff\nPX 0 0\n", "PX 0 0 000000\n")]
+    #[case("PX 0 0 abcdef\nPX 0 0\n", "PX 0 0 000000\n")]
+    #[case("PX 0 42 abcdef\nPX 0 42\n", "PX 0 42 000000\n")]
+    #[case("PX 42 0 abcdef\nPX 42 0\n", "PX 42 0 000000\n")]
+    // Wrong token
+    #[case(
+        "PX 0 0 ffffff xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\nPX 0 0\n",
+        "ERROR: Token has used all available draws (or no token requested)\nPX 0 0 000000\n"
+    )]
+    // Token expired
+    #[case(
+        "PX 0 0 ffffff 67e55044-10b1-426f-9247-bb680e5fe0c8\nPX 0 0\n",
+        "ERROR: Token has used all available draws (or no token requested)\nPX 0 0 000000\n"
+    )]
+    // Token set
+    #[case(
+        "TOKEN\nPX 0 0 ffffff 67e55044-10b1-426f-9247-bb680e5fe0c8\nPX 0 0\n",
+        "TOKEN 67e55044-10b1-426f-9247-bb680e5fe0c8 1000\nPX 0 0 ffffff\n"
+    )]
+    #[case(
+        "TOKEN\nPX 0 42 abcdef 67e55044-10b1-426f-9247-bb680e5fe0c8\nPX 0 42\n",
+        "TOKEN 67e55044-10b1-426f-9247-bb680e5fe0c8 1000\nPX 0 42 abcdef\n"
+    )]
+    #[case(
+        "TOKEN\nPX 42 0 abcdef 67e55044-10b1-426f-9247-bb680e5fe0c8\nPX 42 0\n",
+        "TOKEN 67e55044-10b1-426f-9247-bb680e5fe0c8 1000\nPX 42 0 abcdef\n"
+    )]
+    // Setting pixels with alpha or only gray scale values is not supported
+    #[case("PX 0 0 abcdef\nPX 0 0\n", "PX 0 0 000000\n")]
+    #[case("PX 0 0 abcdef80\nPX 0 0\n", "PX 0 0 000000\n")]
+    #[case("PX 0 0 ab\nPX 0 0\n", "PX 0 0 000000\n")]
+    #[case(
+        "TOKEN\nPX 0 0 abcdef80 67e55044-10b1-426f-9247-bb680e5fe0c8\nPX 0 0\n",
+        "TOKEN 67e55044-10b1-426f-9247-bb680e5fe0c8 1000\nPX 0 0 000000\n"
+    )]
+    #[case(
+        "TOKEN\nPX 0 0 ab 67e55044-10b1-426f-9247-bb680e5fe0c8\nPX 0 0\n",
+        "TOKEN 67e55044-10b1-426f-9247-bb680e5fe0c8 1000\nPX 0 0 000000\n"
+    )]
+    #[tokio::test]
+    async fn test_setting_pixel_with_token(
+        #[case] input: &str,
+        #[case] expected: &str,
+        ip: IpAddr,
+        fb: Arc<FrameBuffer>,
+        statistics_channel: (Sender<StatisticsEvent>, Receiver<StatisticsEvent>),
+    ) {
+        let mut stream = MockTcpStream::from_input(input);
+        handle_connection(&mut stream, ip, fb, statistics_channel.0).await;
+
+        assert_eq!(expected, stream.get_output());
     }
 }
