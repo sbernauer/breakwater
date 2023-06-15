@@ -35,6 +35,17 @@ impl ParserState {
     }
 }
 
+const fn string_to_number(input: &[u8]) -> u64 {
+    (input[7] as u64) << 56
+        | (input[6] as u64) << 48
+        | (input[5] as u64) << 40
+        | (input[4] as u64) << 32
+        | (input[3] as u64) << 24
+        | (input[2] as u64) << 16
+        | (input[1] as u64) << 8
+        | (input[0] as u64)
+}
+
 /// Returns the offset (think of index in [u8]) of the last bytes of the last fully parsed command.
 ///
 /// TODO: Implement support for 16K (15360 × 8640).
@@ -59,10 +70,8 @@ pub async fn parse_pixelflut_commands(
     let loop_end = buffer.len().saturating_sub(PARSER_LOOKAHEAD); // Let's extract the .len() call and the subtraction into it's own variable so we only compute it once
 
     while i < loop_end {
-        // Check for buffer[i] = "PX "
-        if unsafe { (buffer.as_ptr().add(i) as *const u32).read_unaligned() } & 0x00ff_ffff
-            == 0x50582000_u32.swap_bytes()
-        {
+        let current_command = unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };
+        if current_command & 0x00ff_ffff == string_to_number(b"PX \0\0\0\0\0") {
             i += 3;
             // Parse first x coordinate char
             if buffer[i] >= b'0' && buffer[i] <= b'9' {
@@ -264,10 +273,7 @@ pub async fn parse_pixelflut_commands(
                     }
                 }
             }
-        // Check for buffer[i] = "SIZE"
-        } else if unsafe { (buffer.as_ptr().add(i) as *const u32).read_unaligned() }
-            == 0x53495a45_u32.swap_bytes()
-        {
+        } else if current_command & 0xffff_ffff == string_to_number(b"SIZE\0\0\0\0") {
             i += 4;
             last_byte_parsed = i - 1;
 
@@ -276,10 +282,7 @@ pub async fn parse_pixelflut_commands(
                 .await
                 .expect("Failed to write bytes to tcp socket");
             continue;
-        // Check for buffer[i] = "HELP"
-        } else if unsafe { (buffer.as_ptr().add(i) as *const u32).read_unaligned() }
-            == 0x48454c50_u32.swap_bytes()
-        {
+        } else if current_command & 0xffff_ffff == string_to_number(b"HELP\0\0\0\0") {
             i += 4;
             last_byte_parsed = i - 1;
 
@@ -288,11 +291,7 @@ pub async fn parse_pixelflut_commands(
                 .await
                 .expect("Failed to write bytes to tcp socket");
             continue;
-        // Check for buffer[i] = "OFFSET "
-        } else if unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() }
-            & 0x0000_ffff_ffff_ffff
-            == 0x4f464653455420_u64.swap_bytes()
-        {
+        } else if current_command & 0x0000_ffff_ffff_ffff == string_to_number(b"OFFSET \0\0") {
             i += 7;
             // Parse first x coordinate char
             if buffer[i] >= b'0' && buffer[i] <= b'9' {
