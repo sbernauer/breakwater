@@ -284,6 +284,22 @@ mod test {
     }
 
     #[rstest]
+    #[case("PX 0 0 aaaaaa\n")]
+    #[case("PX 0 0 aa\n")]
+    #[tokio::test]
+    async fn test_safe(
+        #[case] input: &str,
+        ip: IpAddr,
+        fb: Arc<FrameBuffer>,
+        statistics_channel: (Sender<StatisticsEvent>, Receiver<StatisticsEvent>),
+    ) {
+        let mut stream = MockTcpStream::from_input(input);
+        handle_connection(&mut stream, ip, fb.clone(), statistics_channel.0).await;
+        // Test if it panics
+        assert_eq!(fb.get(0, 0).unwrap() & 0x00ff_ffff, 0xaaaaaa);
+    }
+
+    #[rstest]
     #[case(5, 5, 0, 0)]
     #[case(6, 6, 0, 0)]
     #[case(7, 7, 0, 0)]
