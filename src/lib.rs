@@ -1,3 +1,5 @@
+#![feature(portable_simd)]
+
 pub mod args;
 pub mod framebuffer;
 pub mod network;

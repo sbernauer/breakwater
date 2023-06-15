@@ -7,6 +7,7 @@ edition = "2021"
 chrono = "0.4"
 const_format = "0.2"
 clap = { version = "4.3", features = ["derive"] }
+faster-hex = "0.6.1"
 rusttype = "0.9"
 number_prefix = "0.4"
 env_logger = "0.10"

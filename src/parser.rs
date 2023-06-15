@@ -1,5 +1,6 @@
 use crate::framebuffer::FrameBuffer;
 use const_format::formatcp;
+use std::simd::{u32x8, Simd, SimdUint};
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 
@@ -143,25 +144,9 @@ pub async fn parse_pixelflut_commands(
                                 last_byte_parsed = i + 6;
                                 i += 7; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                                // 30% slower (38,334 ms vs 29,385 ms)
-                                // let str = unsafe {
-                                //     std::str::from_utf8_unchecked(&buffer[i - 7..i - 2])
-                                // };
-                                // let rgba = u32::from_str_radix(str, 16).unwrap();
+                                let rgba: u32 = simd_unhex(&buffer[i - 7..i + 1]);
 
-                                let rgba: u32 =
-                                    (ASCII_HEXADECIMAL_VALUES[buffer[i - 3] as usize] as u32) << 20
-                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 2] as usize] as u32)
-                                            << 16
-                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 5] as usize] as u32)
-                                            << 12
-                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 4] as usize] as u32)
-                                            << 8
-                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 7] as usize] as u32)
-                                            << 4
-                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 6] as usize] as u32);
-
-                                fb.set(x, y, rgba);
+                                fb.set(x, y, rgba & 0x00ff_ffff);
                                 continue;
                             }
 
@@ -171,20 +156,9 @@ pub async fn parse_pixelflut_commands(
                                 last_byte_parsed = i + 8;
                                 i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                                let rgba: u32 =
-                                    (ASCII_HEXADECIMAL_VALUES[buffer[i - 5] as usize] as u32) << 20
-                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 4] as usize] as u32)
-                                            << 16
-                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 7] as usize] as u32)
-                                            << 12
-                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 6] as usize] as u32)
-                                            << 8
-                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 9] as usize] as u32)
-                                            << 4
-                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 8] as usize] as u32);
+                                let rgba: u32 = simd_unhex(&buffer[i - 9..i - 1]);
 
-                                fb.set(x, y, rgba);
-
+                                fb.set(x, y, rgba & 0x00ff_ffff);
                                 continue;
                             }
                             #[cfg(feature = "alpha")]
@@ -192,9 +166,9 @@ pub async fn parse_pixelflut_commands(
                                 last_byte_parsed = i + 8;
                                 i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                                let alpha =
-                                    (ASCII_HEXADECIMAL_VALUES[buffer[i - 3] as usize] as u32) << 4
-                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 2] as usize] as u32);
+                                let rgba = simd_unhex(&buffer[i - 9..i - 1]);
+
+                                let alpha = rgba & 0xff;
 
                                 if alpha == 0 || x >= fb.get_width() || y >= fb.get_height() {
                                     continue;
@@ -202,15 +176,9 @@ pub async fn parse_pixelflut_commands(
 
                                 let alpha_comp = 0xff - alpha;
                                 let current = fb.get_unchecked(x, y);
-                                let r = (ASCII_HEXADECIMAL_VALUES[buffer[i - 5] as usize] as u32)
-                                    << 4
-                                    | (ASCII_HEXADECIMAL_VALUES[buffer[i - 4] as usize] as u32);
-                                let g = (ASCII_HEXADECIMAL_VALUES[buffer[i - 7] as usize] as u32)
-                                    << 4
-                                    | (ASCII_HEXADECIMAL_VALUES[buffer[i - 6] as usize] as u32);
-                                let b = (ASCII_HEXADECIMAL_VALUES[buffer[i - 9] as usize] as u32)
-                                    << 4
-                                    | (ASCII_HEXADECIMAL_VALUES[buffer[i - 8] as usize] as u32);
+                                let r = (rgba >> 24) & 0xff;
+                                let g = (rgba >> 16) & 0xff;
+                                let b = (rgba >> 8) & 0xff;
 
                                 let r: u32 =
                                     (((current >> 24) & 0xff) * alpha_comp + r * alpha) / 0xff;
@@ -228,17 +196,9 @@ pub async fn parse_pixelflut_commands(
                                 last_byte_parsed = i + 2;
                                 i += 3; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                                let rgba: u32 =
-                                    (ASCII_HEXADECIMAL_VALUES[buffer[i - 3] as usize] as u32) << 20
-                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 2] as usize] as u32)
-                                            << 16
-                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 3] as usize] as u32)
-                                            << 12
-                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 2] as usize] as u32)
-                                            << 8
-                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 3] as usize] as u32)
-                                            << 4
-                                        | (ASCII_HEXADECIMAL_VALUES[buffer[i - 2] as usize] as u32);
+                                let base = simd_unhex(&buffer[i - 3..i + 5]) & 0xff;
+
+                                let rgba: u32 = base << 16 | base << 8 | base;
 
                                 fb.set(x, y, rgba);
 
@@ -404,14 +364,42 @@ pub fn from_hex_char_lookup(char: u8) -> u8 {
     ASCII_HEXADECIMAL_VALUES[char as usize]
 }
 
+const SHIFT_PATTERN: Simd<u32, 8> = u32x8::from_array([4, 0, 12, 8, 20, 16, 28, 24]);
+const SIMD_6: Simd<u32, 8> = u32x8::from_array([6; 8]);
+const SIMD_F: Simd<u32, 8> = u32x8::from_array([0xf; 8]);
+const SIMD_9: Simd<u32, 8> = u32x8::from_array([9; 8]);
+
+#[inline(always)]
+fn simd_unhex(value: &[u8]) -> u32 {
+    #[cfg(debug_assertions)]
+    assert_eq!(value.len(), 8);
+    // Feel free to find a better, but fast, way, to cast all integers as u32
+    let input = u32x8::from_array([
+        value[0] as u32,
+        value[1] as u32,
+        value[2] as u32,
+        value[3] as u32,
+        value[4] as u32,
+        value[5] as u32,
+        value[6] as u32,
+        value[7] as u32,
+    ]);
+    // Heavily inspired by https://github.com/nervosnetwork/faster-hex/blob/master/src/decode.rs#L80
+    let sr6 = input >> SIMD_6;
+    let and15 = input & SIMD_F;
+    let mul = sr6 * SIMD_9;
+    let hexed = and15 + mul;
+    let shifted = hexed << SHIFT_PATTERN;
+    shifted.reduce_or()
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
     fn test_from_hex_char() {
-        for c in 0..=255 {
-            assert_eq!(from_hex_char_map(c), from_hex_char_map(c));
-        }
+        assert_eq!(simd_unhex(b"01234567"), 0x67452301);
+        assert_eq!(simd_unhex(b"fedcba98"), 0x98badcfe);
     }
 }
