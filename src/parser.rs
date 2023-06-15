@@ -168,7 +168,7 @@ pub async fn parse_pixelflut_commands(
 
                                 let rgba = simd_unhex(&buffer[i - 9..i - 1]);
 
-                                let alpha = rgba & 0xff;
+                                let alpha = (rgba >> 24) & 0xff;
 
                                 if alpha == 0 || x >= fb.get_width() || y >= fb.get_height() {
                                     continue;
@@ -176,9 +176,9 @@ pub async fn parse_pixelflut_commands(
 
                                 let alpha_comp = 0xff - alpha;
                                 let current = fb.get_unchecked(x, y);
-                                let r = (rgba >> 24) & 0xff;
-                                let g = (rgba >> 16) & 0xff;
-                                let b = (rgba >> 8) & 0xff;
+                                let r = (rgba >> 16) & 0xff;
+                                let g = (rgba >> 8) & 0xff;
+                                let b = rgba & 0xff;
 
                                 let r: u32 =
                                     (((current >> 24) & 0xff) * alpha_comp + r * alpha) / 0xff;
