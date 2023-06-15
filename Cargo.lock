@@ -157,7 +157,6 @@ dependencies = [
  "const_format",
  "criterion",
  "env_logger 0.10.0",
- "faster-hex",
  "lazy_static",
  "log",
  "number_prefix",
@@ -492,12 +491,6 @@ dependencies = [
  "cc",
  "libc",
 ]
-
-[[package]]
-name = "faster-hex"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51e2ce894d53b295cf97b05685aa077950ff3e8541af83217fc720a6437169f8"
 
 [[package]]
 name = "fnv"
