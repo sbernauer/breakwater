@@ -273,24 +273,6 @@ pub async fn parse_pixelflut_commands(
                     }
                 }
             }
-        } else if current_command & 0xffff_ffff == string_to_number(b"SIZE\0\0\0\0") {
-            i += 4;
-            last_byte_parsed = i - 1;
-
-            stream
-                .write_all(format!("SIZE {} {}\n", fb.get_width(), fb.get_height()).as_bytes())
-                .await
-                .expect("Failed to write bytes to tcp socket");
-            continue;
-        } else if current_command & 0xffff_ffff == string_to_number(b"HELP\0\0\0\0") {
-            i += 4;
-            last_byte_parsed = i - 1;
-
-            stream
-                .write_all(HELP_TEXT)
-                .await
-                .expect("Failed to write bytes to tcp socket");
-            continue;
         } else if current_command & 0x0000_ffff_ffff_ffff == string_to_number(b"OFFSET \0\0") {
             i += 7;
             // Parse first x coordinate char
@@ -353,6 +335,24 @@ pub async fn parse_pixelflut_commands(
                     }
                 }
             }
+        } else if current_command & 0xffff_ffff == string_to_number(b"SIZE\0\0\0\0") {
+            i += 4;
+            last_byte_parsed = i - 1;
+
+            stream
+                .write_all(format!("SIZE {} {}\n", fb.get_width(), fb.get_height()).as_bytes())
+                .await
+                .expect("Failed to write bytes to tcp socket");
+            continue;
+        } else if current_command & 0xffff_ffff == string_to_number(b"HELP\0\0\0\0") {
+            i += 4;
+            last_byte_parsed = i - 1;
+
+            stream
+                .write_all(HELP_TEXT)
+                .await
+                .expect("Failed to write bytes to tcp socket");
+            continue;
         }
 
         i += 1;
