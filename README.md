@@ -101,6 +101,14 @@ To e.g. turn the VNS server off, build with
 cargo run --release --no-default-features # --features alpha,vnc to explicitly enable
 ```
 
+## Usage of SIMD and nightly Rust
+[Fabian Wunsch](https://github.com/fabi321) has introduced initial support for SIMD when parsing the hexadecimal color values in [#5](https://github.com/sbernauer/breakwater/pull/5). Thanks!
+We might be able to extend the support, parsing the decimal coordinates or blending colors using alpha using SIMD would be awesome as well. PRs welcome!
+
+As `portable_simd` is a unstable feature, we configured this project to use nightly Rust in `rust-toolchain.toml`. Once the feature is stable we can switch back to stable Rust.
+
+If the SIMD or nightly part causes any problems on your setup please reach out by [creating an Issue](https://github.com/sbernauer/breakwater/issues/new)!
+
 # Run in docker container
 This command will start the Pixelflut server in a docker container
 ```bash
@@ -131,6 +139,9 @@ If you visit the Grafana server (user=admin, password=admin) you will have acces
 ![Grafana screenshot](docs/images/Screenshot_20220210_215752.png)
 
 # Performance
+
+:warning: The figures below are outdated. The performance of breakwater has increased significant in the meantime. I sadly don't have access to the server any more to run the benchmarks - happy about any figures for a beefy system. At GPN 21 we were able to reach 80 Gbit/s (40 via network and 40 via loopback) on a 20 core/40 thread system while serving > 500 connections :)
+
 ## Laptop
 My Laptop has a `Intel(R) Core(TM) i7-8850H CPU @ 2.60GHz` (6 Cores/12 Threads) and 2 DDR4 RAM modules with 16 GB each and 2667 MT/s.
 The Pixelflut-server and Pixelflut-client [Sturmflut](https://github.com/TobleMiner/sturmflut) both run on my Laptop using 24 connections.
@@ -148,7 +159,6 @@ These are the results of different Pixelflut servers:
 The server has two `Intel(R) Xeon(R) CPU E5-2660 v2 @ 2.20GHz` processors with 10 cores / 20 threads each.
 Another server was used as a Pixelflut-client [Sturmflut](https://github.com/TobleMiner/sturmflut).
 The servers were connected with two 40G and one 10G links, through which traffic was generated.
-
 
 | Server                                                | Language | Sustainable traffic |
 |-------------------------------------------------------|----------|---------------------|
