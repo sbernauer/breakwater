@@ -325,45 +325,6 @@ pub async fn parse_pixelflut_commands(
     }
 }
 
-#[inline(always)]
-pub fn from_hex_char_map(char: u8) -> u8 {
-    match char {
-        b'0'..=b'9' => char - b'0',
-        b'a'..=b'f' => char - b'a' + 10,
-        b'A'..=b'F' => char - b'A' + 10,
-        _ => 0,
-    }
-}
-
-// fn main() {
-// let numbers = (0..=255)
-//     .map(|char| match char {
-//         b'0'..=b'9' => char - b'0',
-//         b'a'..=b'f' => char - b'a' + 10,
-//         b'A'..=b'F' => char - b'A' + 10,
-//         _ => 0,
-//     })
-//     .map(|number| number.to_string())
-//     .collect::<Vec<String>>();
-// println!("{}", numbers.join(", "));
-// }
-const ASCII_HEXADECIMAL_VALUES: [u8; 256] = [
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 0, 0, 0,
-    0, 10, 11, 12, 13, 14, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 10, 11, 12, 13, 14, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0,
-];
-
-#[inline(always)]
-pub fn from_hex_char_lookup(char: u8) -> u8 {
-    ASCII_HEXADECIMAL_VALUES[char as usize]
-}
-
 const SHIFT_PATTERN: Simd<u32, 8> = u32x8::from_array([4, 0, 12, 8, 20, 16, 28, 24]);
 const SIMD_6: Simd<u32, 8> = u32x8::from_array([6; 8]);
 const SIMD_F: Simd<u32, 8> = u32x8::from_array([0xf; 8]);
