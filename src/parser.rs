@@ -347,7 +347,7 @@ fn simd_unhex(value: &[u8]) -> u32 {
         value[6] as u32,
         value[7] as u32,
     ]);
-    // Heavily inspired by https://github.com/nervosnetwork/faster-hex/blob/master/src/decode.rs#L80
+    // Heavily inspired by https://github.com/nervosnetwork/faster-hex/blob/a4c06b387ddeeea311c9e84a3adcaf01015cf40e/src/decode.rs#L80
     let sr6 = input >> SIMD_6;
     let and15 = input & SIMD_F;
     let mul = sr6 * SIMD_9;
