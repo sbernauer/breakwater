@@ -330,6 +330,8 @@ const SIMD_6: Simd<u32, 8> = u32x8::from_array([6; 8]);
 const SIMD_F: Simd<u32, 8> = u32x8::from_array([0xf; 8]);
 const SIMD_9: Simd<u32, 8> = u32x8::from_array([9; 8]);
 
+/// Parse a slice of 8 characters into a single u32 number
+/// is undefined behavior for invalid characters
 #[inline(always)]
 fn simd_unhex(value: &[u8]) -> u32 {
     #[cfg(debug_assertions)]
