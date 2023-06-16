@@ -23,7 +23,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: stable
+          toolchain: nightly
           target: ${{ matrix.target }}
           override: true
       - if: runner.os == 'Linux'
