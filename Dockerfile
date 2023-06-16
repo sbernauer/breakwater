@@ -1,4 +1,4 @@
-FROM rust:1.70.0 as builder
+FROM rust:1.70.0-bookworm as builder
 
 WORKDIR /breakwater
 COPY src/ src/
@@ -12,7 +12,7 @@ RUN rustup toolchain install nightly
 # We don't want to e.g. set "-C target-cpu=native", so that the binary should run everywhere
 RUN RUSTFLAGS='' cargo +nightly install --path .
 
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 RUN apt-get update && \
     apt-get install -y libvncserver1 ffmpeg && \
     rm -rf /var/lib/apt/lists/*
