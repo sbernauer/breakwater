@@ -112,11 +112,7 @@ If the SIMD or nightly part causes any problems on your setup please reach out b
 # Run in docker container
 This command will start the Pixelflut server in a docker container
 ```bash
-docker run --rm -p 1234:1234 -p 5900:5900 -p 9100:9100 sbernauer/breakwater # --help
-```
-The following command stops the server again (if there are some problems with `SIGINT`)
-```bash
-docker stop $(docker ps -q --filter ancestor=sbernauer/breakwater)
+docker run --rm --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 sbernauer/breakwater # --help
 ```
 
 # Ready to use Docker compose setup
