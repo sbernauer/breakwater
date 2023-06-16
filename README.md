@@ -115,6 +115,11 @@ This command will start the Pixelflut server in a docker container
 docker run --rm --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 sbernauer/breakwater # --help
 ```
 
+If you want to permanently save statistics (to keep them between restarts) you can use the following command:
+```bash
+mkdir -p pixelflut && docker run --rm -u 1000:1000 --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 -v "$(pwd)/pixelflut:/pixelflut" foo:bar --statistics-save-file /pixelflut/statistics.json
+```
+
 # Ready to use Docker compose setup
 The ready to use Docker compose setup contains the Pixelflut server, a prometheus server and a Grafana for monitoring.
 Use the following command to start the whole setup
