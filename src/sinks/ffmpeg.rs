@@ -121,7 +121,7 @@ impl FfmpegSink {
             ("r", self.fps.to_string().as_str()),
             ("g", (self.fps * 2).to_string().as_str()),
             ("ar", "44100"),
-            ("b:v", "4500k"),
+            ("b:v", "6000k"),
             ("b:a", "128k"),
             ("threads", "4"),
             // ("f", "flv"),
