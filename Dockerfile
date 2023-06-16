@@ -8,7 +8,9 @@ COPY Arial.ttf .
 RUN apt-get update && \
     apt-get install -y clang libvncserver-dev && \
     rm -rf /var/lib/apt/lists/*
-RUN cargo install --path .
+RUN rustup toolchain install nightly
+# We don't want to e.g. set "-C target-cpu=native", so that the binary should run everywhere
+RUN RUSTFLAGS='' cargo +nightly install --path .
 
 FROM debian:bullseye-slim
 RUN apt-get update && \
