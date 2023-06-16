@@ -1,6 +1,6 @@
 use crate::framebuffer::FrameBuffer;
 use const_format::formatcp;
-use std::simd::{u32x8, Simd, SimdUint};
+use std::simd::{u32x4, u32x8, Simd, SimdPartialOrd, SimdUint, ToBitMask};
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 
@@ -74,163 +74,106 @@ pub async fn parse_pixelflut_commands(
         let current_command = unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };
         if current_command & 0x00ff_ffff == string_to_number(b"PX \0\0\0\0\0") {
             i += 3;
-            // Parse first x coordinate char
-            if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                x = (buffer[i] - b'0') as usize;
-                i += 1;
+            let (mut x, x_size) = simd_digit_parsing(&buffer[i..i + 4]);
+            i += x_size + 1;
+            let (mut y, y_size) = simd_digit_parsing(&buffer[i..i + 4]);
+            i += y_size;
 
-                // Parse optional second x coordinate char
-                if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                    // TODO: Test bitshifts and add instead of multiplication
-                    // i = (i << 3) + (i << 1);
-                    // i = (i * 8) + (i * 2);
-                    // i = 8i + 2i
-                    // i = 10i
-                    x = 10 * x + (buffer[i] - b'0') as usize;
-                    i += 1;
+            if x_size != 0 && y_size != 0 {
+                x += connection_x_offset;
+                y += connection_y_offset;
 
-                    // Parse optional third x coordinate char
-                    if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                        x = 10 * x + (buffer[i] - b'0') as usize;
-                        i += 1;
-
-                        // Parse optional forth x coordinate char
-                        if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                            x = 10 * x + (buffer[i] - b'0') as usize;
-                            i += 1;
-                        }
-                    }
-                }
-
-                // Separator between x and y
+                // Separator between coordinates and color
                 if buffer[i] == b' ' {
                     i += 1;
 
-                    // Parse first y coordinate char
-                    if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                        y = (buffer[i] - b'0') as usize;
-                        i += 1;
+                    // TODO: Determine what clients use more: RGB, RGBA or gg variant.
+                    // If RGBA is used more often move the RGB code below the RGBA code
 
-                        // Parse optional second y coordinate char
-                        if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                            y = 10 * y + (buffer[i] - b'0') as usize;
-                            i += 1;
+                    // Must be followed by 6 bytes RGB and newline or ...
+                    if buffer[i + 6] == b'\n' {
+                        last_byte_parsed = i + 6;
+                        i += 7; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                            // Parse optional third y coordinate char
-                            if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                                y = 10 * y + (buffer[i] - b'0') as usize;
-                                i += 1;
+                        let rgba: u32 = simd_unhex(&buffer[i - 7..i + 1]);
 
-                                // Parse optional forth y coordinate char
-                                if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                                    y = 10 * y + (buffer[i] - b'0') as usize;
-                                    i += 1;
-                                }
-                            }
-                        }
+                        fb.set(x, y, rgba & 0x00ff_ffff);
+                        continue;
+                    }
 
-                        x += connection_x_offset;
-                        y += connection_y_offset;
+                    // ... or must be followed by 8 bytes RGBA and newline
+                    #[cfg(not(feature = "alpha"))]
+                    if buffer[i + 8] == b'\n' {
+                        last_byte_parsed = i + 8;
+                        i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                        // Separator between coordinates and color
-                        if buffer[i] == b' ' {
-                            i += 1;
+                        let rgba: u32 = simd_unhex(&buffer[i - 9..i - 1]);
 
-                            // TODO: Determine what clients use more: RGB, RGBA or gg variant.
-                            // If RGBA is used more often move the RGB code below the RGBA code
+                        fb.set(x, y, rgba & 0x00ff_ffff);
+                        continue;
+                    }
+                    #[cfg(feature = "alpha")]
+                    if buffer[i + 8] == b'\n' {
+                        last_byte_parsed = i + 8;
+                        i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                            // Must be followed by 6 bytes RGB and newline or ...
-                            if buffer[i + 6] == b'\n' {
-                                last_byte_parsed = i + 6;
-                                i += 7; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
+                        let rgba = simd_unhex(&buffer[i - 9..i - 1]);
 
-                                let rgba: u32 = simd_unhex(&buffer[i - 7..i + 1]);
+                        let alpha = (rgba >> 24) & 0xff;
 
-                                fb.set(x, y, rgba & 0x00ff_ffff);
-                                continue;
-                            }
-
-                            // ... or must be followed by 8 bytes RGBA and newline
-                            #[cfg(not(feature = "alpha"))]
-                            if buffer[i + 8] == b'\n' {
-                                last_byte_parsed = i + 8;
-                                i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
-
-                                let rgba: u32 = simd_unhex(&buffer[i - 9..i - 1]);
-
-                                fb.set(x, y, rgba & 0x00ff_ffff);
-                                continue;
-                            }
-                            #[cfg(feature = "alpha")]
-                            if buffer[i + 8] == b'\n' {
-                                last_byte_parsed = i + 8;
-                                i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
-
-                                let rgba = simd_unhex(&buffer[i - 9..i - 1]);
-
-                                let alpha = (rgba >> 24) & 0xff;
-
-                                if alpha == 0 || x >= fb.get_width() || y >= fb.get_height() {
-                                    continue;
-                                }
-
-                                let alpha_comp = 0xff - alpha;
-                                let current = fb.get_unchecked(x, y);
-                                let r = (rgba >> 16) & 0xff;
-                                let g = (rgba >> 8) & 0xff;
-                                let b = rgba & 0xff;
-
-                                let r: u32 =
-                                    (((current >> 24) & 0xff) * alpha_comp + r * alpha) / 0xff;
-                                let g: u32 =
-                                    (((current >> 16) & 0xff) * alpha_comp + g * alpha) / 0xff;
-                                let b: u32 =
-                                    (((current >> 8) & 0xff) * alpha_comp + b * alpha) / 0xff;
-
-                                fb.set(x, y, r << 16 | g << 8 | b);
-                                continue;
-                            }
-
-                            // ... for the efficient/lazy clients
-                            if buffer[i + 2] == b'\n' {
-                                last_byte_parsed = i + 2;
-                                i += 3; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
-
-                                let base = simd_unhex(&buffer[i - 3..i + 5]) & 0xff;
-
-                                let rgba: u32 = base << 16 | base << 8 | base;
-
-                                fb.set(x, y, rgba);
-
-                                continue;
-                            }
-                        }
-
-                        // End of command to read Pixel value
-                        if buffer[i] == b'\n' {
-                            last_byte_parsed = i;
-                            i += 1;
-                            if let Some(rgb) = fb.get(x, y) {
-                                match stream
-                                    .write_all(
-                                        format!(
-                                            "PX {} {} {:06x}\n",
-                                            // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
-                                            x - connection_x_offset,
-                                            y - connection_y_offset,
-                                            rgb.to_be() >> 8
-                                        )
-                                        .as_bytes(),
-                                    )
-                                    .await
-                                {
-                                    Ok(_) => (),
-                                    Err(_) => continue,
-                                }
-                            }
+                        if alpha == 0 || x >= fb.get_width() || y >= fb.get_height() {
                             continue;
                         }
+
+                        let alpha_comp = 0xff - alpha;
+                        let current = fb.get_unchecked(x, y);
+                        let r = (rgba >> 16) & 0xff;
+                        let g = (rgba >> 8) & 0xff;
+                        let b = rgba & 0xff;
+
+                        let r: u32 = (((current >> 24) & 0xff) * alpha_comp + r * alpha) / 0xff;
+                        let g: u32 = (((current >> 16) & 0xff) * alpha_comp + g * alpha) / 0xff;
+                        let b: u32 = (((current >> 8) & 0xff) * alpha_comp + b * alpha) / 0xff;
+
+                        fb.set(x, y, r << 16 | g << 8 | b);
+                        continue;
                     }
+
+                    // ... for the efficient/lazy clients
+                    if buffer[i + 2] == b'\n' {
+                        last_byte_parsed = i + 2;
+                        i += 3; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
+
+                        let base = simd_unhex(&buffer[i - 3..i + 5]) & 0xff;
+
+                        let rgba: u32 = base << 16 | base << 8 | base;
+
+                        fb.set(x, y, rgba);
+
+                        continue;
+                    }
+                } else if buffer[i] == b'\n' {
+                    last_byte_parsed = i;
+                    i += 1;
+                    if let Some(rgb) = fb.get(x, y) {
+                        match stream
+                            .write_all(
+                                format!(
+                                    "PX {} {} {:06x}\n",
+                                    // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
+                                    x - connection_x_offset,
+                                    y - connection_y_offset,
+                                    rgb.to_be() >> 8
+                                )
+                                .as_bytes(),
+                            )
+                            .await
+                        {
+                            Ok(_) => (),
+                            Err(_) => continue,
+                        }
+                    }
+                    continue;
                 }
             }
         } else if current_command & 0x0000_ffff_ffff_ffff == string_to_number(b"OFFSET \0\0") {
@@ -356,6 +299,44 @@ fn simd_unhex(value: &[u8]) -> u32 {
     shifted.reduce_or()
 }
 
+const SIMD_0_CHAR: Simd<u32, 4> = u32x4::from_array([b'0' as u32; 4]);
+const SIMD_10: Simd<u32, 4> = u32x4::from_array([10; 4]);
+const DIGIT_FACTORS: [Simd<u32, 4>; 5] = [
+    u32x4::from_array([0; 4]),
+    u32x4::from_array([1, 0, 0, 0]),
+    u32x4::from_array([10, 1, 0, 0]),
+    u32x4::from_array([100, 10, 1, 0]),
+    u32x4::from_array([1000, 100, 10, 1]),
+];
+
+/// count, how many digits a number has, based on the map of space characters
+/// the mask is composed as follows:
+/// {4th char is space}{3rd char is space}{2nd char is space}{1st char is space}
+/// guarantees that the result is in (inclusive) 0-4
+#[inline(always)]
+fn count_digits(space_mask: u8) -> u32 {
+    (space_mask | 0b10000).trailing_zeros()
+}
+
+#[inline(always)]
+fn simd_digit_parsing(value: &[u8]) -> (usize, usize) {
+    // using u16 instead of u32 for the simd pipeline takes 20% longer for some reason
+    let input = u32x4::from_array([
+        value[0] as u32,
+        value[1] as u32,
+        value[2] as u32,
+        value[3] as u32,
+    ]);
+    let converted_digits = input - SIMD_0_CHAR;
+    let is_space = converted_digits.simd_ge(SIMD_10);
+    let space_mask = is_space.to_bitmask();
+    let digits = count_digits(space_mask) as usize;
+    // values other than (inclusive) 0-4 are impossible
+    let digit_factor = unsafe { DIGIT_FACTORS.get_unchecked(digits) };
+    let multiplied_digits = converted_digits * digit_factor;
+    (multiplied_digits.reduce_sum() as usize, digits)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -364,5 +345,38 @@ mod test {
     fn test_from_hex_char() {
         assert_eq!(simd_unhex(b"01234567"), 0x67452301);
         assert_eq!(simd_unhex(b"fedcba98"), 0x98badcfe);
+    }
+
+    #[test]
+    fn test_count_digits() {
+        assert_eq!(count_digits(0b0000), 4);
+        assert_eq!(count_digits(0b0001), 0);
+        assert_eq!(count_digits(0b0010), 1);
+        assert_eq!(count_digits(0b0011), 0);
+        assert_eq!(count_digits(0b0100), 2);
+        assert_eq!(count_digits(0b0101), 0);
+        assert_eq!(count_digits(0b0110), 1);
+        assert_eq!(count_digits(0b0111), 0);
+        assert_eq!(count_digits(0b1000), 3);
+        assert_eq!(count_digits(0b1001), 0);
+        assert_eq!(count_digits(0b1010), 1);
+        assert_eq!(count_digits(0b1011), 0);
+        assert_eq!(count_digits(0b1100), 2);
+        assert_eq!(count_digits(0b1101), 0);
+        assert_eq!(count_digits(0b1110), 1);
+        assert_eq!(count_digits(0b1111), 0);
+    }
+
+    #[test]
+    fn test_digit_parsing() {
+        assert_eq!(simd_digit_parsing(b"0123"), (123, 4));
+        assert_eq!(simd_digit_parsing(b"0 23"), (0, 1));
+        assert_eq!(simd_digit_parsing(b"5555"), (5555, 4));
+        assert_eq!(simd_digit_parsing(b"12 3"), (12, 2));
+        assert_eq!(simd_digit_parsing(b"123 "), (123, 3));
+        assert_eq!(simd_digit_parsing(b"1123"), (1123, 4));
+        assert_eq!(simd_digit_parsing(b" 123"), (0, 0));
+        assert_eq!(simd_digit_parsing(b"1\n123"), (1, 1));
+        assert_eq!(simd_digit_parsing(b"1a23"), (1, 1));
     }
 }
