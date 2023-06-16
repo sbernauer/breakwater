@@ -8,11 +8,11 @@ pub const HELP_TEXT: &[u8] = formatcp!("\
 Pixelflut server powered by breakwater https://github.com/sbernauer/breakwater
 Available commands:
 HELP: Show this help
+SIZE: Get the size of the drawing surface
 PX x y rrggbb: Color the pixel (x,y) with the given hexadecimal color rrggbb
 {}
 PX x y gg: Color the pixel (x,y) with the hexadecimal color gggggg. Basically this is the same as the other commands, but is a more efficient way of filling white, black or gray areas
 PX x y: Get the color value of the pixel (x,y)
-SIZE: Get the size of the drawing surface, e.g. `SIZE 1920 1080`
 OFFSET x y: Apply offset (x,y) to all further pixel draws on this connection. This can e.g. be used to pre-calculate an image/animation and simply use the OFFSET command to move it around the screen without the need to re-calculate it
 ",
 if cfg!(feature = "alpha") {
@@ -26,6 +26,7 @@ if cfg!(feature = "alpha") {
 pub struct ParserState {
     connection_x_offset: usize,
     connection_y_offset: usize,
+    /// Offset (think of index in [u8]) of the last bytes of the last fully parsed command.
     last_byte_parsed: usize,
 }
 
@@ -35,11 +36,9 @@ impl ParserState {
     }
 }
 
-/// Returns the offset (think of index in [u8]) of the last bytes of the last fully parsed command.
-///
-/// TODO: Implement support for 16K (15360 × 8640).
-/// Currently the parser only can read up to 4 digits of x or y coordinates.
-/// If you buy me a big enough screen I will kindly implement this feature.
+// TODO: Implement support for 16K (15360 × 8640).
+// Currently the parser only can read up to 4 digits of x or y coordinates.
+// If you buy me a big enough screen I will kindly implement this feature.
 pub async fn parse_pixelflut_commands(
     buffer: &[u8],
     fb: &Arc<FrameBuffer>,

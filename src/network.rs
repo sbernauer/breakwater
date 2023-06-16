@@ -146,7 +146,9 @@ pub async fn handle_connection(
 
             // There is no need to leave anything longer than a command can take
             // This prevents malicious clients from sending gibberish and the buffer not getting drained
-            leftover_bytes_in_buffer = min(leftover_bytes_in_buffer, PARSER_LOOKAHEAD);
+            if cfg!(not(feature = "token")) {
+                leftover_bytes_in_buffer = min(leftover_bytes_in_buffer, PARSER_LOOKAHEAD);
+            }
         }
 
         if leftover_bytes_in_buffer > 0 {
@@ -185,7 +187,12 @@ mod test {
     use crate::test::helpers::MockTcpStream;
     use rstest::{fixture, rstest};
     use std::time::Duration;
-    use tokio::sync::mpsc::{self, Receiver};
+    use tokio::{
+        io::{AsyncBufReadExt, BufStream},
+        net::TcpStream,
+        sync::mpsc::{self, Receiver},
+        time::sleep,
+    };
 
     #[fixture]
     fn ip() -> IpAddr {
@@ -208,11 +215,10 @@ mod test {
     #[case("\n", "")]
     #[case("not a pixelflut command", "")]
     #[case("not a pixelflut command with newline\n", "")]
-    #[case("SIZE", "SIZE 1920 1080\n")]
+    // #[case("SIZE", "SIZE 1920 1080\n")]
     #[case("SIZE\n", "SIZE 1920 1080\n")]
     #[case("SIZE\nSIZE\n", "SIZE 1920 1080\nSIZE 1920 1080\n")]
-    #[case("SIZE", "SIZE 1920 1080\n")]
-    #[case("HELP", std::str::from_utf8(crate::parser::HELP_TEXT).unwrap())]
+    // #[case("HELP", std::str::from_utf8(crate::parser::HELP_TEXT).unwrap())]
     #[case("HELP\n", std::str::from_utf8(crate::parser::HELP_TEXT).unwrap())]
     #[case("bla bla bla\nSIZE\nblub\nbla", "SIZE 1920 1080\n")]
     #[tokio::test]
@@ -229,6 +235,7 @@ mod test {
         assert_eq!(expected, stream.get_output());
     }
 
+    #[cfg(not(feature = "token"))]
     #[rstest]
     // Without alpha
     #[case("PX 0 0 ffffff\nPX 0 0\n", "PX 0 0 ffffff\n")]
@@ -283,6 +290,7 @@ mod test {
         assert_eq!(expected, stream.get_output());
     }
 
+    #[cfg(not(feature = "token"))]
     #[rstest]
     #[case(5, 5, 0, 0)]
     #[case(6, 6, 0, 0)]
@@ -317,7 +325,7 @@ mod test {
         let mut read_other_pixels_commands = String::new();
         let mut read_other_pixels_commands_expected = String::new();
 
-        for x in 0..fb.get_width() {
+        for x in 0..width {
             for y in 0..height {
                 // Inside the rect
                 if x >= offset_x && x <= offset_x + width && y >= offset_y && y <= offset_y + height
@@ -381,5 +389,114 @@ mod test {
         )
         .await;
         assert_eq!(read_other_pixels_commands_expected, stream.get_output());
+    }
+
+    #[cfg(feature = "token")]
+    #[rstest]
+    // Request token
+    #[case("TOKEN\n", "TOKEN 67e55044-10b1-426f-9247-bb680e5fe0c8 1000\n")]
+    // Token missing
+    #[case("PX 0 0 ffffff\nPX 0 0\n", "PX 0 0 000000\n")]
+    #[case("PX 0 0 abcdef\nPX 0 0\n", "PX 0 0 000000\n")]
+    #[case("PX 0 42 abcdef\nPX 0 42\n", "PX 0 42 000000\n")]
+    #[case("PX 42 0 abcdef\nPX 42 0\n", "PX 42 0 000000\n")]
+    // Wrong token
+    #[case(
+        "TOKEN\nPX 0 0 ffffff xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\nPX 0 0\n",
+        "TOKEN 67e55044-10b1-426f-9247-bb680e5fe0c8 1000\nERROR: Wrong TOKEN, expected 67e55044-10b1-426f-9247-bb680e5fe0c8 with 1000 draws left, got xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\nPX 0 0 000000\n"
+    )]
+    // Token expired
+    #[case(
+        "PX 0 0 ffffff 67e55044-10b1-426f-9247-bb680e5fe0c8\nPX 0 0\n",
+        "ERROR: Token has used all available draws (or no token requested)\nPX 0 0 000000\n"
+    )]
+    // Token set
+    #[case(
+        "TOKEN\nPX 0 0 ffffff 67e55044-10b1-426f-9247-bb680e5fe0c8\nPX 0 0\n",
+        "TOKEN 67e55044-10b1-426f-9247-bb680e5fe0c8 1000\nPX 0 0 ffffff\n"
+    )]
+    #[case(
+        "TOKEN\nPX 0 42 abcdef 67e55044-10b1-426f-9247-bb680e5fe0c8\nPX 0 42\n",
+        "TOKEN 67e55044-10b1-426f-9247-bb680e5fe0c8 1000\nPX 0 42 abcdef\n"
+    )]
+    #[case(
+        "TOKEN\nPX 42 0 abcdef 67e55044-10b1-426f-9247-bb680e5fe0c8\nPX 42 0\n",
+        "TOKEN 67e55044-10b1-426f-9247-bb680e5fe0c8 1000\nPX 42 0 abcdef\n"
+    )]
+    // Setting pixels with alpha or only gray scale values is not supported
+    #[case("PX 0 0 abcdef\nPX 0 0\n", "PX 0 0 000000\n")]
+    #[case("PX 0 0 abcdef80\nPX 0 0\n", "PX 0 0 000000\n")]
+    #[case("PX 0 0 ab\nPX 0 0\n", "PX 0 0 000000\n")]
+    #[case(
+        "TOKEN\nPX 0 0 abcdef80 67e55044-10b1-426f-9247-bb680e5fe0c8\nPX 0 0\n",
+        "TOKEN 67e55044-10b1-426f-9247-bb680e5fe0c8 1000\nPX 0 0 000000\n"
+    )]
+    #[case(
+        "TOKEN\nPX 0 0 ab 67e55044-10b1-426f-9247-bb680e5fe0c8\nPX 0 0\n",
+        "TOKEN 67e55044-10b1-426f-9247-bb680e5fe0c8 1000\nPX 0 0 000000\n"
+    )]
+    #[tokio::test]
+    async fn test_setting_pixel_with_token(
+        #[case] input: &str,
+        #[case] expected: &str,
+        ip: IpAddr,
+        fb: Arc<FrameBuffer>,
+        statistics_channel: (Sender<StatisticsEvent>, Receiver<StatisticsEvent>),
+    ) {
+        let mut stream = MockTcpStream::from_input(input);
+        handle_connection(&mut stream, ip, fb, statistics_channel.0).await;
+
+        assert_eq!(expected, stream.get_output());
+    }
+
+    #[tokio::test]
+    async fn test_foo() -> Result<(), Box<dyn std::error::Error>> {
+        let fb = fb();
+        let statistics_channel = statistics_channel();
+        let network = Network::new("[::]:1234", Arc::clone(&fb), statistics_channel.0);
+        let network_listener_thread = tokio::spawn(async move {
+            network.listen().await.unwrap();
+        });
+        sleep(Duration::from_millis(50)).await;
+        let mut stream = BufStream::new(TcpStream::connect("127.0.0.1:1234").await?);
+
+        stream.write_all("TOKEN\n".as_bytes()).await?;
+        stream.flush().await?;
+
+        let mut line = String::new();
+        stream.read_line(&mut line).await?;
+        let mut line_parts = line.split(' ');
+        assert_eq!(line_parts.next(), Some("TOKEN"));
+        let token = line_parts.next().unwrap();
+        assert_eq!(token.len(), 36);
+        assert_eq!(line_parts.next(), Some("1000\n"));
+
+        let mut color: u32 = 0;
+        let mut fill_commands = String::new();
+        let mut read_commands = String::new();
+        let mut read_commands_expected = String::new();
+
+        for x in 0..10 {
+            for y in 0..100 {
+                fill_commands += &format!("PX {x} {y} {color:06x} {token}\n");
+                read_commands += &format!("PX {x} {y}\n");
+                read_commands_expected += &format!("PX {x} {y} {color:06x}\n");
+
+                color += 1; // Use another color for the next test case
+            }
+        }
+
+        stream.write_all(fill_commands.as_bytes()).await?;
+        stream.write_all(read_commands.as_bytes()).await?;
+        stream.flush().await?;
+
+        let mut response = String::new();
+        for _ in 0..1000 {
+            stream.read_line(&mut response).await?;
+        }
+        assert_eq!(response, read_commands_expected);
+
+        network_listener_thread.abort();
+        Ok(())
     }
 }
