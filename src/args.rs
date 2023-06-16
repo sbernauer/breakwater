@@ -53,9 +53,9 @@ pub struct Args {
     #[clap(long)]
     pub rtmp_address: Option<String>,
 
-    /// Enable dump of video stream into file. File name will be `pixelflut_dump_{timestamp}.mp4
+    /// Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4
     #[clap(long)]
-    pub save_video_to_file: bool,
+    pub video_save_folder: Option<String>,
 
     /// Port of the VNC server.
     // #[cfg_attr(feature = "vnc", clap(short, long, default_value_t = 5900))]

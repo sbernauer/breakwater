@@ -8,17 +8,17 @@ use crate::{args::Args, framebuffer::FrameBuffer};
 pub struct FfmpegSink {
     fb: Arc<FrameBuffer>,
     rtmp_address: Option<String>,
-    save_video_to_file: bool,
+    video_save_folder: Option<String>,
     fps: u32,
 }
 
 impl FfmpegSink {
     pub fn new(args: &Args, fb: Arc<FrameBuffer>) -> Option<Self> {
-        if args.rtmp_address.is_some() || args.save_video_to_file {
+        if args.rtmp_address.is_some() || args.video_save_folder.is_some() {
             Some(FfmpegSink {
                 fb,
                 rtmp_address: args.rtmp_address.clone(),
-                save_video_to_file: args.save_video_to_file,
+                video_save_folder: args.video_save_folder.clone(),
                 fps: args.fps,
             })
         } else {
@@ -33,18 +33,18 @@ impl FfmpegSink {
             .flat_map(|(arg, value)| [format!("-{arg}"), value])
             .collect();
 
-        let video_file = format!(
-            "pixelflut_dump_{}.mp4",
-            Local::now().format("%Y-%m-%d_%H-%M-%S")
-        );
         match &self.rtmp_address {
-            Some(rtmp_address) => {
-                if self.save_video_to_file {
+            Some(rtmp_address) => match &self.video_save_folder {
+                Some(video_save_folder) => {
                     ffmpeg_args.extend(
                         self.ffmpeg_rtmp_sink_args()
                             .into_iter()
                             .flat_map(|(arg, value)| [format!("-{arg}"), value])
                             .collect::<Vec<_>>(),
+                    );
+                    let video_file = format!(
+                        "{video_save_folder}/pixelflut_dump_{}.mp4",
+                        Local::now().format("%Y-%m-%d_%H-%M-%S")
                     );
                     ffmpeg_args.extend([
                         "-f".to_string(),
@@ -59,7 +59,8 @@ impl FfmpegSink {
                         ),
                     ]);
                     todo!("Writing to file and rtmp sink simultaneously currently not supported");
-                } else {
+                }
+                None => {
                     ffmpeg_args.extend(
                         self.ffmpeg_rtmp_sink_args()
                             .into_iter()
@@ -68,14 +69,19 @@ impl FfmpegSink {
                     );
                     ffmpeg_args.extend(["-f".to_string(), "flv".to_string(), rtmp_address.clone()])
                 }
-            }
-            None => {
-                if self.save_video_to_file {
+            },
+            None => match &self.video_save_folder {
+                Some(video_save_folder) => {
+                    let video_file = format!(
+                        "{video_save_folder}/pixelflut_dump_{}.mp4",
+                        Local::now().format("%Y-%m-%d_%H-%M-%S")
+                    );
                     ffmpeg_args.extend([video_file])
-                } else {
-                    unreachable!("FfmpegSink can only be created when either rtmp or video file is activated")
                 }
-            }
+                None => unreachable!(
+                    "FfmpegSink can only be created when either rtmp or video file is activated"
+                ),
+            },
         }
 
         log::info!("ffmpeg {}", ffmpeg_args.join(" "));

@@ -74,8 +74,8 @@ Options:
           Disable periodical saving of statistics into save file
       --rtmp-address <RTMP_ADDRESS>
           Enable rtmp streaming to configured address, e.g. `rtmp://127.0.0.1:1935/live/test`
-      --save-video-to-file
-          Enable dump of video stream into file. File name will be `pixelflut_dump_{timestamp}.mp4
+      --video-save-folder <VIDEO_SAVE_FOLDER>
+          Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4
   -v, --vnc-port <VNC_PORT>
           Port of the VNC server [default: 5900]
   -h, --help
