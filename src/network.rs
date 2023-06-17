@@ -10,10 +10,8 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+use std::{net::TcpListener, io::{Read, Write}, sync::mpsc::Sender};
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpListener,
-    sync::mpsc::Sender,
     time::Instant,
 };
 
@@ -40,27 +38,27 @@ impl Network {
         }
     }
 
-    pub async fn listen(&self) -> tokio::io::Result<()> {
-        let listener = TcpListener::bind(&self.listen_address).await?;
+    pub fn listen(&self) -> std::io::Result<()> {
+        let listener = TcpListener::bind(&self.listen_address)?;
         info!("Started Pixelflut server on {}", self.listen_address);
 
         loop {
-            let (socket, socket_addr) = listener.accept().await?;
+            let (socket, socket_addr) = listener.accept()?;
             // If you connect via IPv4 you often show up as embedded inside an IPv6 address
             // Extracting the embedded information here, so we get the real (TM) address
             let ip = ip_to_canonical(socket_addr.ip());
 
             let fb_for_thread = Arc::clone(&self.fb);
             let statistics_tx_for_thread = self.statistics_tx.clone();
-            tokio::spawn(async move {
-                handle_connection(socket, ip, fb_for_thread, statistics_tx_for_thread).await;
+            std::thread::spawn(move || {
+                handle_connection(socket, ip, fb_for_thread, statistics_tx_for_thread);
             });
         }
     }
 }
 
-pub async fn handle_connection(
-    mut stream: impl AsyncReadExt + AsyncWriteExt + Unpin,
+pub fn handle_connection(
+    mut stream: impl Read + Write + Unpin,
     ip: IpAddr,
     fb: Arc<FrameBuffer>,
     statistics_tx: Sender<StatisticsEvent>,
@@ -69,7 +67,6 @@ pub async fn handle_connection(
 
     statistics_tx
         .send(StatisticsEvent::ConnectionCreated { ip })
-        .await
         .expect("Statistics channel disconnected");
 
     // TODO: Try performance of Vec<> on heap instead of stack. Also bigger buffer
@@ -90,7 +87,6 @@ pub async fn handle_connection(
         // If there are any bytes left over from the previous loop iteration leave them as is and but the new data behind
         let bytes_read = match stream
             .read(&mut buffer[leftover_bytes_in_buffer..NETWORK_BUFFER_SIZE - PARSER_LOOKAHEAD])
-            .await
         {
             Ok(bytes_read) => bytes_read,
             Err(_) => {
@@ -108,7 +104,6 @@ pub async fn handle_connection(
                     ip,
                     bytes: statistics_bytes_read,
                 })
-                .await
                 .expect("Statistics channel disconnected");
             last_statistics = Instant::now();
             statistics_bytes_read = 0;
@@ -137,8 +132,7 @@ pub async fn handle_connection(
                 &fb,
                 &mut stream,
                 parser_state,
-            )
-            .await;
+            );
 
             // IMPORTANT: We have to subtract 1 here, as e.g. we have "PX 0 0\n" data_end is 7 and parser_state.last_byte_parsed is 6.
             // This happens, because last_byte_parsed is an index starting at 0, so index 6 is from an array of length 7
@@ -161,7 +155,6 @@ pub async fn handle_connection(
 
     statistics_tx
         .send(StatisticsEvent::ConnectionClosed { ip })
-        .await
         .expect("Statistics channel disconnected");
 }
 

@@ -9,7 +9,8 @@ use breakwater::{
 use clap::Parser;
 use env_logger::Env;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc};
+use std::sync::mpsc;
+use tokio::sync::{broadcast};
 #[cfg(feature = "vnc")]
 use {
     breakwater::sinks::vnc::VncServer,
@@ -27,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // If we make the channel to big, stats will start to lag behind
     // TODO: Check performance impact in real-world scenario. Maybe the statistics thread blocks the other threads
-    let (statistics_tx, statistics_rx) = mpsc::channel::<StatisticsEvent>(100);
+    let (statistics_tx, statistics_rx) = mpsc::channel::<StatisticsEvent>();
     let (statistics_information_tx, statistics_information_rx_for_prometheus_exporter) =
         broadcast::channel::<StatisticsInformationEvent>(2);
     #[cfg(feature = "vnc")]
@@ -48,8 +49,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let network = Network::new(&args.listen_address, Arc::clone(&fb), statistics_tx.clone());
-    let network_listener_thread = tokio::spawn(async move {
-        network.listen().await.unwrap();
+    let network_listener_thread = std::thread::spawn(move || {
+        network.listen().unwrap();
     });
 
     let ffmpeg_sink = FfmpegSink::new(&args, Arc::clone(&fb));
@@ -94,7 +95,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     prometheus_exporter_thread.await?;
-    network_listener_thread.await?;
+    network_listener_thread.join().unwrap();
     if let Some(ffmpeg_thread) = ffmpeg_thread {
         ffmpeg_thread.await?;
     }

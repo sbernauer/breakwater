@@ -6,7 +6,7 @@ use rusttype::{point, Font, Scale};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast;
-use tokio::sync::mpsc::Sender;
+use std::sync::mpsc::Sender;
 use vncserver::{
     rfb_framebuffer_malloc, rfb_get_screen, rfb_init_server, rfb_mark_rect_as_modified,
     rfb_run_event_loop, RfbScreenInfoPtr,
@@ -105,7 +105,7 @@ impl<'a> VncServer<'a> {
                 height_up_to_stats_text as i32,
             );
             self.statistics_tx
-                .blocking_send(StatisticsEvent::FrameRendered)
+                .send(StatisticsEvent::FrameRendered)
                 .unwrap();
 
             if !self.statistics_information_rx.is_empty() {

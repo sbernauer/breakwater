@@ -4,10 +4,11 @@ use std::{
     cmp::max,
     collections::{hash_map::Entry, HashMap},
     fs::File,
+    sync::mpsc::Receiver,
     net::IpAddr,
     time::{Duration, Instant},
 };
-use tokio::sync::{broadcast, mpsc::Receiver};
+use tokio::sync::{broadcast};
 
 pub const STATS_REPORT_INTERVAL: Duration = Duration::from_millis(1000);
 pub const STATS_SLIDING_WINDOW_SIZE: usize = 5;
@@ -106,7 +107,7 @@ impl Statistics {
         let mut last_save_file_written = Instant::now();
         let mut statistics_information_event = StatisticsInformationEvent::default();
 
-        while let Some(statistics_update) = self.statistics_rx.recv().await {
+        while let Ok(statistics_update) = self.statistics_rx.recv() {
             self.statistic_events += 1;
             match statistics_update {
                 StatisticsEvent::ConnectionCreated { ip } => {

@@ -3,7 +3,7 @@ use const_format::formatcp;
 use log::{info, warn};
 use std::simd::{u32x8, Simd, SimdUint};
 use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
+use std::io::Write;
 
 pub const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
 pub const HELP_TEXT: &[u8] = formatcp!("\
@@ -53,10 +53,10 @@ const fn string_to_number(input: &[u8]) -> u64 {
 /// TODO: Implement support for 16K (15360 × 8640).
 /// Currently the parser only can read up to 4 digits of x or y coordinates.
 /// If you buy me a big enough screen I will kindly implement this feature.
-pub async fn parse_pixelflut_commands(
+pub fn parse_pixelflut_commands(
     buffer: &[u8],
     fb: &Arc<FrameBuffer>,
-    mut stream: impl AsyncWriteExt + Unpin,
+    mut stream: impl Write + Unpin,
     // We don't pass this as mutual reference but instead hand it around - I guess on the stack?
     // I don't know what I'm doing, hoping for best performance anyway ;)
     parser_state: ParserState,
@@ -223,7 +223,6 @@ pub async fn parse_pixelflut_commands(
                                         )
                                         .as_bytes(),
                                     )
-                                    .await
                                 {
                                     Ok(_) => (),
                                     Err(_) => continue,
@@ -302,7 +301,6 @@ pub async fn parse_pixelflut_commands(
 
             stream
                 .write_all(format!("SIZE {} {}\n", fb.get_width(), fb.get_height()).as_bytes())
-                .await
                 .expect("Failed to write bytes to tcp socket");
             continue;
         } else if current_command & 0xffff_ffff == string_to_number(b"HELP\0\0\0\0") {
@@ -311,7 +309,6 @@ pub async fn parse_pixelflut_commands(
 
             stream
                 .write_all(HELP_TEXT)
-                .await
                 .expect("Failed to write bytes to tcp socket");
             continue;
         }
