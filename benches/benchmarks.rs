@@ -6,9 +6,9 @@ use breakwater::{
 use criterion::{
     BenchmarkId, Criterion, {criterion_group, criterion_main},
 };
-use std::{sync::Arc, time::Duration};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
+use std::{sync::Arc, time::Duration};
 
 const FRAMEBUFFER_WIDTH: usize = 1920;
 const FRAMEBUFFER_HEIGHT: usize = 1080;
@@ -23,7 +23,8 @@ async fn invoke_parse_pixelflut_commands(
 }
 
 fn from_elem(c: &mut Criterion) {
-    let mut draw_commands = get_commands_to_draw_rect(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT, 0x123456);
+    let mut draw_commands =
+        get_commands_to_draw_rect(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT, 0x123456);
     let ordered_draw_commands = draw_commands.join("");
 
     c.bench_with_input(
