@@ -1,5 +1,16 @@
 use std::{cell::UnsafeCell, slice};
 
+// We know that users can only supply 4 digits as coordinates, so up to 9999
+// As we make the framebuffer bigger we can eliminate the bound checks
+// In case the users users coordinates something bigger than framebuffer size, we write it to memory
+// residing outside of the official framebuffer.
+//
+// By using a power of two we can bitshift instead of doing a multiplication with the width (or height)
+//
+// This consumes more memory, but should be worth it
+const INTERNAL_FRAMEBUFFER_SIZE_MULTIPLE_OF_TWO: u32 = 14;
+const INTERNAL_FRAMEBUFFER_SIZE: usize = 2_usize.pow(INTERNAL_FRAMEBUFFER_SIZE_MULTIPLE_OF_TWO);
+
 pub struct FrameBuffer {
     width: usize,
     height: usize,
@@ -11,8 +22,8 @@ unsafe impl Sync for FrameBuffer {}
 
 impl FrameBuffer {
     pub fn new(width: usize, height: usize) -> Self {
-        let mut buffer = Vec::with_capacity(width * height);
-        buffer.resize_with(width * height, || 0);
+        let mut buffer = Vec::with_capacity(INTERNAL_FRAMEBUFFER_SIZE.pow(2));
+        buffer.resize_with(buffer.capacity(), || 0);
         FrameBuffer {
             width,
             height,
@@ -35,7 +46,9 @@ impl FrameBuffer {
     #[inline(always)]
     pub fn get(&self, x: usize, y: usize) -> Option<u32> {
         if x < self.width && y < self.height {
-            unsafe { Some((*self.buffer.get())[x + y * self.width]) }
+            unsafe {
+                Some((*self.buffer.get())[x + (y << INTERNAL_FRAMEBUFFER_SIZE_MULTIPLE_OF_TWO)])
+            }
         } else {
             None
         }
@@ -43,23 +56,21 @@ impl FrameBuffer {
 
     #[inline(always)]
     pub fn get_unchecked(&self, x: usize, y: usize) -> u32 {
-        unsafe { (*self.buffer.get())[x + y * self.width] }
+        unsafe { (*self.buffer.get())[x + (y << INTERNAL_FRAMEBUFFER_SIZE_MULTIPLE_OF_TWO)] }
     }
 
     #[inline(always)]
     pub fn set(&self, x: usize, y: usize, rgba: u32) {
-        // TODO: If we make the FrameBuffer large enough (e.g. 10_000 x 10_000) we don't need to check the bounds here (x and y are max 4 digit numbers).
-        // (flamegraph has shown 5.21% of runtime in this bound check O.o)
-        if x < self.width && y < self.height {
-            unsafe { (*self.buffer.get())[x + y * self.width] = rgba }
-        }
+        unsafe { (*self.buffer.get())[x + (y << INTERNAL_FRAMEBUFFER_SIZE_MULTIPLE_OF_TWO)] = rgba }
     }
 
     pub fn get_buffer(&self) -> *mut Vec<u32> {
+        // TODO: rewrite for oversized framebuffer
         self.buffer.get()
     }
 
     pub fn as_bytes(&self) -> &[u8] {
+        // TODO: rewrite for oversized framebuffer
         let buffer = self.buffer.get();
         let len_in_bytes: usize = unsafe { (*buffer).len() } * 4;
 
