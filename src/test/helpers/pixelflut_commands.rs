@@ -1,9 +1,9 @@
-pub fn get_commands_to_draw_rect(width: usize, height: usize, color: u32) -> String {
-    let mut draw_commands = String::new();
+pub fn get_commands_to_draw_rect(width: usize, height: usize, color: u32) -> Vec<String> {
+    let mut draw_commands = Vec::new();
 
     for x in 0..width {
         for y in 0..height {
-            draw_commands += &format!("PX {x} {y} {color:06x}\n");
+            draw_commands.push(format!("PX {x} {y} {color:06x}\n"));
         }
     }
 
