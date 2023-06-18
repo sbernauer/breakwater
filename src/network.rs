@@ -178,7 +178,7 @@ mod test {
     use crate::test::helpers::MockTcpStream;
     use rstest::{fixture, rstest};
     use std::time::Duration;
-    use tokio::sync::mpsc::{self, Receiver};
+    use std::sync::mpsc::{self, Receiver};
 
     #[fixture]
     fn ip() -> IpAddr {
@@ -192,7 +192,7 @@ mod test {
 
     #[fixture]
     fn statistics_channel() -> (Sender<StatisticsEvent>, Receiver<StatisticsEvent>) {
-        mpsc::channel(10000)
+        mpsc::channel()
     }
 
     #[rstest]
@@ -208,8 +208,8 @@ mod test {
     #[case("HELP", std::str::from_utf8(crate::parser::HELP_TEXT).unwrap())]
     #[case("HELP\n", std::str::from_utf8(crate::parser::HELP_TEXT).unwrap())]
     #[case("bla bla bla\nSIZE\nblub\nbla", "SIZE 1920 1080\n")]
-    #[tokio::test]
-    async fn test_correct_responses_to_general_commands(
+    #[test]
+    fn test_correct_responses_to_general_commands(
         #[case] input: &str,
         #[case] expected: &str,
         ip: IpAddr,
@@ -217,7 +217,7 @@ mod test {
         statistics_channel: (Sender<StatisticsEvent>, Receiver<StatisticsEvent>),
     ) {
         let mut stream = MockTcpStream::from_input(input);
-        handle_connection(&mut stream, ip, fb, statistics_channel.0).await;
+        handle_connection(&mut stream, ip, fb, statistics_channel.0);
 
         assert_eq!(expected, stream.get_output());
     }
@@ -262,8 +262,8 @@ mod test {
         "PX 0 0 ffffff\nPX 42 42 000000\n"
     )] // The get pixel result is also offseted
     #[case("OFFSET 0 0\nPX 0 42 abcdef\nPX 0 42\n", "PX 0 42 abcdef\n")]
-    #[tokio::test]
-    async fn test_setting_pixel(
+    #[test]
+    fn test_setting_pixel(
         #[case] input: &str,
         #[case] expected: &str,
         ip: IpAddr,
@@ -271,7 +271,7 @@ mod test {
         statistics_channel: (Sender<StatisticsEvent>, Receiver<StatisticsEvent>),
     ) {
         let mut stream = MockTcpStream::from_input(input);
-        handle_connection(&mut stream, ip, fb, statistics_channel.0).await;
+        handle_connection(&mut stream, ip, fb, statistics_channel.0);
 
         assert_eq!(expected, stream.get_output());
     }
@@ -279,15 +279,15 @@ mod test {
     #[rstest]
     #[case("PX 0 0 aaaaaa\n")]
     #[case("PX 0 0 aa\n")]
-    #[tokio::test]
-    async fn test_safe(
+    #[test]
+    fn test_safe(
         #[case] input: &str,
         ip: IpAddr,
         fb: Arc<FrameBuffer>,
         statistics_channel: (Sender<StatisticsEvent>, Receiver<StatisticsEvent>),
     ) {
         let mut stream = MockTcpStream::from_input(input);
-        handle_connection(&mut stream, ip, fb.clone(), statistics_channel.0).await;
+        handle_connection(&mut stream, ip, fb.clone(), statistics_channel.0);
         // Test if it panics
         assert_eq!(fb.get(0, 0).unwrap() & 0x00ff_ffff, 0xaaaaaa);
     }
@@ -308,8 +308,8 @@ mod test {
     #[case(500, 500, 300, 400)]
     #[case(fb().get_width(), fb().get_height(), 0, 0)]
     #[case(fb().get_width() - 1, fb().get_height() - 1, 1, 1)]
-    #[tokio::test]
-    async fn test_drawing_rect(
+    #[test]
+    fn test_drawing_rect(
         #[case] width: usize,
         #[case] height: usize,
         #[case] offset_x: usize,
@@ -354,8 +354,7 @@ mod test {
             ip,
             Arc::clone(&fb),
             statistics_channel.0.clone(),
-        )
-        .await;
+        );
         assert_eq!("", stream.get_output());
 
         // Read the pixels again
@@ -365,8 +364,7 @@ mod test {
             ip,
             Arc::clone(&fb),
             statistics_channel.0.clone(),
-        )
-        .await;
+        );
         assert_eq!(fill_commands, stream.get_output());
 
         // We can also do coloring and reading in a single connection
@@ -376,8 +374,7 @@ mod test {
             ip,
             Arc::clone(&fb),
             statistics_channel.0.clone(),
-        )
-        .await;
+        );
         assert_eq!(combined_commands_expected, stream.get_output());
 
         // Check that nothing else was colored
@@ -387,8 +384,7 @@ mod test {
             ip,
             Arc::clone(&fb),
             statistics_channel.0.clone(),
-        )
-        .await;
+        );
         assert_eq!(read_other_pixels_commands_expected, stream.get_output());
     }
 }

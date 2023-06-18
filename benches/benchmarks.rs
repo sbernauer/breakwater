@@ -11,13 +11,13 @@ use std::{sync::Arc, time::Duration};
 const FRAMEBUFFER_WIDTH: usize = 1920;
 const FRAMEBUFFER_HEIGHT: usize = 1080;
 
-async fn invoke_parse_pixelflut_commands(
+fn invoke_parse_pixelflut_commands(
     input: &[u8],
     fb: &Arc<FrameBuffer>,
     parser_state: ParserState,
 ) {
     let mut stream = DevNullTcpStream::default();
-    parse_pixelflut_commands(input, fb, &mut stream, parser_state).await;
+    parse_pixelflut_commands(input, fb, &mut stream, parser_state);
 }
 
 fn from_elem(c: &mut Criterion) {
@@ -33,8 +33,7 @@ fn from_elem(c: &mut Criterion) {
         |b, input| {
             let fb = Arc::new(FrameBuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT));
             let parser_state = ParserState::default();
-            b.to_async(tokio::runtime::Runtime::new().unwrap())
-                .iter(|| invoke_parse_pixelflut_commands(input, &fb, parser_state.clone()));
+            b.iter(|| invoke_parse_pixelflut_commands(input, &fb, parser_state.clone()));
         },
     );
 
