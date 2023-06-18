@@ -7,6 +7,8 @@ use criterion::{
     BenchmarkId, Criterion, {criterion_group, criterion_main},
 };
 use std::{sync::Arc, time::Duration};
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 
 const FRAMEBUFFER_WIDTH: usize = 1920;
 const FRAMEBUFFER_HEIGHT: usize = 1080;
@@ -21,15 +23,33 @@ async fn invoke_parse_pixelflut_commands(
 }
 
 fn from_elem(c: &mut Criterion) {
-    let draw_commands = get_commands_to_draw_rect(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT, 0x123456);
-    let draw_commands = draw_commands.as_bytes();
+    let mut draw_commands = get_commands_to_draw_rect(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT, 0x123456);
+    let ordered_draw_commands = draw_commands.join("");
 
     c.bench_with_input(
         BenchmarkId::new(
-            "parse_draw_commands",
+            "parse_draw_commands_ordered",
             format!("{FRAMEBUFFER_WIDTH} x {FRAMEBUFFER_HEIGHT}"),
         ),
-        &draw_commands,
+        &ordered_draw_commands.as_bytes(),
+        |b, input| {
+            let fb = Arc::new(FrameBuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT));
+            let parser_state = ParserState::default();
+            b.to_async(tokio::runtime::Runtime::new().unwrap())
+                .iter(|| invoke_parse_pixelflut_commands(input, &fb, parser_state.clone()));
+        },
+    );
+
+    let mut rng = thread_rng();
+    draw_commands.shuffle(&mut rng);
+    let shuffled_draw_commands = draw_commands.join("");
+
+    c.bench_with_input(
+        BenchmarkId::new(
+            "parse_draw_commands_shuffled",
+            format!("{FRAMEBUFFER_WIDTH} x {FRAMEBUFFER_HEIGHT}"),
+        ),
+        &shuffled_draw_commands.as_bytes(),
         |b, input| {
             let fb = Arc::new(FrameBuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT));
             let parser_state = ParserState::default();
