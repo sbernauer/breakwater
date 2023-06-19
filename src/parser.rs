@@ -1,6 +1,6 @@
 use crate::framebuffer::FrameBuffer;
 use const_format::formatcp;
-use std::simd::{u32x4, u32x8, Simd, SimdPartialOrd, SimdUint, ToBitMask};
+use std::simd::{u32x4, u32x8, Simd, SimdPartialOrd, SimdUint, ToBitMask, u8x16};
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 
@@ -74,9 +74,9 @@ pub async fn parse_pixelflut_commands(
         let current_command = unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };
         if current_command & 0x00ff_ffff == string_to_number(b"PX \0\0\0\0\0") {
             i += 3;
-            let (mut x, x_size) = simd_digit_parsing(&buffer[i..i + 4]);
+            let (mut x, x_size) = simd_digit_parsing(unsafe {buffer.as_ptr().add(i)});
             i += x_size + 1;
-            let (mut y, y_size) = simd_digit_parsing(&buffer[i..i + 4]);
+            let (mut y, y_size) = simd_digit_parsing(unsafe {buffer.as_ptr().add(i)});
             i += y_size;
 
             if x_size != 0 && y_size != 0 {
@@ -299,42 +299,36 @@ fn simd_unhex(value: &[u8]) -> u32 {
     shifted.reduce_or()
 }
 
-const SIMD_0_CHAR: Simd<u32, 4> = u32x4::from_array([b'0' as u32; 4]);
-const SIMD_10: Simd<u32, 4> = u32x4::from_array([10; 4]);
-const DIGIT_FACTORS: [Simd<u32, 4>; 5] = [
-    u32x4::from_array([0; 4]),
-    u32x4::from_array([1, 0, 0, 0]),
-    u32x4::from_array([10, 1, 0, 0]),
-    u32x4::from_array([100, 10, 1, 0]),
-    u32x4::from_array([1000, 100, 10, 1]),
-];
+const SIMD_POS: Simd<u8, 16> = u8x16::from_array([
+    255, 251, 251, 251, // interesting data
+    254, 251, 251, 251, // just zero em all
+    253, 251, 251, 251, // It doesn't matter that I'm subtracting
+    252, 251, 251, 251, // as all values where the highest bit is 1 will be zeroed
+]);
+const FACTORS: Simd<u32, 4> = u32x4::from_array([1, 10, 100, 1000]);
 
 /// count, how many digits a number has, based on the map of space characters
 /// the mask is composed as follows:
 /// {4th char is space}{3rd char is space}{2nd char is space}{1st char is space}
 /// guarantees that the result is in (inclusive) 0-4
 #[inline(always)]
-fn count_digits(space_mask: u8) -> u32 {
+fn count_digits(space_mask: u16) -> u32 {
     (space_mask | 0b10000).trailing_zeros()
 }
 
-#[inline(always)]
-fn simd_digit_parsing(value: &[u8]) -> (usize, usize) {
+#[inline(never)]
+fn simd_digit_parsing(value: *const u8) -> (usize, usize) {
     // using u16 instead of u32 for the simd pipeline takes 20% longer for some reason
-    let input = u32x4::from_array([
-        value[0] as u32,
-        value[1] as u32,
-        value[2] as u32,
-        value[3] as u32,
-    ]);
-    let converted_digits = input - SIMD_0_CHAR;
-    let is_space = converted_digits.simd_ge(SIMD_10);
+    let input = u8x16::from_array(unsafe {(value as *const [u8; 16]).read_unaligned()});
+    let converted_digits = input - u8x16::splat(b'0');
+    let is_space = converted_digits.simd_gt(u8x16::splat(9));
     let space_mask = is_space.to_bitmask();
-    let digits = count_digits(space_mask) as usize;
-    // values other than (inclusive) 0-4 are impossible
-    let digit_factor = unsafe { DIGIT_FACTORS.get_unchecked(digits) };
-    let multiplied_digits = converted_digits * digit_factor;
-    (multiplied_digits.reduce_sum() as usize, digits)
+    let digits = count_digits(space_mask);
+    let swizzle_idx = SIMD_POS + u8x16::splat(digits as u8);
+    let swizzled = converted_digits.swizzle_dyn(swizzle_idx);
+    let casted_swizzle = unsafe { *(&swizzled as *const u8x16 as *const u32x4)};
+    let multiplied = casted_swizzle * FACTORS;
+    (multiplied.reduce_sum() as usize, digits as usize)
 }
 
 #[cfg(test)]
@@ -369,14 +363,14 @@ mod test {
 
     #[test]
     fn test_digit_parsing() {
-        assert_eq!(simd_digit_parsing(b"0123"), (123, 4));
-        assert_eq!(simd_digit_parsing(b"0 23"), (0, 1));
-        assert_eq!(simd_digit_parsing(b"5555"), (5555, 4));
-        assert_eq!(simd_digit_parsing(b"12 3"), (12, 2));
-        assert_eq!(simd_digit_parsing(b"123 "), (123, 3));
-        assert_eq!(simd_digit_parsing(b"1123"), (1123, 4));
-        assert_eq!(simd_digit_parsing(b" 123"), (0, 0));
-        assert_eq!(simd_digit_parsing(b"1\n123"), (1, 1));
-        assert_eq!(simd_digit_parsing(b"1a23"), (1, 1));
+        assert_eq!(simd_digit_parsing(b"0123".as_ptr()), (123, 4));
+        assert_eq!(simd_digit_parsing(b"0 23".as_ptr()), (0, 1));
+        assert_eq!(simd_digit_parsing(b"5555".as_ptr()), (5555, 4));
+        assert_eq!(simd_digit_parsing(b"12 3".as_ptr()), (12, 2));
+        assert_eq!(simd_digit_parsing(b"123 ".as_ptr()), (123, 3));
+        assert_eq!(simd_digit_parsing(b"1123".as_ptr()), (1123, 4));
+        assert_eq!(simd_digit_parsing(b" 123".as_ptr()), (0, 0));
+        assert_eq!(simd_digit_parsing(b"1\n123".as_ptr()), (1, 1));
+        assert_eq!(simd_digit_parsing(b"1a23".as_ptr()), (1, 1));
     }
 }
