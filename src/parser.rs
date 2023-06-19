@@ -75,56 +75,53 @@ pub async fn parse_pixelflut_commands(
         let current_command = unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };
         if current_command & 0x00ff_ffff == string_to_number(b"PX \0\0\0\0\0") {
             i += 3;
-            // Parse first x coordinate char
-            if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                x = (buffer[i] - b'0') as usize;
+            // Parse x coordinate
+            let digits =
+                unsafe { (buffer.as_ptr().add(i) as *const u32).read_unaligned() } as usize;
+
+            let mut digit = digits & 0xff;
+            if digit >= b'0' as usize && digit <= b'9' as usize {
+                x = digit - b'0' as usize;
                 i += 1;
-
-                // Parse optional second x coordinate char
-                if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                    // TODO: Test bitshifts and add instead of multiplication
-                    // i = (i << 3) + (i << 1);
-                    // i = (i * 8) + (i * 2);
-                    // i = 8i + 2i
-                    // i = 10i
-                    x = 10 * x + (buffer[i] - b'0') as usize;
+                digit = (digits >> 8) & 0xff;
+                if digit >= b'0' as usize && digit <= b'9' as usize {
+                    x = 10 * x + digit - b'0' as usize;
                     i += 1;
-
-                    // Parse optional third x coordinate char
-                    if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                        x = 10 * x + (buffer[i] - b'0') as usize;
+                    digit = (digits >> 16) & 0xff;
+                    if digit >= b'0' as usize && digit <= b'9' as usize {
+                        x = 10 * x + digit - b'0' as usize;
                         i += 1;
-
-                        // Parse optional forth x coordinate char
-                        if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                            x = 10 * x + (buffer[i] - b'0') as usize;
+                        digit = (digits >> 24) & 0xff;
+                        if digit >= b'0' as usize && digit <= b'9' as usize {
+                            x = 10 * x + digit - b'0' as usize;
                             i += 1;
                         }
                     }
                 }
 
                 // Separator between x and y
-                if buffer[i] == b' ' {
+                if unsafe { *buffer.get_unchecked(i) } == b' ' {
                     i += 1;
 
-                    // Parse first y coordinate char
-                    if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                        y = (buffer[i] - b'0') as usize;
+                    // Parse y coordinate
+                    let digits =
+                        unsafe { (buffer.as_ptr().add(i) as *const u32).read_unaligned() } as usize;
+
+                    digit = digits & 0xff;
+                    if digit >= b'0' as usize && digit <= b'9' as usize {
+                        y = digit - b'0' as usize;
                         i += 1;
-
-                        // Parse optional second y coordinate char
-                        if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                            y = 10 * y + (buffer[i] - b'0') as usize;
+                        digit = (digits >> 8) & 0xff;
+                        if digit >= b'0' as usize && digit <= b'9' as usize {
+                            y = 10 * y + digit - b'0' as usize;
                             i += 1;
-
-                            // Parse optional third y coordinate char
-                            if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                                y = 10 * y + (buffer[i] - b'0') as usize;
+                            digit = (digits >> 16) & 0xff;
+                            if digit >= b'0' as usize && digit <= b'9' as usize {
+                                y = 10 * y + digit - b'0' as usize;
                                 i += 1;
-
-                                // Parse optional forth y coordinate char
-                                if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                                    y = 10 * y + (buffer[i] - b'0') as usize;
+                                digit = (digits >> 24) & 0xff;
+                                if digit >= b'0' as usize && digit <= b'9' as usize {
+                                    y = 10 * y + digit - b'0' as usize;
                                     i += 1;
                                 }
                             }
@@ -134,14 +131,14 @@ pub async fn parse_pixelflut_commands(
                         y += connection_y_offset;
 
                         // Separator between coordinates and color
-                        if buffer[i] == b' ' {
+                        if unsafe { *buffer.get_unchecked(i) } == b' ' {
                             i += 1;
 
                             // TODO: Determine what clients use more: RGB, RGBA or gg variant.
                             // If RGBA is used more often move the RGB code below the RGBA code
 
                             // Must be followed by 6 bytes RGB and newline or ...
-                            if buffer[i + 6] == b'\n' {
+                            if unsafe { *buffer.get_unchecked(i + 6) } == b'\n' {
                                 last_byte_parsed = i + 6;
                                 i += 7; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
@@ -153,7 +150,7 @@ pub async fn parse_pixelflut_commands(
 
                             // ... or must be followed by 8 bytes RGBA and newline
                             #[cfg(not(feature = "alpha"))]
-                            if buffer[i + 8] == b'\n' {
+                            if unsafe { *buffer.get_unchecked(i + 8) } == b'\n' {
                                 last_byte_parsed = i + 8;
                                 i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
@@ -163,7 +160,7 @@ pub async fn parse_pixelflut_commands(
                                 continue;
                             }
                             #[cfg(feature = "alpha")]
-                            if buffer[i + 8] == b'\n' {
+                            if unsafe { *buffer.get_unchecked(i + 8) } == b'\n' {
                                 last_byte_parsed = i + 8;
                                 i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
@@ -193,7 +190,7 @@ pub async fn parse_pixelflut_commands(
                             }
 
                             // ... for the efficient/lazy clients
-                            if buffer[i + 2] == b'\n' {
+                            if unsafe { *buffer.get_unchecked(i + 2) } == b'\n' {
                                 last_byte_parsed = i + 2;
                                 i += 3; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
@@ -208,7 +205,7 @@ pub async fn parse_pixelflut_commands(
                         }
 
                         // End of command to read Pixel value
-                        if buffer[i] == b'\n' {
+                        if unsafe { *buffer.get_unchecked(i) } == b'\n' {
                             last_byte_parsed = i;
                             i += 1;
                             if let Some(rgb) = fb.get(x, y) {
@@ -236,58 +233,60 @@ pub async fn parse_pixelflut_commands(
             }
         } else if current_command & 0x0000_ffff_ffff_ffff == string_to_number(b"OFFSET \0\0") {
             i += 7;
-            // Parse first x coordinate char
-            if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                x = (buffer[i] - b'0') as usize;
+            // Parse x coordinate
+            let digits =
+                unsafe { (buffer.as_ptr().add(i) as *const u32).read_unaligned() } as usize;
+
+            let mut digit = digits & 0xff;
+            if digit >= b'0' as usize && digit <= b'9' as usize {
+                x = digit - b'0' as usize;
                 i += 1;
-
-                // Parse optional second x coordinate char
-                if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                    x = 10 * x + (buffer[i] - b'0') as usize;
+                digit = (digits >> 8) & 0xff;
+                if digit >= b'0' as usize && digit <= b'9' as usize {
+                    x = 10 * x + digit - b'0' as usize;
                     i += 1;
-
-                    // Parse optional third x coordinate char
-                    if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                        x = 10 * x + (buffer[i] - b'0') as usize;
+                    digit = (digits >> 16) & 0xff;
+                    if digit >= b'0' as usize && digit <= b'9' as usize {
+                        x = 10 * x + digit - b'0' as usize;
                         i += 1;
-
-                        // Parse optional forth x coordinate char
-                        if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                            x = 10 * x + (buffer[i] - b'0') as usize;
+                        digit = (digits >> 24) & 0xff;
+                        if digit >= b'0' as usize && digit <= b'9' as usize {
+                            x = 10 * x + digit - b'0' as usize;
                             i += 1;
                         }
                     }
                 }
 
                 // Separator between x and y
-                if buffer[i] == b' ' {
+                if unsafe { *buffer.get_unchecked(i) } == b' ' {
                     i += 1;
 
-                    // Parse first y coordinate char
-                    if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                        y = (buffer[i] - b'0') as usize;
+                    // Parse y coordinate
+                    let digits =
+                        unsafe { (buffer.as_ptr().add(i) as *const u32).read_unaligned() } as usize;
+
+                    digit = digits & 0xff;
+                    if digit >= b'0' as usize && digit <= b'9' as usize {
+                        y = digit - b'0' as usize;
                         i += 1;
-
-                        // Parse optional second y coordinate char
-                        if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                            y = 10 * y + (buffer[i] - b'0') as usize;
+                        digit = (digits >> 8) & 0xff;
+                        if digit >= b'0' as usize && digit <= b'9' as usize {
+                            y = 10 * y + digit - b'0' as usize;
                             i += 1;
-
-                            // Parse optional third y coordinate char
-                            if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                                y = 10 * y + (buffer[i] - b'0') as usize;
+                            digit = (digits >> 16) & 0xff;
+                            if digit >= b'0' as usize && digit <= b'9' as usize {
+                                y = 10 * y + digit - b'0' as usize;
                                 i += 1;
-
-                                // Parse optional forth y coordinate char
-                                if buffer[i] >= b'0' && buffer[i] <= b'9' {
-                                    y = 10 * y + (buffer[i] - b'0') as usize;
+                                digit = (digits >> 24) & 0xff;
+                                if digit >= b'0' as usize && digit <= b'9' as usize {
+                                    y = 10 * y + digit - b'0' as usize;
                                     i += 1;
                                 }
                             }
                         }
 
                         // End of command to set offset
-                        if buffer[i] == b'\n' {
+                        if unsafe { *buffer.get_unchecked(i) } == b'\n' {
                             last_byte_parsed = i;
                             connection_x_offset = x;
                             connection_y_offset = y;
