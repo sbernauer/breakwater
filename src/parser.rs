@@ -1,7 +1,8 @@
 use crate::framebuffer::FrameBuffer;
 use const_format::formatcp;
-use std::simd::{u32x8, Simd, SimdUint};
+use std::simd::{u32x8, Simd, SimdUint, u8x16, u32x4, SimdPartialOrd, ToBitMask};
 use std::sync::Arc;
+use log::{info, warn};
 use tokio::io::AsyncWriteExt;
 
 pub const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
