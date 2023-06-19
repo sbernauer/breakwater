@@ -1,6 +1,6 @@
 use crate::framebuffer::FrameBuffer;
 use const_format::formatcp;
-use std::simd::{u32x4, u32x8, Simd, SimdPartialOrd, SimdUint, ToBitMask, u8x16};
+use std::simd::{u32x8, Simd, SimdUint};
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 
@@ -297,6 +297,25 @@ fn simd_unhex(value: &[u8]) -> u32 {
     let hexed = and15 + mul;
     let shifted = hexed << SHIFT_PATTERN;
     shifted.reduce_or()
+}
+
+pub fn check_cpu_support() {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if !is_x86_feature_detected!("avx2") {
+            warn!("Your CPU does not support AVX2. Consider using a CPU supporting AVX2 for best performance");
+        } else if !is_x86_feature_detected!("avx") {
+            warn!("Your CPU does not support AVX. Consider using a CPU supporting AVX2 (or at least AVX) for best performance");
+        } else {
+            // At this point the CPU should support AVX und AVX2
+            // Warn the user when he has compiled breakwater without the needed target features
+            if cfg!(all(target_feature = "avx", target_feature = "avx2")) {
+                info!("Using AVX and AVX2 support");
+            } else {
+                warn!("Your CPU does support AVX and AVX2, but you have not enabled avx and avx2 support. Please re-compile using RUSTFLAGS='-C target-cpu=native' cargo build --release`");
+            }
+        }
+    }
 }
 
 const SIMD_POS: Simd<u8, 16> = u8x16::from_array([

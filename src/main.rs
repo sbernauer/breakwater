@@ -21,6 +21,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     let args = Args::parse();
 
+    breakwater::parser::check_cpu_support();
+
     let fb = Arc::new(FrameBuffer::new(args.width, args.height));
 
     // If we make the channel to big, stats will start to lag behind
