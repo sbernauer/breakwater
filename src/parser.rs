@@ -269,13 +269,13 @@ pub fn check_cpu_support() {
 
 #[inline(always)]
 fn parse_coordinate(buffer: *const u8, len: &mut usize) -> (usize, bool) {
-    let digits = unsafe { (buffer.add(*len) as *const u32).read_unaligned() } as usize;
+    let digits = unsafe { (buffer.add(*len) as *const usize).read_unaligned() };
 
     let mut result = 0;
     let mut visited = false;
     // The compiler will unroll this loop, but this way, it is more maintainable
     for pos in 0..4 {
-        let digit = (digits >> pos * 8) & 0xff;
+        let digit = (digits >> (pos * 8)) & 0xff;
         if digit >= b'0' as usize && digit <= b'9' as usize {
             result = 10 * result + digit - b'0' as usize;
             *len += 1;
