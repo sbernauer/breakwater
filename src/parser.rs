@@ -1,7 +1,9 @@
 use crate::framebuffer::FrameBuffer;
 use const_format::formatcp;
 use log::{info, warn};
-use std::simd::{u32x8, Simd, SimdUint};
+use std::simd::{
+    u16x16, u16x32, u16x4, u16x8, u32x8, u8x32, u8x8, Simd, SimdPartialOrd, SimdUint, ToBitMask,
+};
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 
@@ -75,161 +77,48 @@ pub async fn parse_pixelflut_commands(
         let current_command = unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };
         if current_command & 0x00ff_ffff == string_to_number(b"PX \0\0\0\0\0") {
             i += 3;
-            // Parse x coordinate
-            let digits =
-                unsafe { (buffer.as_ptr().add(i) as *const u32).read_unaligned() } as usize;
 
-            let mut digit = digits & 0xff;
-            if digit >= b'0' as usize && digit <= b'9' as usize {
-                x = digit - b'0' as usize;
-                i += 1;
-                digit = (digits >> 8) & 0xff;
-                if digit >= b'0' as usize && digit <= b'9' as usize {
-                    x = 10 * x + digit - b'0' as usize;
-                    i += 1;
-                    digit = (digits >> 16) & 0xff;
-                    if digit >= b'0' as usize && digit <= b'9' as usize {
-                        x = 10 * x + digit - b'0' as usize;
-                        i += 1;
-                        digit = (digits >> 24) & 0xff;
-                        if digit >= b'0' as usize && digit <= b'9' as usize {
-                            x = 10 * x + digit - b'0' as usize;
-                            i += 1;
-                        }
-                    }
+            // TODO: Use variant that does not check bounds to get &buffer[i..i + 19]
+            let ParseResult {
+                bytes_parsed,
+                x,
+                y,
+                rgba,
+                has_alpha,
+                read_request,
+            } = parse_coords_and_rgba(&buffer[i..i + 19]);
+            // let x = 0;
+            // let y = 0;
+            // let rgba = 0;
+            // let read_request = false;
+            // let bytes_parsed = 17;
+            i += bytes_parsed;
+            last_byte_parsed = i - 1;
+
+            let x = x as usize + connection_x_offset;
+            let y = y as usize + connection_y_offset;
+
+            if !read_request {
+                fb.set(x, y, rgba & 0x00ff_ffff);
+                continue;
+            } else if let Some(rgb) = fb.get(x, y) {
+                match stream
+                    .write_all(
+                        format!(
+                            "PX {} {} {:06x}\n",
+                            // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
+                            x - connection_x_offset,
+                            y - connection_y_offset,
+                            rgb.to_be() >> 8
+                        )
+                        .as_bytes(),
+                    )
+                    .await
+                {
+                    Ok(_) => (),
+                    Err(_) => continue,
                 }
-
-                // Separator between x and y
-                if unsafe { *buffer.get_unchecked(i) } == b' ' {
-                    i += 1;
-
-                    // Parse y coordinate
-                    let digits =
-                        unsafe { (buffer.as_ptr().add(i) as *const u32).read_unaligned() } as usize;
-
-                    digit = digits & 0xff;
-                    if digit >= b'0' as usize && digit <= b'9' as usize {
-                        y = digit - b'0' as usize;
-                        i += 1;
-                        digit = (digits >> 8) & 0xff;
-                        if digit >= b'0' as usize && digit <= b'9' as usize {
-                            y = 10 * y + digit - b'0' as usize;
-                            i += 1;
-                            digit = (digits >> 16) & 0xff;
-                            if digit >= b'0' as usize && digit <= b'9' as usize {
-                                y = 10 * y + digit - b'0' as usize;
-                                i += 1;
-                                digit = (digits >> 24) & 0xff;
-                                if digit >= b'0' as usize && digit <= b'9' as usize {
-                                    y = 10 * y + digit - b'0' as usize;
-                                    i += 1;
-                                }
-                            }
-                        }
-
-                        x += connection_x_offset;
-                        y += connection_y_offset;
-
-                        // Separator between coordinates and color
-                        if unsafe { *buffer.get_unchecked(i) } == b' ' {
-                            i += 1;
-
-                            // TODO: Determine what clients use more: RGB, RGBA or gg variant.
-                            // If RGBA is used more often move the RGB code below the RGBA code
-
-                            // Must be followed by 6 bytes RGB and newline or ...
-                            if unsafe { *buffer.get_unchecked(i + 6) } == b'\n' {
-                                last_byte_parsed = i + 6;
-                                i += 7; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
-
-                                let rgba: u32 = simd_unhex(&buffer[i - 7..i + 1]);
-
-                                fb.set(x, y, rgba & 0x00ff_ffff);
-                                continue;
-                            }
-
-                            // ... or must be followed by 8 bytes RGBA and newline
-                            #[cfg(not(feature = "alpha"))]
-                            if unsafe { *buffer.get_unchecked(i + 8) } == b'\n' {
-                                last_byte_parsed = i + 8;
-                                i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
-
-                                let rgba: u32 = simd_unhex(&buffer[i - 9..i - 1]);
-
-                                fb.set(x, y, rgba & 0x00ff_ffff);
-                                continue;
-                            }
-                            #[cfg(feature = "alpha")]
-                            if unsafe { *buffer.get_unchecked(i + 8) } == b'\n' {
-                                last_byte_parsed = i + 8;
-                                i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
-
-                                let rgba = simd_unhex(&buffer[i - 9..i - 1]);
-
-                                let alpha = (rgba >> 24) & 0xff;
-
-                                if alpha == 0 || x >= fb.get_width() || y >= fb.get_height() {
-                                    continue;
-                                }
-
-                                let alpha_comp = 0xff - alpha;
-                                let current = fb.get_unchecked(x, y);
-                                let r = (rgba >> 16) & 0xff;
-                                let g = (rgba >> 8) & 0xff;
-                                let b = rgba & 0xff;
-
-                                let r: u32 =
-                                    (((current >> 24) & 0xff) * alpha_comp + r * alpha) / 0xff;
-                                let g: u32 =
-                                    (((current >> 16) & 0xff) * alpha_comp + g * alpha) / 0xff;
-                                let b: u32 =
-                                    (((current >> 8) & 0xff) * alpha_comp + b * alpha) / 0xff;
-
-                                fb.set(x, y, r << 16 | g << 8 | b);
-                                continue;
-                            }
-
-                            // ... for the efficient/lazy clients
-                            if unsafe { *buffer.get_unchecked(i + 2) } == b'\n' {
-                                last_byte_parsed = i + 2;
-                                i += 3; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
-
-                                let base = simd_unhex(&buffer[i - 3..i + 5]) & 0xff;
-
-                                let rgba: u32 = base << 16 | base << 8 | base;
-
-                                fb.set(x, y, rgba);
-
-                                continue;
-                            }
-                        }
-
-                        // End of command to read Pixel value
-                        if unsafe { *buffer.get_unchecked(i) } == b'\n' {
-                            last_byte_parsed = i;
-                            i += 1;
-                            if let Some(rgb) = fb.get(x, y) {
-                                match stream
-                                    .write_all(
-                                        format!(
-                                            "PX {} {} {:06x}\n",
-                                            // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
-                                            x - connection_x_offset,
-                                            y - connection_y_offset,
-                                            rgb.to_be() >> 8
-                                        )
-                                        .as_bytes(),
-                                    )
-                                    .await
-                                {
-                                    Ok(_) => (),
-                                    Err(_) => continue,
-                                }
-                            }
-                            continue;
-                        }
-                    }
-                }
+                continue;
             }
         } else if current_command & 0x0000_ffff_ffff_ffff == string_to_number(b"OFFSET \0\0") {
             i += 7;
@@ -354,6 +243,195 @@ fn simd_unhex(value: &[u8]) -> u32 {
     let hexed = and15 + mul;
     let shifted = hexed << SHIFT_PATTERN;
     shifted.reduce_or()
+}
+
+// Longest possible space bitmask = "1234 1234 rrggbbaa\n" => 19 chars
+const SPACES_BITMASK_RELEVANT_BITS: u8 = 19;
+const SPACES_BITMASK_RELEVANT_BITS_MASK: u32 = 0b0000_0000_0111_1111_1111_1111_1111;
+const FACTORS_FOR_BITMASK: [(u16x32, u16x32, u16x32, u16x32);
+    (1 << SPACES_BITMASK_RELEVANT_BITS) + 1] = calculate_factors_for_bitmask();
+const SIMD_u16x16_9: u16x16 = u16x16::from_array([9; 16]);
+const SIMD_u16x32_9: u16x32 = u16x32::from_array([9; 32]);
+const SIMD_u16x16_0_CHAR: u16x16 = u16x16::from_array([b'0' as u16; 16]);
+const SIMD_u16x32_0_CHAR: u16x32 = u16x32::from_array([b'0' as u16; 32]);
+const SIMD_u16x8_0_CHAR: u16x8 = u16x8::from_array([b'0' as u16; 8]);
+
+struct ParseResult {
+    bytes_parsed: usize,
+    x: u16,
+    y: u16,
+    // aabbggrr
+    rgba: u32,
+    read_request: bool,
+    has_alpha: bool,
+}
+
+// Input: 19 characters starting where the x coordinate starts, eg. "1234 4321 <rr|rrggbb|rrggbbaa>\n<random chars follow>"
+// Returns: (x, y, total length of text containing "<x> <y>")
+//
+// Inspect assembler code using
+// RUSTFLAGS="-C target-cpu=native" CARGO_INCREMENTAL=0 cargo -Z build-std asm --build-type release --rust breakwater::parser::parse_coords_and_rgba
+// Don't forget to #[inline(never)]!
+#[inline(never)]
+fn parse_coords_and_rgba(bytes: &[u8]) -> ParseResult {
+    // #[cfg(debug_assertions)]
+    assert!(bytes.len() >= 19);
+    let chars = u16x32::from_array([
+        bytes[0] as u16,
+        bytes[1] as u16,
+        bytes[2] as u16,
+        bytes[3] as u16,
+        bytes[4] as u16,
+        bytes[5] as u16,
+        bytes[6] as u16,
+        bytes[7] as u16,
+        bytes[8] as u16,
+        bytes[9] as u16,
+        bytes[10] as u16,
+        bytes[11] as u16,
+        bytes[12] as u16,
+        bytes[13] as u16,
+        bytes[14] as u16,
+        bytes[15] as u16,
+        bytes[16] as u16,
+        bytes[17] as u16,
+        bytes[18] as u16,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]);
+    let digits = chars - SIMD_u16x32_0_CHAR;
+    let space_bitmask = digits.simd_gt(SIMD_u16x32_9).to_bitmask();
+    // SAFETY: As only take the last {SPACES_BITMASK_RELEVANT_BITS} bits, this number will alway be a valid index
+    let (x_factors, y_factors, rg_factors, ba_factors) =
+        unsafe { FACTORS_FOR_BITMASK.get_unchecked(space_bitmask as usize) };
+    // let (x_factors, y_factors, rg_factors, ba_factors) =
+    //     FACTORS_FOR_BITMASK[space_bitmask as usize];
+    let x = (digits * x_factors).reduce_sum();
+    let y = (digits * y_factors).reduce_sum();
+    let rg = (digits * rg_factors).reduce_sum();
+    let ba = (digits * ba_factors).reduce_sum();
+    // let x = 0;
+    // let y = 0;
+    // let rg = 0;
+    // let ba = 0;
+
+    ParseResult {
+        bytes_parsed: 17,
+        x,
+        y,
+        rgba: (rg as u32) << 16 | ba as u32,
+        has_alpha: false,
+        read_request: false,
+    }
+}
+
+// PX 13 123 rrggbbaa
+
+// const TEST: u16x32 = u16x32::from_array([
+//     8, 0, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+//     16, 16, 16, 16, 16, 16, 16, 16,
+// ]);
+// const TEST2: u16x32 = u16x32::from_array([
+//     2, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+//     16, 16, 16, 16, 16, 16, 16, 16,
+// ]);
+// #[inline(never)]
+// fn parse_coords_and_rgba(bytes: &[u8]) -> ParseResult {
+//     #[cfg(debug_assertions)]
+//     assert!(bytes.len() >= 19);
+//     let chars = u16x32::from_array([
+//         bytes[0] as u16,
+//         bytes[1] as u16,
+//         bytes[2] as u16,
+//         bytes[3] as u16,
+//         bytes[4] as u16,
+//         bytes[5] as u16,
+//         bytes[6] as u16,
+//         bytes[7] as u16,
+//         bytes[8] as u16,
+//         bytes[9] as u16,
+//         bytes[10] as u16,
+//         bytes[11] as u16,
+//         bytes[12] as u16,
+//         bytes[13] as u16,
+//         bytes[14] as u16,
+//         bytes[15] as u16,
+//         bytes[16] as u16,
+//         bytes[17] as u16,
+//         bytes[18] as u16,
+//         0,
+//         0,
+//         0,
+//         0,
+//         0,
+//         0,
+//         0,
+//         0,
+//         0,
+//         0,
+//         0,
+//         0,
+//         0,
+//     ]);
+//     let digits = chars - SIMD_u16x32_0_CHAR;
+//     // let space_bitmask = digits.simd_gt(SIMD_u16x16_9).to_bitmask();
+
+//     // let num = unsafe {
+//     //     std::mem::transmute::<[u8; 4], u32>(raw_bytes)
+//     // };
+//     // let hack: u16x8 = unsafe { std::mem::transmute::<u16x32, u16x8>(digits) };
+
+//     let x_1 = digits << TEST;
+//     let x_2 = digits << TEST2;
+
+//     let x = (x_1 + x_2).reduce_or();
+//     let y = (y_1 + y_2).reduce_or();
+
+//     // SAFETY: As only take the last {SPACES_BITMASK_RELEVANT_BITS} bits, this number will alway be a valid index
+//     // let (x_factors, y_factors, rg_factors, ba_factors) =
+//     //     unsafe { FACTORS_FOR_BITMASK.get_unchecked(space_bitmask as usize) };
+//     // let (x_factors, y_factors, rg_factors, ba_factors) =
+//     //     FACTORS_FOR_BITMASK[space_bitmask as usize];
+//     // let x = (digits * x_factors).reduce_sum();
+
+//     // let y = (digits * y_factors).reduce_sum();
+//     // let rg = (digits * rg_factors).reduce_sum();
+//     // let ba = (digits * ba_factors).reduce_sum();
+//     // let x = space_bitmask;
+//     let rg = 0;
+//     let ba = 0;
+
+//     ParseResult {
+//         bytes_parsed: 17,
+//         x,
+//         y,
+//         rgba: (rg as u32) << 16 | ba as u32,
+//         has_alpha: false,
+//         read_request: false,
+//     }
+// }
+
+const fn calculate_factors_for_bitmask(
+) -> [(u16x32, u16x32, u16x32, u16x32); (1 << SPACES_BITMASK_RELEVANT_BITS) + 1] {
+    let mut result = [(
+        u16x32::from_array([0; 32]),
+        u16x32::from_array([0; 32]),
+        u16x32::from_array([0; 32]),
+        u16x32::from_array([0; 32]),
+    ); (1 << SPACES_BITMASK_RELEVANT_BITS) + 1];
+
+    result
 }
 
 pub fn check_cpu_support() {
