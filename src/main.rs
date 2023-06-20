@@ -14,6 +14,7 @@ use tokio::sync::{broadcast, mpsc};
 use {
     breakwater::sinks::vnc::VncServer,
     thread_priority::{ThreadBuilderExt, ThreadPriority},
+    tokio::sync::oneshot,
 };
 
 #[tokio::main]
@@ -32,6 +33,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         broadcast::channel::<StatisticsInformationEvent>(2);
     #[cfg(feature = "vnc")]
     let statistics_information_rx_for_vnc_server = statistics_information_tx.subscribe();
+    #[cfg(feature = "vnc")]
+    let (terminate_signal_rx, terminate_signal_tx) = oneshot::channel();
 
     let statistics_save_mode = if args.disable_statistics_save_file {
         StatisticsSaveMode::Disabled
@@ -73,6 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     args.fps,
                     statistics_tx,
                     statistics_information_rx_for_vnc_server,
+                    terminate_signal_tx,
                     &args.text,
                     &args.font,
                 );
@@ -93,17 +97,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         prometheus_exporter.run().await;
     });
 
-    prometheus_exporter_thread.await?;
-    network_listener_thread.await?;
+    tokio::signal::ctrl_c().await?;
+
+    prometheus_exporter_thread.abort();
+    network_listener_thread.abort();
     if let Some(ffmpeg_thread) = ffmpeg_thread {
-        ffmpeg_thread.await?;
+        ffmpeg_thread.abort();
     }
-    statistics_thread.await?;
+    statistics_thread.abort();
     #[cfg(feature = "vnc")]
     {
-        vnc_server_thread
-            .join()
-            .expect("Failed to join VNC server thread");
+        terminate_signal_rx.send("bye bye")?;
+        vnc_server_thread.join().unwrap();
     }
 
     Ok(())

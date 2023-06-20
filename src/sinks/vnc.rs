@@ -5,8 +5,8 @@ use number_prefix::NumberPrefix;
 use rusttype::{point, Font, Scale};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::broadcast;
 use tokio::sync::mpsc::Sender;
+use tokio::sync::{broadcast, oneshot};
 use vncserver::{
     rfb_framebuffer_malloc, rfb_get_screen, rfb_init_server, rfb_mark_rect_as_modified,
     rfb_run_event_loop, RfbScreenInfoPtr,
@@ -14,25 +14,28 @@ use vncserver::{
 
 const STATS_HEIGHT: usize = 35;
 
-pub struct VncServer<'a> {
+pub struct VncServer<'a, 'b> {
     fb: Arc<FrameBuffer>,
     screen: RfbScreenInfoPtr,
     target_fps: u32,
 
     statistics_tx: Sender<StatisticsEvent>,
     statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
+    terminate_signal_tx: oneshot::Receiver<&'b str>,
 
     text: &'a str,
     font: Font<'a>,
 }
 
-impl<'a> VncServer<'a> {
+impl<'a, 'b> VncServer<'a, 'b> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         fb: Arc<FrameBuffer>,
         port: u32,
         target_fps: u32,
         statistics_tx: Sender<StatisticsEvent>,
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
+        terminate_signal_tx: oneshot::Receiver<&'b str>,
         text: &'a str,
         font: &'a str,
     ) -> Self {
@@ -74,6 +77,7 @@ impl<'a> VncServer<'a> {
             target_fps,
             statistics_tx,
             statistics_information_rx,
+            terminate_signal_tx,
             text,
             font,
         }
@@ -92,6 +96,10 @@ impl<'a> VncServer<'a> {
         let fb_size_up_to_stats_text = fb.get_width() * height_up_to_stats_text;
 
         loop {
+            if self.terminate_signal_tx.try_recv().is_ok() {
+                return;
+            }
+
             let start = std::time::Instant::now();
             vnc_fb_slice[0..fb_size_up_to_stats_text]
                 .copy_from_slice(&fb_slice[0..fb_size_up_to_stats_text]);
