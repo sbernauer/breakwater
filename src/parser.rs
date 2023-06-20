@@ -65,9 +65,6 @@ pub async fn parse_pixelflut_commands(
     let mut connection_x_offset = parser_state.connection_x_offset;
     let mut connection_y_offset = parser_state.connection_y_offset;
 
-    let mut x: usize;
-    let mut y: usize;
-
     let mut i = 0; // We can't use a for loop here because Rust don't lets use skip characters by incrementing i
     let loop_end = buffer.len().saturating_sub(PARSER_LOOKAHEAD); // Let's extract the .len() call and the subtraction into it's own variable so we only compute it once
 
@@ -75,225 +72,120 @@ pub async fn parse_pixelflut_commands(
         let current_command = unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };
         if current_command & 0x00ff_ffff == string_to_number(b"PX \0\0\0\0\0") {
             i += 3;
-            // Parse x coordinate
-            let digits =
-                unsafe { (buffer.as_ptr().add(i) as *const u32).read_unaligned() } as usize;
 
-            let mut digit = digits & 0xff;
-            if digit >= b'0' as usize && digit <= b'9' as usize {
-                x = digit - b'0' as usize;
-                i += 1;
-                digit = (digits >> 8) & 0xff;
-                if digit >= b'0' as usize && digit <= b'9' as usize {
-                    x = 10 * x + digit - b'0' as usize;
-                    i += 1;
-                    digit = (digits >> 16) & 0xff;
-                    if digit >= b'0' as usize && digit <= b'9' as usize {
-                        x = 10 * x + digit - b'0' as usize;
-                        i += 1;
-                        digit = (digits >> 24) & 0xff;
-                        if digit >= b'0' as usize && digit <= b'9' as usize {
-                            x = 10 * x + digit - b'0' as usize;
-                            i += 1;
-                        }
-                    }
-                }
+            let (mut x, mut y, present) = parse_pixel_coordinates(buffer.as_ptr(), &mut i);
 
-                // Separator between x and y
+            if present {
+                x += connection_x_offset;
+                y += connection_y_offset;
+
+                // Separator between coordinates and color
                 if unsafe { *buffer.get_unchecked(i) } == b' ' {
                     i += 1;
 
-                    // Parse y coordinate
-                    let digits =
-                        unsafe { (buffer.as_ptr().add(i) as *const u32).read_unaligned() } as usize;
+                    // TODO: Determine what clients use more: RGB, RGBA or gg variant.
+                    // If RGBA is used more often move the RGB code below the RGBA code
 
-                    digit = digits & 0xff;
-                    if digit >= b'0' as usize && digit <= b'9' as usize {
-                        y = digit - b'0' as usize;
-                        i += 1;
-                        digit = (digits >> 8) & 0xff;
-                        if digit >= b'0' as usize && digit <= b'9' as usize {
-                            y = 10 * y + digit - b'0' as usize;
-                            i += 1;
-                            digit = (digits >> 16) & 0xff;
-                            if digit >= b'0' as usize && digit <= b'9' as usize {
-                                y = 10 * y + digit - b'0' as usize;
-                                i += 1;
-                                digit = (digits >> 24) & 0xff;
-                                if digit >= b'0' as usize && digit <= b'9' as usize {
-                                    y = 10 * y + digit - b'0' as usize;
-                                    i += 1;
-                                }
-                            }
-                        }
+                    // Must be followed by 6 bytes RGB and newline or ...
+                    if unsafe { *buffer.get_unchecked(i + 6) } == b'\n' {
+                        last_byte_parsed = i + 6;
+                        i += 7; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                        x += connection_x_offset;
-                        y += connection_y_offset;
+                        let rgba: u32 = simd_unhex(&buffer[i - 7..i + 1]);
 
-                        // Separator between coordinates and color
-                        if unsafe { *buffer.get_unchecked(i) } == b' ' {
-                            i += 1;
+                        fb.set(x, y, rgba & 0x00ff_ffff);
+                        continue;
+                    }
 
-                            // TODO: Determine what clients use more: RGB, RGBA or gg variant.
-                            // If RGBA is used more often move the RGB code below the RGBA code
+                    // ... or must be followed by 8 bytes RGBA and newline
+                    #[cfg(not(feature = "alpha"))]
+                    if unsafe { *buffer.get_unchecked(i + 8) } == b'\n' {
+                        last_byte_parsed = i + 8;
+                        i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                            // Must be followed by 6 bytes RGB and newline or ...
-                            if unsafe { *buffer.get_unchecked(i + 6) } == b'\n' {
-                                last_byte_parsed = i + 6;
-                                i += 7; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
+                        let rgba: u32 = simd_unhex(&buffer[i - 9..i - 1]);
 
-                                let rgba: u32 = simd_unhex(&buffer[i - 7..i + 1]);
+                        fb.set(x, y, rgba & 0x00ff_ffff);
+                        continue;
+                    }
+                    #[cfg(feature = "alpha")]
+                    if unsafe { *buffer.get_unchecked(i + 8) } == b'\n' {
+                        last_byte_parsed = i + 8;
+                        i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                                fb.set(x, y, rgba & 0x00ff_ffff);
-                                continue;
-                            }
+                        let rgba = simd_unhex(&buffer[i - 9..i - 1]);
 
-                            // ... or must be followed by 8 bytes RGBA and newline
-                            #[cfg(not(feature = "alpha"))]
-                            if unsafe { *buffer.get_unchecked(i + 8) } == b'\n' {
-                                last_byte_parsed = i + 8;
-                                i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
+                        let alpha = (rgba >> 24) & 0xff;
 
-                                let rgba: u32 = simd_unhex(&buffer[i - 9..i - 1]);
-
-                                fb.set(x, y, rgba & 0x00ff_ffff);
-                                continue;
-                            }
-                            #[cfg(feature = "alpha")]
-                            if unsafe { *buffer.get_unchecked(i + 8) } == b'\n' {
-                                last_byte_parsed = i + 8;
-                                i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
-
-                                let rgba = simd_unhex(&buffer[i - 9..i - 1]);
-
-                                let alpha = (rgba >> 24) & 0xff;
-
-                                if alpha == 0 || x >= fb.get_width() || y >= fb.get_height() {
-                                    continue;
-                                }
-
-                                let alpha_comp = 0xff - alpha;
-                                let current = fb.get_unchecked(x, y);
-                                let r = (rgba >> 16) & 0xff;
-                                let g = (rgba >> 8) & 0xff;
-                                let b = rgba & 0xff;
-
-                                let r: u32 =
-                                    (((current >> 24) & 0xff) * alpha_comp + r * alpha) / 0xff;
-                                let g: u32 =
-                                    (((current >> 16) & 0xff) * alpha_comp + g * alpha) / 0xff;
-                                let b: u32 =
-                                    (((current >> 8) & 0xff) * alpha_comp + b * alpha) / 0xff;
-
-                                fb.set(x, y, r << 16 | g << 8 | b);
-                                continue;
-                            }
-
-                            // ... for the efficient/lazy clients
-                            if unsafe { *buffer.get_unchecked(i + 2) } == b'\n' {
-                                last_byte_parsed = i + 2;
-                                i += 3; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
-
-                                let base = simd_unhex(&buffer[i - 3..i + 5]) & 0xff;
-
-                                let rgba: u32 = base << 16 | base << 8 | base;
-
-                                fb.set(x, y, rgba);
-
-                                continue;
-                            }
-                        }
-
-                        // End of command to read Pixel value
-                        if unsafe { *buffer.get_unchecked(i) } == b'\n' {
-                            last_byte_parsed = i;
-                            i += 1;
-                            if let Some(rgb) = fb.get(x, y) {
-                                match stream
-                                    .write_all(
-                                        format!(
-                                            "PX {} {} {:06x}\n",
-                                            // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
-                                            x - connection_x_offset,
-                                            y - connection_y_offset,
-                                            rgb.to_be() >> 8
-                                        )
-                                        .as_bytes(),
-                                    )
-                                    .await
-                                {
-                                    Ok(_) => (),
-                                    Err(_) => continue,
-                                }
-                            }
+                        if alpha == 0 || x >= fb.get_width() || y >= fb.get_height() {
                             continue;
                         }
+
+                        let alpha_comp = 0xff - alpha;
+                        let current = fb.get_unchecked(x, y);
+                        let r = (rgba >> 16) & 0xff;
+                        let g = (rgba >> 8) & 0xff;
+                        let b = rgba & 0xff;
+
+                        let r: u32 = (((current >> 24) & 0xff) * alpha_comp + r * alpha) / 0xff;
+                        let g: u32 = (((current >> 16) & 0xff) * alpha_comp + g * alpha) / 0xff;
+                        let b: u32 = (((current >> 8) & 0xff) * alpha_comp + b * alpha) / 0xff;
+
+                        fb.set(x, y, r << 16 | g << 8 | b);
+                        continue;
                     }
+
+                    // ... for the efficient/lazy clients
+                    if unsafe { *buffer.get_unchecked(i + 2) } == b'\n' {
+                        last_byte_parsed = i + 2;
+                        i += 3; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
+
+                        let base = simd_unhex(&buffer[i - 3..i + 5]) & 0xff;
+
+                        let rgba: u32 = base << 16 | base << 8 | base;
+
+                        fb.set(x, y, rgba);
+
+                        continue;
+                    }
+                }
+
+                // End of command to read Pixel value
+                if unsafe { *buffer.get_unchecked(i) } == b'\n' {
+                    last_byte_parsed = i;
+                    i += 1;
+                    if let Some(rgb) = fb.get(x, y) {
+                        match stream
+                            .write_all(
+                                format!(
+                                    "PX {} {} {:06x}\n",
+                                    // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
+                                    x - connection_x_offset,
+                                    y - connection_y_offset,
+                                    rgb.to_be() >> 8
+                                )
+                                .as_bytes(),
+                            )
+                            .await
+                        {
+                            Ok(_) => (),
+                            Err(_) => continue,
+                        }
+                    }
+                    continue;
                 }
             }
         } else if current_command & 0x0000_ffff_ffff_ffff == string_to_number(b"OFFSET \0\0") {
             i += 7;
-            // Parse x coordinate
-            let digits =
-                unsafe { (buffer.as_ptr().add(i) as *const u32).read_unaligned() } as usize;
 
-            let mut digit = digits & 0xff;
-            if digit >= b'0' as usize && digit <= b'9' as usize {
-                x = digit - b'0' as usize;
-                i += 1;
-                digit = (digits >> 8) & 0xff;
-                if digit >= b'0' as usize && digit <= b'9' as usize {
-                    x = 10 * x + digit - b'0' as usize;
-                    i += 1;
-                    digit = (digits >> 16) & 0xff;
-                    if digit >= b'0' as usize && digit <= b'9' as usize {
-                        x = 10 * x + digit - b'0' as usize;
-                        i += 1;
-                        digit = (digits >> 24) & 0xff;
-                        if digit >= b'0' as usize && digit <= b'9' as usize {
-                            x = 10 * x + digit - b'0' as usize;
-                            i += 1;
-                        }
-                    }
-                }
+            let (x, y, present) = parse_pixel_coordinates(buffer.as_ptr(), &mut i);
 
-                // Separator between x and y
-                if unsafe { *buffer.get_unchecked(i) } == b' ' {
-                    i += 1;
-
-                    // Parse y coordinate
-                    let digits =
-                        unsafe { (buffer.as_ptr().add(i) as *const u32).read_unaligned() } as usize;
-
-                    digit = digits & 0xff;
-                    if digit >= b'0' as usize && digit <= b'9' as usize {
-                        y = digit - b'0' as usize;
-                        i += 1;
-                        digit = (digits >> 8) & 0xff;
-                        if digit >= b'0' as usize && digit <= b'9' as usize {
-                            y = 10 * y + digit - b'0' as usize;
-                            i += 1;
-                            digit = (digits >> 16) & 0xff;
-                            if digit >= b'0' as usize && digit <= b'9' as usize {
-                                y = 10 * y + digit - b'0' as usize;
-                                i += 1;
-                                digit = (digits >> 24) & 0xff;
-                                if digit >= b'0' as usize && digit <= b'9' as usize {
-                                    y = 10 * y + digit - b'0' as usize;
-                                    i += 1;
-                                }
-                            }
-                        }
-
-                        // End of command to set offset
-                        if unsafe { *buffer.get_unchecked(i) } == b'\n' {
-                            last_byte_parsed = i;
-                            connection_x_offset = x;
-                            connection_y_offset = y;
-                            continue;
-                        }
-                    }
-                }
+            // End of command to set offset
+            if present && unsafe { *buffer.get_unchecked(i) } == b'\n' {
+                last_byte_parsed = i;
+                connection_x_offset = x;
+                connection_y_offset = y;
+                continue;
             }
         } else if current_command & 0xffff_ffff == string_to_number(b"SIZE\0\0\0\0") {
             i += 4;
@@ -373,6 +265,35 @@ pub fn check_cpu_support() {
             }
         }
     }
+}
+
+#[inline(always)]
+fn parse_coordinate(buffer: *const u8, len: &mut usize) -> (usize, bool) {
+    let digits = unsafe { (buffer.add(*len) as *const u32).read_unaligned() } as usize;
+
+    let mut result = 0;
+    let mut visited = false;
+    // The compiler will unroll this loop, but this way, it is more maintainable
+    for pos in 0..4 {
+        let digit = (digits >> pos * 8) & 0xff;
+        if digit >= b'0' as usize && digit <= b'9' as usize {
+            result = 10 * result + digit - b'0' as usize;
+            *len += 1;
+            visited = true;
+        } else {
+            break;
+        }
+    }
+
+    (result, visited)
+}
+
+#[inline(always)]
+fn parse_pixel_coordinates(buffer: *const u8, len: &mut usize) -> (usize, usize, bool) {
+    let (x, x_visited) = parse_coordinate(buffer, len);
+    *len += 1;
+    let (y, y_visited) = parse_coordinate(buffer, len);
+    (x, y, x_visited && y_visited)
 }
 
 #[cfg(test)]
