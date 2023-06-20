@@ -268,8 +268,8 @@ pub fn check_cpu_support() {
 }
 
 #[inline(always)]
-fn parse_coordinate(buffer: *const u8, len: &mut usize) -> (usize, bool) {
-    let digits = unsafe { (buffer.add(*len) as *const usize).read_unaligned() };
+fn parse_coordinate(buffer: *const u8, current_index: &mut usize) -> (usize, bool) {
+    let digits = unsafe { (buffer.add(*current_index) as *const usize).read_unaligned() };
 
     let mut result = 0;
     let mut visited = false;
@@ -278,7 +278,7 @@ fn parse_coordinate(buffer: *const u8, len: &mut usize) -> (usize, bool) {
         let digit = (digits >> (pos * 8)) & 0xff;
         if digit >= b'0' as usize && digit <= b'9' as usize {
             result = 10 * result + digit - b'0' as usize;
-            *len += 1;
+            *current_index += 1;
             visited = true;
         } else {
             break;
@@ -289,10 +289,10 @@ fn parse_coordinate(buffer: *const u8, len: &mut usize) -> (usize, bool) {
 }
 
 #[inline(always)]
-fn parse_pixel_coordinates(buffer: *const u8, len: &mut usize) -> (usize, usize, bool) {
-    let (x, x_visited) = parse_coordinate(buffer, len);
-    *len += 1;
-    let (y, y_visited) = parse_coordinate(buffer, len);
+fn parse_pixel_coordinates(buffer: *const u8, current_index: &mut usize) -> (usize, usize, bool) {
+    let (x, x_visited) = parse_coordinate(buffer, current_index);
+    *current_index += 1;
+    let (y, y_visited) = parse_coordinate(buffer, current_index);
     (x, y, x_visited && y_visited)
 }
 
