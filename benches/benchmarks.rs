@@ -1,13 +1,13 @@
 use breakwater::{
     framebuffer::FrameBuffer,
     parser::{parse_pixelflut_commands, ParserState},
-    test::helpers::{get_commands_to_draw_rect, DevNullTcpStream},
+    test::helpers::DevNullTcpStream,
 };
 use criterion::{
     BenchmarkId, Criterion, {criterion_group, criterion_main},
 };
-use rand::seq::SliceRandom;
-use rand::thread_rng;
+use pixelbomber::image_handler;
+use pixelbomber::image_handler::ImageConfig;
 use std::{sync::Arc, time::Duration};
 
 const FRAMEBUFFER_WIDTH: usize = 1920;
@@ -22,17 +22,12 @@ async fn invoke_parse_pixelflut_commands(
     parse_pixelflut_commands(input, fb, &mut stream, parser_state).await;
 }
 
-fn from_elem(c: &mut Criterion) {
-    let mut draw_commands =
-        get_commands_to_draw_rect(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT, 0x123456);
-    let ordered_draw_commands = draw_commands.join("");
-
+fn benchmark_settings(c: &mut Criterion, name: &str, file: &str, config: ImageConfig) {
+    let mut commands = image_handler::load(vec![file], &config);
+    let command = commands.pop().unwrap();
     c.bench_with_input(
-        BenchmarkId::new(
-            "parse_draw_commands_ordered",
-            format!("{FRAMEBUFFER_WIDTH} x {FRAMEBUFFER_HEIGHT}"),
-        ),
-        &ordered_draw_commands.as_bytes(),
+        BenchmarkId::new(name, format!("{FRAMEBUFFER_WIDTH} x {FRAMEBUFFER_HEIGHT}")),
+        &command,
         |b, input| {
             let fb = Arc::new(FrameBuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT));
             let parser_state = ParserState::default();
@@ -40,23 +35,55 @@ fn from_elem(c: &mut Criterion) {
                 .iter(|| invoke_parse_pixelflut_commands(input, &fb, parser_state.clone()));
         },
     );
+}
 
-    let mut rng = thread_rng();
-    draw_commands.shuffle(&mut rng);
-    let shuffled_draw_commands = draw_commands.join("");
+fn from_elem(c: &mut Criterion) {
+    benchmark_settings(
+        c,
+        "parse_draw_commands_ordered",
+        "benches/non-transparent.png",
+        image_handler::ImageConfigBuilder::new()
+            .width(FRAMEBUFFER_WIDTH as u32)
+            .height(FRAMEBUFFER_HEIGHT as u32)
+            .shuffle(false)
+            .build(),
+    );
 
-    c.bench_with_input(
-        BenchmarkId::new(
-            "parse_draw_commands_shuffled",
-            format!("{FRAMEBUFFER_WIDTH} x {FRAMEBUFFER_HEIGHT}"),
-        ),
-        &shuffled_draw_commands.as_bytes(),
-        |b, input| {
-            let fb = Arc::new(FrameBuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT));
-            let parser_state = ParserState::default();
-            b.to_async(tokio::runtime::Runtime::new().unwrap())
-                .iter(|| invoke_parse_pixelflut_commands(input, &fb, parser_state.clone()));
-        },
+    benchmark_settings(
+        c,
+        "parse_draw_commands_shuffled",
+        "benches/non-transparent.png",
+        image_handler::ImageConfigBuilder::new()
+            .width(FRAMEBUFFER_WIDTH as u32)
+            .height(FRAMEBUFFER_HEIGHT as u32)
+            .shuffle(true)
+            .build(),
+    );
+
+    benchmark_settings(
+        c,
+        "parse_mixed_draw_commands",
+        "benches/mixed.png",
+        image_handler::ImageConfigBuilder::new()
+            .width(FRAMEBUFFER_WIDTH as u32)
+            .height(FRAMEBUFFER_HEIGHT as u32)
+            .shuffle(false)
+            .offset_usage(true)
+            .gray_usage(true)
+            .build(),
+    );
+
+    benchmark_settings(
+        c,
+        "parse_mixed_draw_commands_shuffled",
+        "benches/mixed.png",
+        image_handler::ImageConfigBuilder::new()
+            .width(FRAMEBUFFER_WIDTH as u32)
+            .height(FRAMEBUFFER_HEIGHT as u32)
+            .shuffle(true)
+            .offset_usage(true)
+            .gray_usage(true)
+            .build(),
     );
 
     // let read_commands = get_commands_to_read_rect(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
