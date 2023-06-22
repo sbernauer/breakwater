@@ -68,21 +68,19 @@ fn from_elem(c: &mut Criterion) {
             .width(FRAMEBUFFER_WIDTH as u32)
             .height(FRAMEBUFFER_HEIGHT as u32)
             .shuffle(false)
-            .offset_usage(true)
             .gray_usage(true)
             .build(),
     );
 
     benchmark_settings(
         c,
-        "parse_mixed_draw_commands_shuffled",
-        "benches/mixed.png",
+        "parse_draw_commands_with_offset",
+        "benches/non-transparent.png",
         image_handler::ImageConfigBuilder::new()
             .width(FRAMEBUFFER_WIDTH as u32)
             .height(FRAMEBUFFER_HEIGHT as u32)
-            .shuffle(true)
+            .shuffle(false)
             .offset_usage(true)
-            .gray_usage(true)
             .build(),
     );
 
