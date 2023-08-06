@@ -141,9 +141,11 @@ If you visit the Grafana server (user=admin, password=admin) you will have acces
 
 # Performance
 
-:warning: The figures below are outdated. The performance of breakwater has increased significant in the meantime. I sadly don't have access to the server any more to run the benchmarks - happy about any figures for a beefy system. At GPN 21 we were able to reach 80 Gbit/s (40 via network and 40 via loopback) on a 20 core/40 thread system while serving > 500 connections :)
-
 ## Laptop
+
+:warning: The figures for breakwater below are outdated. The performance of breakwater has increased significant in the meantime, but I don't have access to the Laptop any more.
+See the [Server section](#server) below for up-to-date performance numbers.
+
 My Laptop has a `Intel(R) Core(TM) i7-8850H CPU @ 2.60GHz` (6 Cores/12 Threads) and 2 DDR4 RAM modules with 16 GB each and 2667 MT/s.
 The Pixelflut-server and Pixelflut-client [Sturmflut](https://github.com/TobleMiner/sturmflut) both run on my Laptop using 24 connections.
 These are the results of different Pixelflut servers:
@@ -157,11 +159,64 @@ These are the results of different Pixelflut servers:
 | [Breakwater](https://github.com/sbernauer/breakwater)                   | Rust     | 30 Gbit/s                | 22 Gbit/s               |
 
 ## Server
-The server has two `Intel(R) Xeon(R) CPU E5-2660 v2 @ 2.20GHz` processors with 10 cores / 20 threads each.
-Another server was used as a Pixelflut-client [Sturmflut](https://github.com/TobleMiner/sturmflut).
-The servers were connected with two 40G and one 10G links, through which traffic was generated.
+As I don't have access to a dedicated server any more I did run the following benchmark on a Hetzner sever.
 
-| Server                                                | Language | Sustainable traffic |
-|-------------------------------------------------------|----------|---------------------|
-| [Shoreline](https://github.com/TobleMiner/shoreline)  | C        | 34 Gbit/s           |
-| [Breakwater](https://github.com/sbernauer/breakwater) | Rust     | 52 Gbit/s           |
+Server type: [`CCX62`](https://www.hetzner.com/cloud) with `48` dedicated AMD EPYC cores and `192` GB RAM.
+[Sturmflut](https://github.com/TobleMiner/sturmflut) was used as a client using the loopback interface.
+The whole test setup did cost less than 1€ for one hour, so please feel free to submit performance numbers for other pixelflut servers or validate the results!
+
+| Server                                                                                         | Language | Sustainable traffic |
+|------------------------------------------------------------------------------------------------|----------|---------------------|
+| [Shoreline](https://github.com/TobleMiner/shoreline)@05a2bbfb4559090727c51673e1fb47d20eac5672  | C        | 55 Gbit/s           |
+| [Breakwater](https://github.com/sbernauer/breakwater)@4cc8e2a4c7fd03886ede3061d6359c8063665755 | Rust     | 110 Gbit/s          |
+
+<details>
+  <summary>`lscpu` output</summary>
+
+```
+Architecture:            x86_64
+  CPU op-mode(s):        32-bit, 64-bit
+  Address sizes:         40 bits physical, 48 bits virtual
+  Byte Order:            Little Endian
+CPU(s):                  48
+  On-line CPU(s) list:   0-47
+Vendor ID:               AuthenticAMD
+  Model name:            AMD EPYC Processor
+    CPU family:          25
+    Model:               1
+    Thread(s) per core:  2
+    Core(s) per socket:  24
+    Socket(s):           1
+    Stepping:            1
+    BogoMIPS:            4792.80
+    Flags:               fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdts
+                         cp lm rep_good nopl cpuid extd_apicid tsc_known_freq pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c
+                         rdrand hypervisor lahf_lm cmp_legacy cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw topoext perfctr_core invpcid_single ssbd ibrs ibpb
+                         stibp vmmcall fsgsbase bmi1 avx2 smep bmi2 erms invpcid rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 xsaves clzero xsaveer
+                         ptr wbnoinvd arat umip pku ospke rdpid fsrm
+Virtualization features:
+  Hypervisor vendor:     KVM
+  Virtualization type:   full
+Caches (sum of all):
+  L1d:                   768 KiB (24 instances)
+  L1i:                   768 KiB (24 instances)
+  L2:                    12 MiB (24 instances)
+  L3:                    32 MiB (1 instance)
+NUMA:
+  NUMA node(s):          1
+  NUMA node0 CPU(s):     0-47
+Vulnerabilities:
+  Itlb multihit:         Not affected
+  L1tf:                  Not affected
+  Mds:                   Not affected
+  Meltdown:              Not affected
+  Mmio stale data:       Not affected
+  Retbleed:              Not affected
+  Spec store bypass:     Mitigation; Speculative Store Bypass disabled via prctl and seccomp
+  Spectre v1:            Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+  Spectre v2:            Mitigation; Retpolines, IBPB conditional, IBRS_FW, STIBP conditional, RSB filling, PBRSB-eIBRS Not affected
+  Srbds:                 Not affected
+  Tsx async abort:       Not affected
+```
+
+</details>
