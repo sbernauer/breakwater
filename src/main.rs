@@ -9,7 +9,7 @@ use breakwater::{
 use clap::Parser;
 use env_logger::Env;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, oneshot};
 #[cfg(feature = "vnc")]
 use {
     breakwater::sinks::vnc::VncServer,
@@ -30,6 +30,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (statistics_tx, statistics_rx) = mpsc::channel::<StatisticsEvent>(100);
     let (statistics_information_tx, statistics_information_rx_for_prometheus_exporter) =
         broadcast::channel::<StatisticsInformationEvent>(2);
+    let (ffmpeg_terminate_signal_tx, ffmpeg_terminate_signal_rx) = oneshot::channel();
+    #[cfg(feature = "vnc")]
+    let (vnc_terminate_signal_tx, vnc_terminate_signal_rx) = oneshot::channel();
     #[cfg(feature = "vnc")]
     let statistics_information_rx_for_vnc_server = statistics_information_tx.subscribe();
 
@@ -53,8 +56,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let ffmpeg_sink = FfmpegSink::new(&args, Arc::clone(&fb));
-    let ffmpeg_thread =
-        ffmpeg_sink.map(|sink| tokio::spawn(async move { sink.run().await.unwrap() }));
+    let ffmpeg_thread = ffmpeg_sink.map(|sink| {
+        tokio::spawn(async move { sink.run(ffmpeg_terminate_signal_rx).await.unwrap() })
+    });
 
     #[cfg(feature = "vnc")]
     let vnc_server_thread = {
@@ -73,6 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     args.fps,
                     statistics_tx,
                     statistics_information_rx_for_vnc_server,
+                    vnc_terminate_signal_rx,
                     &args.text,
                     &args.font,
                 );
@@ -93,17 +98,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         prometheus_exporter.run().await;
     });
 
-    prometheus_exporter_thread.await?;
-    network_listener_thread.await?;
+    tokio::signal::ctrl_c().await?;
+
+    prometheus_exporter_thread.abort();
+    network_listener_thread.abort();
+    statistics_thread.abort();
     if let Some(ffmpeg_thread) = ffmpeg_thread {
-        ffmpeg_thread.await?;
+        ffmpeg_terminate_signal_tx.send("bye bye ffmpeg")?;
+        ffmpeg_thread.abort();
     }
-    statistics_thread.await?;
     #[cfg(feature = "vnc")]
     {
-        vnc_server_thread
-            .join()
-            .expect("Failed to join VNC server thread");
+        vnc_terminate_signal_tx.send("bye bye vnc")?;
+        vnc_server_thread.join().unwrap();
     }
 
     Ok(())
