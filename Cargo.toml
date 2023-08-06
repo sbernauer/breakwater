@@ -22,6 +22,7 @@ vncserver = { version ="0.2", optional = true}
 
 [dev-dependencies]
 criterion = {version = "0.5", features = ["async_tokio"]}
+pixelbomber = "0.4.1"
 rstest = "0.18"
 rand = "0.8"
 
