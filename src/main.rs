@@ -9,12 +9,11 @@ use breakwater::{
 use clap::Parser;
 use env_logger::Env;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, oneshot};
 #[cfg(feature = "vnc")]
 use {
     breakwater::sinks::vnc::VncServer,
     thread_priority::{ThreadBuilderExt, ThreadPriority},
-    tokio::sync::oneshot,
 };
 
 #[tokio::main]
@@ -31,10 +30,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (statistics_tx, statistics_rx) = mpsc::channel::<StatisticsEvent>(100);
     let (statistics_information_tx, statistics_information_rx_for_prometheus_exporter) =
         broadcast::channel::<StatisticsInformationEvent>(2);
+    let (ffmpeg_terminate_signal_tx, ffmpeg_terminate_signal_rx) = oneshot::channel();
+    #[cfg(feature = "vnc")]
+    let (vnc_terminate_signal_tx, vnc_terminate_signal_rx) = oneshot::channel();
     #[cfg(feature = "vnc")]
     let statistics_information_rx_for_vnc_server = statistics_information_tx.subscribe();
-    #[cfg(feature = "vnc")]
-    let (terminate_signal_rx, terminate_signal_tx) = oneshot::channel();
 
     let statistics_save_mode = if args.disable_statistics_save_file {
         StatisticsSaveMode::Disabled
@@ -56,8 +56,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let ffmpeg_sink = FfmpegSink::new(&args, Arc::clone(&fb));
-    let ffmpeg_thread =
-        ffmpeg_sink.map(|sink| tokio::spawn(async move { sink.run().await.unwrap() }));
+    let ffmpeg_thread = ffmpeg_sink.map(|sink| {
+        tokio::spawn(async move { sink.run(ffmpeg_terminate_signal_rx).await.unwrap() })
+    });
 
     #[cfg(feature = "vnc")]
     let vnc_server_thread = {
@@ -76,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     args.fps,
                     statistics_tx,
                     statistics_information_rx_for_vnc_server,
-                    terminate_signal_tx,
+                    vnc_terminate_signal_rx,
                     &args.text,
                     &args.font,
                 );
@@ -101,13 +102,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     prometheus_exporter_thread.abort();
     network_listener_thread.abort();
+    statistics_thread.abort();
     if let Some(ffmpeg_thread) = ffmpeg_thread {
+        ffmpeg_terminate_signal_tx.send("bye bye ffmpeg")?;
         ffmpeg_thread.abort();
     }
-    statistics_thread.abort();
     #[cfg(feature = "vnc")]
     {
-        terminate_signal_rx.send("bye bye")?;
+        vnc_terminate_signal_tx.send("bye bye vnc")?;
         vnc_server_thread.join().unwrap();
     }
 
