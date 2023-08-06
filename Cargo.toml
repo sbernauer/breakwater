@@ -17,13 +17,13 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 simple_moving_average = "0.1"
 thread-priority = "0.13"
-tokio = { version = "1.28", features = ["fs", "rt-multi-thread", "net", "io-util", "macros", "process", "signal", "sync", "time"] }
+tokio = { version = "1.29", features = ["fs", "rt-multi-thread", "net", "io-util", "macros", "process", "signal", "sync", "time"] }
 vncserver = { version ="0.2", optional = true}
 
 [dev-dependencies]
 criterion = {version = "0.5", features = ["async_tokio"]}
-rstest = "0.17"
-rand = "0.8.5"
+rstest = "0.18"
+rand = "0.8"
 
 [features]
 default = ["vnc"]
