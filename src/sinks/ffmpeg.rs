@@ -1,7 +1,7 @@
 use std::{process::Stdio, sync::Arc, time::Duration};
 
 use chrono::Local;
-use tokio::{io::AsyncWriteExt, process::Command, time};
+use tokio::{io::AsyncWriteExt, process::Command, sync::oneshot::Receiver, time};
 
 use crate::{args::Args, framebuffer::FrameBuffer};
 
@@ -26,7 +26,10 @@ impl FfmpegSink {
         }
     }
 
-    pub async fn run(&self) -> tokio::io::Result<()> {
+    pub async fn run<'a>(
+        &self,
+        mut terminate_signal_rx: Receiver<&'a str>,
+    ) -> tokio::io::Result<()> {
         let mut ffmpeg_args: Vec<String> = self
             .ffmpeg_input_args()
             .into_iter()
@@ -86,6 +89,7 @@ impl FfmpegSink {
 
         log::info!("ffmpeg {}", ffmpeg_args.join(" "));
         let mut command = Command::new("ffmpeg")
+            .kill_on_drop(false)
             .args(ffmpeg_args)
             .stdin(Stdio::piped())
             .spawn()
@@ -98,6 +102,10 @@ impl FfmpegSink {
 
         let mut interval = time::interval(Duration::from_micros(1_000_000 / 30));
         loop {
+            if terminate_signal_rx.try_recv().is_ok() {
+                command.kill().await?;
+                return Ok(());
+            }
             let bytes = self.fb.as_bytes();
             stdin.write_all(bytes).await?;
             interval.tick().await;
