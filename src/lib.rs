@@ -1,4 +1,5 @@
 #![feature(portable_simd)]
+#![feature(stdsimd)]
 
 pub mod args;
 pub mod framebuffer;

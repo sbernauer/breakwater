@@ -104,7 +104,7 @@ fn from_elem(c: &mut Criterion) {
 
 criterion_group!(
     name = benches;
-    config = Criterion::default().warm_up_time(Duration::from_secs(10)).measurement_time(Duration::from_secs(30));
+    config = Criterion::default().warm_up_time(Duration::from_secs(3)).measurement_time(Duration::from_secs(10));
     targets = from_elem
 );
 criterion_main!(benches);

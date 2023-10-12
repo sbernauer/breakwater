@@ -231,7 +231,7 @@ mod test {
 
     #[rstest]
     // Without alpha
-    #[case("PX 0 0 ffffff\nPX 0 0\n", "PX 0 0 ffffff\n")]
+    #[case("PX 1 2 ffffff\nPX 1 2\n", "PX 1 2 ffffff\n")]
     #[case("PX 0 0 abcdef\nPX 0 0\n", "PX 0 0 abcdef\n")]
     #[case("PX 0 42 abcdef\nPX 0 42\n", "PX 0 42 abcdef\n")]
     #[case("PX 42 0 abcdef\nPX 42 0\n", "PX 42 0 abcdef\n")]

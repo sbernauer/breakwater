@@ -1,8 +1,14 @@
 use crate::framebuffer::FrameBuffer;
 use const_format::formatcp;
 use log::{info, warn};
-use std::simd::{u32x8, Simd, SimdUint};
-use std::sync::Arc;
+use std::arch::x86_64::{
+    __m256i, __m512i, _mm256_cmpeq_epi8, _mm256_extract_epi8, _mm256_loadu_epi8,
+    _mm256_movemask_epi8, _mm256_set1_epi8, _mm512_castsi256_si512, _mm512_castsi512_si256,
+    _mm512_loadu_epi8, _mm512_loadu_si512, _mm512_set1_epi8, _mm512_set_epi8, _mm512_shuffle_epi8,
+    _mm512_sub_epi8,
+};
+use std::simd::{u32x8, u8x32, u8x64, Simd, SimdUint};
+use std::sync::{Arc, OnceLock};
 use tokio::io::AsyncWriteExt;
 
 pub const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
@@ -61,6 +67,8 @@ pub async fn parse_pixelflut_commands(
     // I don't know what I'm doing, hoping for best performance anyway ;)
     parser_state: ParserState,
 ) -> ParserState {
+    // SHUFFLE_PATTERNS.get_or_init(|| unsafe { manually_calculate_shuffle_patterns() });
+
     let mut last_byte_parsed = 0;
     let mut connection_x_offset = parser_state.connection_x_offset;
     let mut connection_y_offset = parser_state.connection_y_offset;
@@ -73,107 +81,43 @@ pub async fn parse_pixelflut_commands(
         if current_command & 0x00ff_ffff == string_to_number(b"PX \0\0\0\0\0") {
             i += 3;
 
-            let (mut x, mut y, present) = parse_pixel_coordinates(buffer.as_ptr(), &mut i);
+            // TODO: Use variant that does not check bounds to get &buffer[i..i + 19]
+            let ParseResult {
+                bytes_parsed,
+                x,
+                y,
+                rgba,
+                has_alpha,
+                read_request,
+            } = parse_coords_and_rgba(&buffer[i..i + 19]);
 
-            if present {
-                x += connection_x_offset;
-                y += connection_y_offset;
+            i += bytes_parsed as usize;
+            last_byte_parsed = i - 1;
 
-                // Separator between coordinates and color
-                if unsafe { *buffer.get_unchecked(i) } == b' ' {
-                    i += 1;
+            let x = x as usize + connection_x_offset;
+            let y = y as usize + connection_y_offset;
 
-                    // TODO: Determine what clients use more: RGB, RGBA or gg variant.
-                    // If RGBA is used more often move the RGB code below the RGBA code
-
-                    // Must be followed by 6 bytes RGB and newline or ...
-                    if unsafe { *buffer.get_unchecked(i + 6) } == b'\n' {
-                        last_byte_parsed = i + 6;
-                        i += 7; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
-
-                        let rgba: u32 = simd_unhex(&buffer[i - 7..i + 1]);
-
-                        fb.set(x, y, rgba & 0x00ff_ffff);
-                        continue;
-                    }
-
-                    // ... or must be followed by 8 bytes RGBA and newline
-                    #[cfg(not(feature = "alpha"))]
-                    if unsafe { *buffer.get_unchecked(i + 8) } == b'\n' {
-                        last_byte_parsed = i + 8;
-                        i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
-
-                        let rgba: u32 = simd_unhex(&buffer[i - 9..i - 1]);
-
-                        fb.set(x, y, rgba & 0x00ff_ffff);
-                        continue;
-                    }
-                    #[cfg(feature = "alpha")]
-                    if unsafe { *buffer.get_unchecked(i + 8) } == b'\n' {
-                        last_byte_parsed = i + 8;
-                        i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
-
-                        let rgba = simd_unhex(&buffer[i - 9..i - 1]);
-
-                        let alpha = (rgba >> 24) & 0xff;
-
-                        if alpha == 0 || x >= fb.get_width() || y >= fb.get_height() {
-                            continue;
-                        }
-
-                        let alpha_comp = 0xff - alpha;
-                        let current = fb.get_unchecked(x, y);
-                        let r = (rgba >> 16) & 0xff;
-                        let g = (rgba >> 8) & 0xff;
-                        let b = rgba & 0xff;
-
-                        let r: u32 = (((current >> 24) & 0xff) * alpha_comp + r * alpha) / 0xff;
-                        let g: u32 = (((current >> 16) & 0xff) * alpha_comp + g * alpha) / 0xff;
-                        let b: u32 = (((current >> 8) & 0xff) * alpha_comp + b * alpha) / 0xff;
-
-                        fb.set(x, y, r << 16 | g << 8 | b);
-                        continue;
-                    }
-
-                    // ... for the efficient/lazy clients
-                    if unsafe { *buffer.get_unchecked(i + 2) } == b'\n' {
-                        last_byte_parsed = i + 2;
-                        i += 3; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
-
-                        let base = simd_unhex(&buffer[i - 3..i + 5]) & 0xff;
-
-                        let rgba: u32 = base << 16 | base << 8 | base;
-
-                        fb.set(x, y, rgba);
-
-                        continue;
-                    }
+            if !read_request {
+                fb.set(x, y, rgba & 0x00ff_ffff);
+                continue;
+            } else if let Some(rgb) = fb.get(x, y) {
+                match stream
+                    .write_all(
+                        format!(
+                            "PX {} {} {:06x}\n",
+                            // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
+                            x - connection_x_offset,
+                            y - connection_y_offset,
+                            rgb.to_be() >> 8
+                        )
+                        .as_bytes(),
+                    )
+                    .await
+                {
+                    Ok(_) => (),
+                    Err(_) => continue,
                 }
-
-                // End of command to read Pixel value
-                if unsafe { *buffer.get_unchecked(i) } == b'\n' {
-                    last_byte_parsed = i;
-                    i += 1;
-                    if let Some(rgb) = fb.get(x, y) {
-                        match stream
-                            .write_all(
-                                format!(
-                                    "PX {} {} {:06x}\n",
-                                    // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
-                                    x - connection_x_offset,
-                                    y - connection_y_offset,
-                                    rgb.to_be() >> 8
-                                )
-                                .as_bytes(),
-                            )
-                            .await
-                        {
-                            Ok(_) => (),
-                            Err(_) => continue,
-                        }
-                    }
-                    continue;
-                }
+                continue;
             }
         } else if current_command & 0x0000_ffff_ffff_ffff == string_to_number(b"OFFSET \0\0") {
             i += 7;
@@ -217,35 +161,74 @@ pub async fn parse_pixelflut_commands(
     }
 }
 
-const SHIFT_PATTERN: Simd<u32, 8> = u32x8::from_array([4, 0, 12, 8, 20, 16, 28, 24]);
-const SIMD_6: Simd<u32, 8> = u32x8::from_array([6; 8]);
-const SIMD_F: Simd<u32, 8> = u32x8::from_array([0xf; 8]);
-const SIMD_9: Simd<u32, 8> = u32x8::from_array([9; 8]);
+struct ParseResult {
+    bytes_parsed: u8,
+    x: u16,
+    y: u16,
+    // aabbggrr
+    rgba: u32,
+    read_request: bool,
+    has_alpha: bool,
+}
 
-/// Parse a slice of 8 characters into a single u32 number
-/// is undefined behavior for invalid characters
-#[inline(always)]
-fn simd_unhex(value: &[u8]) -> u32 {
-    #[cfg(debug_assertions)]
-    assert_eq!(value.len(), 8);
-    // Feel free to find a better, but fast, way, to cast all integers as u32
-    let input = u32x8::from_array([
-        value[0] as u32,
-        value[1] as u32,
-        value[2] as u32,
-        value[3] as u32,
-        value[4] as u32,
-        value[5] as u32,
-        value[6] as u32,
-        value[7] as u32,
-    ]);
-    // Heavily inspired by https://github.com/nervosnetwork/faster-hex/blob/a4c06b387ddeeea311c9e84a3adcaf01015cf40e/src/decode.rs#L80
-    let sr6 = input >> SIMD_6;
-    let and15 = input & SIMD_F;
-    let mul = sr6 * SIMD_9;
-    let hexed = and15 + mul;
-    let shifted = hexed << SHIFT_PATTERN;
-    shifted.reduce_or()
+// Longest possible space bitmask = "1234 1234 " => 10 chars
+const SPACES_BITMASK_MASK: u32 = 0b0000_0000_0000_0000_0011_1111_1111;
+
+// Input: 19 characters starting where the x coordinate starts, eg. "1234 4321 <rr|rrggbb|rrggbbaa>\n<random chars follow>"
+// Returns: (x, y, total length of text containing "<x> <y>")
+//
+// Inspect assembler code using
+// RUSTFLAGS="-C target-cpu=native" CARGO_INCREMENTAL=0 cargo -Z build-std asm --build-type release --rust breakwater::parser::parse_coords_and_rgba
+// Don't forget to #[inline(never)]!
+#[inline(never)]
+fn parse_coords_and_rgba(bytes: &[u8]) -> ParseResult {
+    // #[cfg(debug_assertions)]
+    assert!(bytes.len() >= 19);
+
+    unsafe {
+        // TODO: Get this into constants, but `_mm512_set1_epi8` is not a const function :/
+        let ascii_zeros: __m512i = _mm512_set1_epi8(b'0' as i8);
+        let ascii_spaces: __m256i = _mm256_set1_epi8(b' ' as i8);
+
+        // TODO: We get u8 and pass i8 in here. Check if this causes problems
+        let chars = _mm256_loadu_epi8(bytes.as_ptr() as *const i8);
+        let chars512 = _mm512_castsi256_si512(chars);
+        let digits = _mm512_sub_epi8(chars512, ascii_zeros);
+        let spaces = _mm256_cmpeq_epi8(chars, ascii_spaces);
+
+        // ATTENTION: Bitmask starts with LSB (so kind of wrong order)
+        // let spaces_bitmask = chars.simd_eq(SIMD_SPACE_CHAR).to_bitmask();
+        // let newline_bitmask = chars.simd_eq(SIMD_NEWLINE_CHAR).to_bitmask();
+        // let spaces_bitmask = (spaces_bitmask | newline_bitmask) & SPACES_BITMASK_MASK;
+        let spaces_bitmask = _mm256_movemask_epi8(spaces) as u32;
+        let spaces_bitmask = spaces_bitmask & SPACES_BITMASK_MASK;
+
+        // SAFETY: As SHUFFLE_PATTERNS has length `u16::MAX as usize + 1` and we use a us16 to index into it it will always succeed
+        let (bytes_parsed, shuffle_pattern) =
+            *SHUFFLE_PATTERNS.get_unchecked(spaces_bitmask as usize);
+
+        let shuffle_pattern = _mm512_loadu_epi8(shuffle_pattern.as_ptr() as *const i8);
+        let shuffled = _mm512_shuffle_epi8(digits, shuffle_pattern);
+        let shuffled = _mm512_castsi512_si256(shuffled);
+
+        let x = _mm256_extract_epi8(shuffled, 30);
+
+        dbg!(String::from_utf8_unchecked(bytes.to_vec()));
+        println!("{spaces_bitmask:#032b}");
+        dbg!(digits);
+        dbg!(shuffle_pattern);
+        dbg!(shuffled);
+        dbg!(x);
+
+        ParseResult {
+            bytes_parsed,
+            x: 0,
+            y: 0,
+            rgba: 0,
+            has_alpha: false,
+            read_request: false,
+        }
+    }
 }
 
 pub fn check_cpu_support() {
@@ -296,13 +279,377 @@ fn parse_pixel_coordinates(buffer: *const u8, current_index: &mut usize) -> (usi
     (x, y, x_visited && y_visited)
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
+const SHUFFLE_PATTERNS: [(u8, [u8; 64]); u16::MAX as usize + 1] =
+    manually_calculate_shuffle_patterns();
 
-    #[test]
-    fn test_from_hex_char() {
-        assert_eq!(simd_unhex(b"01234567"), 0x67452301);
-        assert_eq!(simd_unhex(b"fedcba98"), 0x98badcfe);
-    }
+// Let's add the stuff manually, we can always automate later
+const fn manually_calculate_shuffle_patterns() -> [(u8, [u8; 64]); u16::MAX as usize + 1] {
+    let mut shuffle_patterns = [(0, [255; 64]); u16::MAX as usize + 1];
+
+    // 9 9
+    shuffle_patterns[0b0000_0000_0000_1010] = (
+        3,
+        [
+            255, 255, 255, 255, 255, 255, 0, 255, // X coordinate
+            255, 255, 255, 255, 255, 255, 2, 255, // y coordinate
+            255, 255, 255, 255, 255, 255, 255, 255, // red + green
+            255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+            255, 255, 255, 255, 255, 255, 255, 255, // padding
+            255, 255, 255, 255, 255, 255, 255, 255, // padding
+            255, 255, 255, 255, 255, 255, 255, 255, // padding
+            255, 255, 255, 255, 255, 255, 255, 255, // padding
+        ],
+    );
+
+    // // 9 99
+    // shuffle_patterns[0b0000_0000_0001_0010] = (
+    //     4,
+    //     u8x32::from_array([
+    //         255, 255, 255, 255, 255, 255, 0, 255, // X coordinate
+    //         255, 255, 255, 255, 2, 255, 3, 255, // y coordinate
+    //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+    //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+    //     ]),
+    // );
+
+    // // 9 999
+    // shuffle_patterns[0b0000_0000_0010_0010] = (
+    //     5,
+    //     u8x32::from_array([
+    //         255, 255, 255, 255, 255, 255, 0, 255, // X coordinate
+    //         255, 255, 2, 255, 3, 255, 4, 255, // y coordinate
+    //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+    //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+    //     ]),
+    // );
+
+    // // 9 9999
+    // shuffle_patterns[0b0000_0000_0100_0010] = (
+    //     6,
+    //     u8x32::from_array([
+    //         255, 255, 255, 255, 255, 255, 0, 255, // X coordinate
+    //         2, 255, 3, 255, 4, 255, 5, 255, // y coordinate
+    //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+    //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+    //     ]),
+    // );
+
+    // // 99 9
+    // shuffle_patterns[0b0000_0000_0001_0100] = (
+    //     4,
+    //     u8x32::from_array([
+    //         255, 255, 255, 255, 0, 255, 1, 255, // X coordinate
+    //         255, 255, 255, 255, 255, 255, 3, 255, // y coordinate
+    //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+    //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+    //     ]),
+    // );
+
+    // // 99 99
+    // shuffle_patterns[0b0000_0000_0010_0100] = (
+    //     5,
+    //     u8x32::from_array([
+    //         255, 255, 255, 255, 0, 255, 1, 255, // X coordinate
+    //         255, 255, 255, 255, 3, 255, 4, 255, // y coordinate
+    //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+    //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+    //     ]),
+    // );
+
+    // // 99 999
+    // shuffle_patterns[0b0000_0000_0100_0100] = (
+    //     6,
+    //     u8x32::from_array([
+    //         255, 255, 255, 255, 0, 255, 1, 255, // X coordinate
+    //         255, 255, 3, 255, 4, 255, 5, 255, // y coordinate
+    //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+    //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+    //     ]),
+    // );
+
+    // // 99 9999
+    // shuffle_patterns[0b0000_0000_1000_0100] = (
+    //     7,
+    //     u8x32::from_array([
+    //         255, 255, 255, 255, 0, 255, 1, 255, // X coordinate
+    //         3, 255, 4, 255, 5, 255, 6, 255, // y coordinate
+    //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+    //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+    //     ]),
+    // );
+
+    // // 999 9
+    // shuffle_patterns[0b0000_0000_0010_1000] = (
+    //     5,
+    //     u8x32::from_array([
+    //         255, 255, 0, 255, 1, 255, 2, 255, // X coordinate
+    //         255, 255, 255, 255, 255, 255, 4, 255, // y coordinate
+    //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+    //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+    //     ]),
+    // );
+
+    // // 999 99
+    // shuffle_patterns[0b0000_0000_0100_1000] = (
+    //     6,
+    //     u8x32::from_array([
+    //         255, 255, 0, 255, 1, 255, 2, 255, // X coordinate
+    //         255, 255, 255, 255, 4, 255, 5, 255, // y coordinate
+    //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+    //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+    //     ]),
+    // );
+
+    // // 999 999
+    // shuffle_patterns[0b0000_0000_1000_1000] = (
+    //     7,
+    //     u8x32::from_array([
+    //         255, 255, 0, 255, 1, 255, 2, 255, // X coordinate
+    //         255, 255, 4, 255, 5, 255, 6, 255, // y coordinate
+    //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+    //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+    //     ]),
+    // );
+
+    // // 999 9999
+    // shuffle_patterns[0b0000_0001_0000_1000] = (
+    //     8,
+    //     u8x32::from_array([
+    //         255, 255, 0, 255, 1, 255, 2, 255, // X coordinate
+    //         4, 255, 5, 255, 6, 255, 7, 255, // y coordinate
+    //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+    //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+    //     ]),
+    // );
+
+    // // 9999 9
+    // shuffle_patterns[0b0000_0000_0101_0000] = (
+    //     6,
+    //     u8x32::from_array([
+    //         0, 255, 1, 255, 2, 255, 3, 255, // X coordinate
+    //         255, 255, 255, 255, 255, 255, 5, 255, // y coordinate
+    //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+    //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+    //     ]),
+    // );
+
+    // // 9999 99
+    // shuffle_patterns[0b0000_0000_1001_0000] = (
+    //     7,
+    //     u8x32::from_array([
+    //         0, 255, 1, 255, 2, 255, 3, 255, // X coordinate
+    //         255, 255, 255, 255, 5, 255, 6, 255, // y coordinate
+    //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+    //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+    //     ]),
+    // );
+
+    // // 9999 999
+    // shuffle_patterns[0b0000_0001_0001_0000] = (
+    //     8,
+    //     u8x32::from_array([
+    //         0, 255, 1, 255, 2, 255, 3, 255, // X coordinate
+    //         255, 255, 5, 255, 6, 255, 7, 255, // y coordinate
+    //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+    //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+    //     ]),
+    // );
+
+    // // 9999 9999
+    // shuffle_patterns[0b0000_0010_0001_0000] = (
+    //     9,
+    //     u8x32::from_array([
+    //         0, 255, 1, 255, 2, 255, 3, 255, // X coordinate
+    //         5, 255, 6, 255, 7, 255, 8, 255, // y coordinate
+    //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+    //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+    //     ]),
+    // );
+
+    shuffle_patterns
 }
+
+// static SHUFFLE_PATTERNS: OnceLock<[(u8, __m512i); u16::MAX as usize + 1]> = OnceLock::new();
+
+// // Let's add the stuff manually, we can always automate later
+// unsafe fn manually_calculate_shuffle_patterns() -> [(u8, __m512i); u16::MAX as usize + 1] {
+//     let mut shuffle_patterns = [(0, _mm512_set1_epi8(i8::MAX)); u16::MAX as usize + 1];
+
+//     // 9 9
+//     shuffle_patterns[0b0000_0000_0000_1010] = (
+//         3,
+//         _mm512_set1_epi8(i8::MAX), // u8x32::from_array([
+//                                    //     255, 255, 255, 255, 255, 255, 0, 255, // X coordinate
+//                                    //     255, 255, 255, 255, 255, 255, 2, 255, // y coordinate
+//                                    //     255, 255, 255, 255, 255, 255, 255, 255, // red + green
+//                                    //     255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+//                                    // ]),
+//     );
+
+//     // // 9 99
+//     // shuffle_patterns[0b0000_0000_0001_0010] = (
+//     //     4,
+//     //     u8x32::from_array([
+//     //         255, 255, 255, 255, 255, 255, 0, 255, // X coordinate
+//     //         255, 255, 255, 255, 2, 255, 3, 255, // y coordinate
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+//     //     ]),
+//     // );
+
+//     // // 9 999
+//     // shuffle_patterns[0b0000_0000_0010_0010] = (
+//     //     5,
+//     //     u8x32::from_array([
+//     //         255, 255, 255, 255, 255, 255, 0, 255, // X coordinate
+//     //         255, 255, 2, 255, 3, 255, 4, 255, // y coordinate
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+//     //     ]),
+//     // );
+
+//     // // 9 9999
+//     // shuffle_patterns[0b0000_0000_0100_0010] = (
+//     //     6,
+//     //     u8x32::from_array([
+//     //         255, 255, 255, 255, 255, 255, 0, 255, // X coordinate
+//     //         2, 255, 3, 255, 4, 255, 5, 255, // y coordinate
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+//     //     ]),
+//     // );
+
+//     // // 99 9
+//     // shuffle_patterns[0b0000_0000_0001_0100] = (
+//     //     4,
+//     //     u8x32::from_array([
+//     //         255, 255, 255, 255, 0, 255, 1, 255, // X coordinate
+//     //         255, 255, 255, 255, 255, 255, 3, 255, // y coordinate
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+//     //     ]),
+//     // );
+
+//     // // 99 99
+//     // shuffle_patterns[0b0000_0000_0010_0100] = (
+//     //     5,
+//     //     u8x32::from_array([
+//     //         255, 255, 255, 255, 0, 255, 1, 255, // X coordinate
+//     //         255, 255, 255, 255, 3, 255, 4, 255, // y coordinate
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+//     //     ]),
+//     // );
+
+//     // // 99 999
+//     // shuffle_patterns[0b0000_0000_0100_0100] = (
+//     //     6,
+//     //     u8x32::from_array([
+//     //         255, 255, 255, 255, 0, 255, 1, 255, // X coordinate
+//     //         255, 255, 3, 255, 4, 255, 5, 255, // y coordinate
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+//     //     ]),
+//     // );
+
+//     // // 99 9999
+//     // shuffle_patterns[0b0000_0000_1000_0100] = (
+//     //     7,
+//     //     u8x32::from_array([
+//     //         255, 255, 255, 255, 0, 255, 1, 255, // X coordinate
+//     //         3, 255, 4, 255, 5, 255, 6, 255, // y coordinate
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+//     //     ]),
+//     // );
+
+//     // // 999 9
+//     // shuffle_patterns[0b0000_0000_0010_1000] = (
+//     //     5,
+//     //     u8x32::from_array([
+//     //         255, 255, 0, 255, 1, 255, 2, 255, // X coordinate
+//     //         255, 255, 255, 255, 255, 255, 4, 255, // y coordinate
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+//     //     ]),
+//     // );
+
+//     // // 999 99
+//     // shuffle_patterns[0b0000_0000_0100_1000] = (
+//     //     6,
+//     //     u8x32::from_array([
+//     //         255, 255, 0, 255, 1, 255, 2, 255, // X coordinate
+//     //         255, 255, 255, 255, 4, 255, 5, 255, // y coordinate
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+//     //     ]),
+//     // );
+
+//     // // 999 999
+//     // shuffle_patterns[0b0000_0000_1000_1000] = (
+//     //     7,
+//     //     u8x32::from_array([
+//     //         255, 255, 0, 255, 1, 255, 2, 255, // X coordinate
+//     //         255, 255, 4, 255, 5, 255, 6, 255, // y coordinate
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+//     //     ]),
+//     // );
+
+//     // // 999 9999
+//     // shuffle_patterns[0b0000_0001_0000_1000] = (
+//     //     8,
+//     //     u8x32::from_array([
+//     //         255, 255, 0, 255, 1, 255, 2, 255, // X coordinate
+//     //         4, 255, 5, 255, 6, 255, 7, 255, // y coordinate
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+//     //     ]),
+//     // );
+
+//     // // 9999 9
+//     // shuffle_patterns[0b0000_0000_0101_0000] = (
+//     //     6,
+//     //     u8x32::from_array([
+//     //         0, 255, 1, 255, 2, 255, 3, 255, // X coordinate
+//     //         255, 255, 255, 255, 255, 255, 5, 255, // y coordinate
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+//     //     ]),
+//     // );
+
+//     // // 9999 99
+//     // shuffle_patterns[0b0000_0000_1001_0000] = (
+//     //     7,
+//     //     u8x32::from_array([
+//     //         0, 255, 1, 255, 2, 255, 3, 255, // X coordinate
+//     //         255, 255, 255, 255, 5, 255, 6, 255, // y coordinate
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+//     //     ]),
+//     // );
+
+//     // // 9999 999
+//     // shuffle_patterns[0b0000_0001_0001_0000] = (
+//     //     8,
+//     //     u8x32::from_array([
+//     //         0, 255, 1, 255, 2, 255, 3, 255, // X coordinate
+//     //         255, 255, 5, 255, 6, 255, 7, 255, // y coordinate
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+//     //     ]),
+//     // );
+
+//     // // 9999 9999
+//     // shuffle_patterns[0b0000_0010_0001_0000] = (
+//     //     9,
+//     //     u8x32::from_array([
+//     //         0, 255, 1, 255, 2, 255, 3, 255, // X coordinate
+//     //         5, 255, 6, 255, 7, 255, 8, 255, // y coordinate
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // red + green
+//     //         255, 255, 255, 255, 255, 255, 255, 255, // blue + padding
+//     //     ]),
+//     // );
+
+//     shuffle_patterns
+// }

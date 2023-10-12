@@ -1,0 +1,63 @@
+RUSTFLAGS="-C target-cpu=native" CARGO_INCREMENTAL=0 cargo build --release
+RUSTFLAGS="-C target-cpu=native" CARGO_INCREMENTAL=0 cargo asm --build-type release breakwater::parser::simd_unhex
+
+RUSTFLAGS="-C target-cpu=native" CARGO_INCREMENTAL=0 cargo asm --build-type release breakwater::parser::simd_unhex
+breakwater::parser::simd_unhex:
+ vpmovzxbd ymm0, qword, ptr, [rdi]
+ vpandd  ymm1, ymm0, dword, ptr, [rip, +, .LCPI568_0]{1to8}
+ vpsrld  ymm0, ymm0, 6
+ vpdpwssd ymm1, ymm0, ymmword, ptr, [rip, +, .LCPI568_1]
+ vpsllvd ymm0, ymm1, ymmword, ptr, [rip, +, .LCPI568_2]
+ vextracti128 xmm1, ymm0, 1
+ vpor    xmm0, xmm0, xmm1
+ vpshufd xmm1, xmm0, 238
+ vpor    xmm0, xmm0, xmm1
+ vpshufd xmm1, xmm0, 85
+ vpor    xmm0, xmm0, xmm1
+ vmovd   eax, xmm0
+ vzeroupper
+ ret
+
+breakwater::parser::simd_unhex:
+ movq    xmm0, qword, ptr, [rdi]
+ pxor    xmm1, xmm1
+ punpcklbw xmm0, xmm1
+ movdqa  xmm2, xmm0
+ punpckhwd xmm2, xmm1
+ punpcklwd xmm0, xmm1
+ movdqa  xmm1, xmm0
+ psrld   xmm1, 6
+ movdqa  xmm3, xmm2
+ psrld   xmm3, 6
+ movdqa  xmm4, xmmword, ptr, [rip, +, .LCPI572_0]
+ pand    xmm2, xmm4
+ pand    xmm0, xmm4
+ movdqa  xmm4, xmm3
+ pslld   xmm4, 3
+ por     xmm4, xmm3
+ paddd   xmm4, xmm2
+ movdqa  xmm2, xmm1
+ pslld   xmm2, 3
+ por     xmm2, xmm1
+ paddd   xmm2, xmm0
+ pshufd  xmm0, xmm4, 245
+ pmuludq xmm4, xmmword, ptr, [rip, +, .LCPI572_1]
+ pshufd  xmm1, xmm4, 232
+ pmuludq xmm0, xmmword, ptr, [rip, +, .LCPI572_2]
+ pshufd  xmm0, xmm0, 232
+ punpckldq xmm1, xmm0
+ pshufd  xmm0, xmm2, 245
+ pmuludq xmm2, xmmword, ptr, [rip, +, .LCPI572_3]
+ pshufd  xmm2, xmm2, 232
+ pmuludq xmm0, xmmword, ptr, [rip, +, .LCPI572_4]
+ pshufd  xmm0, xmm0, 232
+ punpckldq xmm2, xmm0
+ por     xmm2, xmm1
+ pshufd  xmm0, xmm2, 238
+ por     xmm0, xmm2
+ pshufd  xmm1, xmm0, 85
+ por     xmm1, xmm0
+ movd    eax, xmm1
+ ret
+
+
