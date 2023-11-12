@@ -229,16 +229,18 @@ fn simd_unhex(value: &[u8]) -> u32 {
     #[cfg(debug_assertions)]
     assert_eq!(value.len(), 8);
     // Feel free to find a better, but fast, way, to cast all integers as u32
-    let input = u32x8::from_array([
-        value[0] as u32,
-        value[1] as u32,
-        value[2] as u32,
-        value[3] as u32,
-        value[4] as u32,
-        value[5] as u32,
-        value[6] as u32,
-        value[7] as u32,
-    ]);
+    let input = unsafe {
+        u32x8::from_array([
+            *value.get_unchecked(0) as u32,
+            *value.get_unchecked(1) as u32,
+            *value.get_unchecked(2) as u32,
+            *value.get_unchecked(3) as u32,
+            *value.get_unchecked(4) as u32,
+            *value.get_unchecked(5) as u32,
+            *value.get_unchecked(6) as u32,
+            *value.get_unchecked(7) as u32,
+        ])
+    };
     // Heavily inspired by https://github.com/nervosnetwork/faster-hex/blob/a4c06b387ddeeea311c9e84a3adcaf01015cf40e/src/decode.rs#L80
     let sr6 = input >> SIMD_6;
     let and15 = input & SIMD_F;
