@@ -1,7 +1,7 @@
 use crate::framebuffer::FrameBuffer;
 use const_format::formatcp;
 use log::{info, warn};
-use std::simd::{u32x8, Simd, SimdUint};
+use std::simd::{num::SimdUint, u32x8, Simd};
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 
