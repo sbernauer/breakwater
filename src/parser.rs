@@ -2,6 +2,7 @@ use crate::framebuffer::FrameBuffer;
 use const_format::formatcp;
 use log::{info, warn};
 use std::simd::{num::SimdUint, u32x8, Simd};
+use std::slice::from_raw_parts;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 
@@ -91,7 +92,8 @@ pub async fn parse_pixelflut_commands(
                         last_byte_parsed = i + 6;
                         i += 7; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                        let rgba: u32 = simd_unhex(&buffer[i - 7..i + 1]);
+                        let rgba: u32 =
+                            simd_unhex(unsafe { from_raw_parts(buffer.as_ptr().add(i - 7), 8) });
 
                         fb.set(x, y, rgba & 0x00ff_ffff);
                         continue;
@@ -103,7 +105,8 @@ pub async fn parse_pixelflut_commands(
                         last_byte_parsed = i + 8;
                         i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                        let rgba: u32 = simd_unhex(&buffer[i - 9..i - 1]);
+                        let rgba: u32 =
+                            simd_unhex(unsafe { from_raw_parts(buffer.as_ptr().add(i - 9), 8) });
 
                         fb.set(x, y, rgba & 0x00ff_ffff);
                         continue;
@@ -113,7 +116,8 @@ pub async fn parse_pixelflut_commands(
                         last_byte_parsed = i + 8;
                         i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                        let rgba = simd_unhex(&buffer[i - 9..i - 1]);
+                        let rgba =
+                            simd_unhex(unsafe { from_raw_parts(buffer.as_ptr().add(i - 9), 8) });
 
                         let alpha = (rgba >> 24) & 0xff;
 
@@ -140,7 +144,9 @@ pub async fn parse_pixelflut_commands(
                         last_byte_parsed = i + 2;
                         i += 3; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                        let base = simd_unhex(&buffer[i - 3..i + 5]) & 0xff;
+                        let base =
+                            simd_unhex(unsafe { from_raw_parts(buffer.as_ptr().add(i - 3), 8) })
+                                & 0xff;
 
                         let rgba: u32 = base << 16 | base << 8 | base;
 
