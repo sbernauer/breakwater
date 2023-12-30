@@ -269,6 +269,10 @@ mod test {
         "PX 0 0 ffffff\nPX 42 42 000000\n"
     )] // The get pixel result is also offseted
     #[case("OFFSET 0 0\nPX 0 42 abcdef\nPX 0 42\n", "PX 0 42 abcdef\n")]
+    #[case(
+        "OFFSET 10 10\nPX 0 0 ffffff\nOFFSET 0 0\nPX 0 0\nPX 10 10\n",
+        "PX 0 0 000000\nPX 10 10 ffffff\n"
+    )]
     #[tokio::test]
     async fn test_setting_pixel(
         #[case] input: &str,
