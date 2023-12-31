@@ -175,7 +175,7 @@ pub async fn parse_pixelflut_commands(
                     continue;
                 }
             }
-        } else if current_command & 0x0000_ffff_ffff_ffff == string_to_number(b"OFFSET \0\0") {
+        } else if current_command & 0x00ff_ffff_ffff_ffff == string_to_number(b"OFFSET \0\0") {
             i += 7;
 
             let (x, y, present) = parse_pixel_coordinates(buffer.as_ptr(), &mut i);
