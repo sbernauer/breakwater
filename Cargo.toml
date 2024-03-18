@@ -9,20 +9,20 @@ const_format = "0.2"
 clap = { version = "4.3", features = ["derive"] }
 rusttype = "0.9"
 number_prefix = "0.4"
-env_logger = "0.10"
+env_logger = "0.11"
 lazy_static = "1.4"
 log = "0.4"
 prometheus_exporter = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-simple_moving_average = "0.1"
-thread-priority = "0.13"
+simple_moving_average = "1.0"
+thread-priority = "0.16"
 tokio = { version = "1.29", features = ["fs", "rt-multi-thread", "net", "io-util", "macros", "process", "signal", "sync", "time"] }
 vncserver = { version ="0.2", optional = true}
 
 [dev-dependencies]
 criterion = {version = "0.5", features = ["async_tokio"]}
-pixelbomber = "0.4.1"
+pixelbomber = "0.6"
 rstest = "0.18"
 rand = "0.8"
 
@@ -51,3 +51,7 @@ opt-level = 3
 lto = "fat"
 codegen-units = 1
 # panic = "abort" # You can enable this, but I prefer to get actual stack traces
+
+[patch.crates-io]
+# https://github.com/rayylee/libvnc-rs/pull/2: Update bindgen to 0.69
+vncserver = { git = 'https://github.com/sbernauer/libvnc-rs.git' }

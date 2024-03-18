@@ -1,8 +1,7 @@
 use std::net::SocketAddr;
 
-use prometheus_exporter::{
-    self,
-    prometheus::{register_int_gauge, register_int_gauge_vec, IntGauge, IntGaugeVec},
+use prometheus_exporter::prometheus::{
+    register_int_gauge, register_int_gauge_vec, IntGauge, IntGaugeVec,
 };
 use tokio::sync::broadcast;
 
