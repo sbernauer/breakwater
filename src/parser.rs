@@ -1,10 +1,12 @@
 use crate::framebuffer::FrameBuffer;
 use const_format::formatcp;
-use log::{info, warn};
 use std::simd::{num::SimdUint, u32x8, Simd};
 use std::slice::from_raw_parts;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
+
+#[cfg(target_arch = "x86_64")]
+use log::{info, warn};
 
 pub const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
 pub const HELP_TEXT: &[u8] = formatcp!("\

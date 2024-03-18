@@ -23,7 +23,7 @@ async fn invoke_parse_pixelflut_commands(
 }
 
 fn benchmark_settings(c: &mut Criterion, name: &str, file: &str, config: ImageConfig) {
-    let mut commands = image_handler::load(vec![file], &config);
+    let mut commands = image_handler::load(vec![file], config);
     let command = commands.pop().unwrap();
     c.bench_with_input(
         BenchmarkId::new(name, format!("{FRAMEBUFFER_WIDTH} x {FRAMEBUFFER_HEIGHT}")),
