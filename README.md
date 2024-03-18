@@ -171,7 +171,7 @@ The whole test setup did cost less than 1€ for one hour, so please feel free t
 | [Breakwater](https://github.com/sbernauer/breakwater)@4cc8e2a4c7fd03886ede3061d6359c8063665755 | Rust     | 110 Gbit/s          |
 
 <details>
-  <summary>`lscpu` output</summary>
+  <summary>lscpu command output</summary>
 
 ```
 Architecture:            x86_64
@@ -217,6 +217,63 @@ Vulnerabilities:
   Spectre v2:            Mitigation; Retpolines, IBPB conditional, IBRS_FW, STIBP conditional, RSB filling, PBRSB-eIBRS Not affected
   Srbds:                 Not affected
   Tsx async abort:       Not affected
+```
+
+</details>
+
+## 80 core ARM server
+
+As I got access to an server with a single Ampere(R) Altra(R) Processor with 80 cores, here are the results:
+
+[Sturmflut](https://github.com/TobleMiner/sturmflut) was used as a client using the loopback interface.
+
+| Server                                                                                         | Language | Sustainable traffic |
+|------------------------------------------------------------------------------------------------|----------|---------------------|
+| [Shoreline](https://github.com/TobleMiner/shoreline)@05a2bbfb4559090727c51673e1fb47d20eac5672  | C        | 185 Gbit/s          |
+| [Breakwater](https://github.com/sbernauer/breakwater)@135d2b795858a896a73470fd152407c22b0a0d26 | Rust     | 415 Gbit/s          |
+
+<details>
+  <summary>lscpu command output</summary>
+
+```
+Architecture:           aarch64
+  CPU op-mode(s):       32-bit, 64-bit
+  Byte Order:           Little Endian
+CPU(s):                 80
+  On-line CPU(s) list:  0-79
+Vendor ID:              ARM
+  Model name:           Neoverse-N1
+    Model:              1
+    Thread(s) per core: 1
+    Core(s) per socket: 80
+    Socket(s):          1
+    Stepping:           r3p1
+    Frequency boost:    disabled
+    CPU max MHz:        3000.0000
+    CPU min MHz:        1000.0000
+    BogoMIPS:           50.00
+    Flags:              fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm lrcpc dcpop asimddp ssbs
+Caches (sum of all):
+  L1d:                  5 MiB (80 instances)
+  L1i:                  5 MiB (80 instances)
+  L2:                   80 MiB (80 instances)
+NUMA:
+  NUMA node(s):         1
+  NUMA node0 CPU(s):    0-79
+Vulnerabilities:
+  Gather data sampling: Not affected
+  Itlb multihit:        Not affected
+  L1tf:                 Not affected
+  Mds:                  Not affected
+  Meltdown:             Not affected
+  Mmio stale data:      Not affected
+  Retbleed:             Not affected
+  Spec rstack overflow: Not affected
+  Spec store bypass:    Mitigation; Speculative Store Bypass disabled via prctl
+  Spectre v1:           Mitigation; __user pointer sanitization
+  Spectre v2:           Mitigation; CSV2, BHB
+  Srbds:                Not affected
+  Tsx async abort:      Not affected
 ```
 
 </details>
