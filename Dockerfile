@@ -14,7 +14,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # We don't want to e.g. set "-C target-cpu=native", so that the binary should run everywhere
-RUN RUSTFLAGS='' cargo build --release
+# Also we can always build with vnc server support as the docker image contains all needed dependencies in any case
+RUN RUSTFLAGS='' cargo build --release --features vnc
 
 
 FROM debian:bookworm-slim as final
