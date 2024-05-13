@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use simple_moving_average::{SingleSumSMA, SMA};
+use snafu::{ResultExt, Snafu};
 use std::{
     cmp::max,
     collections::{hash_map::Entry, HashMap},
@@ -7,10 +8,36 @@ use std::{
     net::IpAddr,
     time::{Duration, Instant},
 };
-use tokio::sync::{broadcast, mpsc::Receiver};
+use tokio::sync::{broadcast, mpsc};
 
 pub const STATS_REPORT_INTERVAL: Duration = Duration::from_millis(1000);
 pub const STATS_SLIDING_WINDOW_SIZE: usize = 5;
+
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[snafu(display("Failed to create statistics save file {save_file}"))]
+    CreateStatisticsSaveFile {
+        source: std::io::Error,
+        save_file: String,
+    },
+
+    #[snafu(display("Failed to open statistics save file {save_file}"))]
+    OpenStatisticsSaveFile {
+        source: std::io::Error,
+        save_file: String,
+    },
+
+    #[snafu(display("Failed to serialize statistics to save file"))]
+    SerializeStatistics { source: serde_json::Error },
+
+    #[snafu(display("Failed to deserialize statistics from save file"))]
+    DeserializeStatistics { source: serde_json::Error },
+
+    #[snafu(display("Failed to write to statistics information channel"))]
+    WriteToStatisticsInformationChannel {
+        source: Box<broadcast::error::SendError<StatisticsInformationEvent>>,
+    },
+}
 
 #[derive(Debug)]
 pub enum StatisticsEvent {
@@ -42,7 +69,7 @@ pub struct StatisticsInformationEvent {
 }
 
 pub struct Statistics {
-    statistics_rx: Receiver<StatisticsEvent>,
+    statistics_rx: mpsc::Receiver<StatisticsEvent>,
     statistics_information_tx: broadcast::Sender<StatisticsInformationEvent>,
     statistic_events: u64,
 
@@ -57,27 +84,31 @@ pub struct Statistics {
 }
 
 impl StatisticsInformationEvent {
-    fn save_to_file(&self, file_name: &str) -> std::io::Result<()> {
+    fn save_to_file(&self, file_name: &str) -> Result<(), Error> {
         // TODO Check if we can use tokio's File here. This needs some integration with serde_json though
         // This operation is also called very infrequently
-        let file = File::create(file_name)?;
-        serde_json::to_writer(file, &self)?;
+        let file = File::create(file_name).context(CreateStatisticsSaveFileSnafu {
+            save_file: file_name.to_string(),
+        })?;
+        serde_json::to_writer(file, &self).context(SerializeStatisticsSnafu)?;
 
         Ok(())
     }
 
-    fn load_from_file(file_name: &str) -> std::io::Result<Self> {
-        let file = File::open(file_name)?;
-        Ok(serde_json::from_reader(file)?)
+    fn load_from_file(file_name: &str) -> Result<Self, Error> {
+        let file = File::open(file_name).context(OpenStatisticsSaveFileSnafu {
+            save_file: file_name.to_string(),
+        })?;
+        serde_json::from_reader(file).context(DeserializeStatisticsSnafu)
     }
 }
 
 impl Statistics {
     pub fn new(
-        statistics_rx: Receiver<StatisticsEvent>,
+        statistics_rx: mpsc::Receiver<StatisticsEvent>,
         statistics_information_tx: broadcast::Sender<StatisticsInformationEvent>,
         statistics_save_mode: StatisticsSaveMode,
-    ) -> std::io::Result<Self> {
+    ) -> Self {
         let mut statistics = Statistics {
             statistics_rx,
             statistics_information_tx,
@@ -91,6 +122,7 @@ impl Statistics {
         };
 
         if let StatisticsSaveMode::Enabled { save_file, .. } = &statistics.statistics_save_mode {
+            // There might not be a save point on first start
             if let Ok(save_point) = StatisticsInformationEvent::load_from_file(save_file) {
                 statistics.statistic_events = save_point.statistic_events;
                 statistics.frame = save_point.frame;
@@ -98,10 +130,10 @@ impl Statistics {
             }
         }
 
-        Ok(statistics)
+        statistics
     }
 
-    pub async fn start(&mut self) -> std::io::Result<()> {
+    pub async fn start(&mut self) -> Result<(), Error> {
         let mut last_stat_report = Instant::now();
         let mut last_save_file_written = Instant::now();
         let mut statistics_information_event = StatisticsInformationEvent::default();
@@ -137,7 +169,8 @@ impl Statistics {
                 );
                 self.statistics_information_tx
                     .send(statistics_information_event.clone())
-                    .expect("Statistics information channel full (or disconnected)");
+                    .map_err(Box::new)
+                    .context(WriteToStatisticsInformationChannelSnafu)?;
 
                 if let StatisticsSaveMode::Enabled {
                     save_file,

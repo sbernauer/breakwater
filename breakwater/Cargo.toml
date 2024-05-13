@@ -1,0 +1,39 @@
+[package]
+name = "breakwater"
+description = "Pixelflut server"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "breakwater"
+path = "src/main.rs"
+
+[dependencies]
+breakwater-core.workspace = true
+breakwater-parser.workspace = true
+
+clap.workspace = true
+const_format.workspace = true
+env_logger.workspace = true
+log.workspace = true
+number_prefix.workspace = true
+prometheus_exporter.workspace = true
+rusttype.workspace = true
+serde_json.workspace = true
+serde.workspace = true
+simple_moving_average.workspace = true
+snafu.workspace = true
+thread-priority.workspace = true
+tokio.workspace = true
+vncserver = { workspace = true, optional = true }
+
+[dev-dependencies]
+rstest.workspace = true
+
+[features]
+default = []
+vnc = ["dep:vncserver"]
+alpha = []
