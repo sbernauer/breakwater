@@ -88,18 +88,16 @@ impl Parser for OriginalParser {
                             last_byte_parsed = i + 8;
                             i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                            let rgba = simd_unhex(unsafe {
-                                from_raw_parts(buffer.as_ptr().add(i - 9), 8)
-                            });
+                            let rgba = simd_unhex(unsafe { buffer.as_ptr().add(i - 9) });
 
                             let alpha = (rgba >> 24) & 0xff;
 
-                            if alpha == 0 || x >= fb.get_width() || y >= fb.get_height() {
+                            if alpha == 0 || x >= self.fb.get_width() || y >= self.fb.get_height() {
                                 continue;
                             }
 
                             let alpha_comp = 0xff - alpha;
-                            let current = fb.get_unchecked(x, y);
+                            let current = self.fb.get_unchecked(x, y);
                             let r = (rgba >> 16) & 0xff;
                             let g = (rgba >> 8) & 0xff;
                             let b = rgba & 0xff;
@@ -108,7 +106,7 @@ impl Parser for OriginalParser {
                             let g: u32 = (((current >> 16) & 0xff) * alpha_comp + g * alpha) / 0xff;
                             let b: u32 = (((current >> 8) & 0xff) * alpha_comp + b * alpha) / 0xff;
 
-                            fb.set(x, y, r << 16 | g << 8 | b);
+                            self.fb.set(x, y, r << 16 | g << 8 | b);
                             continue;
                         }
 
