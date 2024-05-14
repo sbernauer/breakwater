@@ -4,8 +4,9 @@ use breakwater_core::framebuffer::FrameBuffer;
 use clap::Parser;
 use env_logger::Env;
 use prometheus_exporter::PrometheusExporter;
+use sinks::ffmpeg::FfmpegSink;
 use snafu::{ResultExt, Snafu};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, oneshot};
 
 use crate::{
     cli_args::CliArgs,
@@ -17,7 +18,6 @@ use crate::{
 use {
     crate::sinks::vnc::{self, VncServer},
     thread_priority::{ThreadBuilderExt, ThreadPriority},
-    tokio::sync::oneshot,
 };
 
 mod cli_args;
@@ -79,6 +79,7 @@ async fn main() -> Result<(), Error> {
     let (statistics_tx, statistics_rx) = mpsc::channel::<StatisticsEvent>(100);
     let (statistics_information_tx, statistics_information_rx_for_prometheus_exporter) =
         broadcast::channel::<StatisticsInformationEvent>(2);
+    let (ffmpeg_terminate_signal_tx, ffmpeg_terminate_signal_rx) = oneshot::channel();
 
     #[cfg(feature = "vnc")]
     let (vnc_terminate_signal_tx, vnc_terminate_signal_rx) = oneshot::channel();
@@ -122,6 +123,11 @@ async fn main() -> Result<(), Error> {
     let statistics_thread = tokio::spawn(async move { statistics.start().await });
     let prometheus_exporter_thread = tokio::spawn(async move { prometheus_exporter.run().await });
 
+    let ffmpeg_sink = FfmpegSink::new(&args, Arc::clone(&fb));
+    let ffmpeg_thread = ffmpeg_sink.map(|sink| {
+        tokio::spawn(async move { sink.run(ffmpeg_terminate_signal_rx).await.unwrap() })
+    });
+
     #[cfg(feature = "vnc")]
     let vnc_server_thread = {
         let fb_for_vnc_server = Arc::clone(&fb);
@@ -160,6 +166,10 @@ async fn main() -> Result<(), Error> {
     prometheus_exporter_thread.abort();
     server_listener_thread.abort();
     statistics_thread.abort();
+    if let Some(ffmpeg_thread) = ffmpeg_thread {
+        let _ = ffmpeg_terminate_signal_tx.send(());
+        ffmpeg_thread.abort();
+    }
 
     #[cfg(feature = "vnc")]
     {
@@ -170,6 +180,8 @@ async fn main() -> Result<(), Error> {
             .join()
             .map_err(|_| Error::StopVncServerThread {})??;
     }
+
+    log::info!("Successfully shut down");
 
     Ok(())
 }

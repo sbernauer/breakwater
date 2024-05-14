@@ -57,16 +57,16 @@ pub struct CliArgs {
     /// Disable periodical saving of statistics into save file.
     #[clap(long)]
     pub disable_statistics_save_file: bool,
-    //
-    // /// Enable rtmp streaming to configured address, e.g. `rtmp://127.0.0.1:1935/live/test`
-    // #[clap(long)]
-    // pub rtmp_address: Option<String>,
 
-    // /// Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4
-    // #[clap(long)]
-    // pub video_save_folder: Option<String>,
+    /// Enable rtmp streaming to configured address, e.g. `rtmp://127.0.0.1:1935/live/test`
+    #[clap(long)]
+    pub rtmp_address: Option<String>,
+
+    /// Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4
+    #[clap(long)]
+    pub video_save_folder: Option<String>,
+
     /// Port of the VNC server.
-    // #[cfg_attr(feature = "vnc", clap(short, long, default_value_t = 5900))]
     #[cfg(feature = "vnc")]
     #[clap(short, long, default_value_t = 5900)]
     pub vnc_port: u16,
