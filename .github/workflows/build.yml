@@ -169,7 +169,7 @@ jobs:
         with:
           command: build
           args: --target=${{ matrix.target }} --no-default-features --features vnc
-     - name: Build with with all features
+      - name: Build with with all features
         uses: actions-rs/cargo@v1
         with:
           command: build
