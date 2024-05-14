@@ -1,8 +1,8 @@
-use std::{num::TryFromIntError, sync::Arc};
+use std::{env, num::TryFromIntError, sync::Arc};
 
 use breakwater_core::framebuffer::FrameBuffer;
 use clap::Parser;
-use env_logger::Env;
+use log::{info, trace};
 use prometheus_exporter::PrometheusExporter;
 use sinks::ffmpeg::FfmpegSink;
 use snafu::{ResultExt, Snafu};
@@ -17,6 +17,7 @@ use crate::{
 #[cfg(feature = "vnc")]
 use {
     crate::sinks::vnc::{self, VncServer},
+    log::warn,
     thread_priority::{ThreadBuilderExt, ThreadPriority},
 };
 
@@ -46,6 +47,15 @@ pub enum Error {
         network_buffer_size: i64,
     },
 
+    #[snafu(display("ffmpeg dump thread error"))]
+    FfmpegDumpThread { source: sinks::ffmpeg::Error },
+
+    #[snafu(display("Failed to send ffmpg dump thread termination signal"))]
+    SendFfmpegDumpTerminationSignal {},
+
+    #[snafu(display("Failed to join ffmpg dump thread"))]
+    JoinFfmpegDumpThread { source: tokio::task::JoinError },
+
     #[cfg(feature = "vnc")]
     #[snafu(display("Failed to spawn VNC server thread"))]
     SpawnVncServerThread { source: std::io::Error },
@@ -69,7 +79,11 @@ pub enum Error {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    if env::var("RUST_LOG").is_err() {
+        env::set_var("RUST_LOG", "info")
+    }
+    env_logger::init();
+
     let args = CliArgs::parse();
 
     let fb = Arc::new(FrameBuffer::new(args.width, args.height));
@@ -125,7 +139,12 @@ async fn main() -> Result<(), Error> {
 
     let ffmpeg_sink = FfmpegSink::new(&args, Arc::clone(&fb));
     let ffmpeg_thread = ffmpeg_sink.map(|sink| {
-        tokio::spawn(async move { sink.run(ffmpeg_terminate_signal_rx).await.unwrap() })
+        tokio::spawn(async move {
+            sink.run(ffmpeg_terminate_signal_rx)
+                .await
+                .context(FfmpegDumpThreadSnafu)?;
+            Ok::<(), Error>(())
+        })
     });
 
     #[cfg(feature = "vnc")]
@@ -165,23 +184,41 @@ async fn main() -> Result<(), Error> {
 
     prometheus_exporter_thread.abort();
     server_listener_thread.abort();
-    statistics_thread.abort();
+
+    let ffmpeg_thread_present = ffmpeg_thread.is_some();
     if let Some(ffmpeg_thread) = ffmpeg_thread {
-        let _ = ffmpeg_terminate_signal_tx.send(());
-        ffmpeg_thread.abort();
+        ffmpeg_terminate_signal_tx
+            .send(())
+            .map_err(|_| Error::SendFfmpegDumpTerminationSignal {})?;
+
+        trace!("Waiting for thread dumping data into ffmpeg to terminate");
+        ffmpeg_thread.await.context(JoinFfmpegDumpThreadSnafu)??;
+        trace!("thread dumping data into ffmpeg terminated");
     }
 
     #[cfg(feature = "vnc")]
     {
-        vnc_terminate_signal_tx
-            .send("bye bye vnc".to_string())
-            .map_err(|_| Error::SendVncServerShutdownSignal {})?;
+        trace!("Sending termination signal to vnc thread");
+        if let Err(err) = vnc_terminate_signal_tx.send(()) {
+            warn!(
+                "Failed to send termination signal to vnc thread, it seems to already have terminated: {err:?}",
+            )
+        }
+        trace!("Joining vnc thread");
         vnc_server_thread
             .join()
             .map_err(|_| Error::StopVncServerThread {})??;
+        trace!("Vnc thread terminated");
     }
 
-    log::info!("Successfully shut down");
+    // We need to stop this thread as the last, as others always try to send statistics to it
+    statistics_thread.abort();
+
+    if ffmpeg_thread_present {
+        info!("Successfully shut down (there might still be a ffmped process running - it's complicated)");
+    } else {
+        info!("Successfully shut down");
+    }
 
     Ok(())
 }

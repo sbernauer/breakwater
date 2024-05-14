@@ -2,8 +2,14 @@ use std::{process::Stdio, sync::Arc, time::Duration};
 
 use breakwater_core::framebuffer::FrameBuffer;
 use chrono::Local;
+use log::debug;
 use snafu::{ResultExt, Snafu};
-use tokio::{io::AsyncWriteExt, process::Command, sync::oneshot::Receiver, time};
+use tokio::{
+    io::AsyncWriteExt,
+    process::Command,
+    sync::oneshot::Receiver,
+    time::{self},
+};
 
 use crate::cli_args::CliArgs;
 
@@ -14,9 +20,6 @@ pub enum Error {
         source: std::io::Error,
         command: String,
     },
-
-    #[snafu(display("Failed to kill ffmpeg command"))]
-    KillFfmpeg { source: std::io::Error },
 
     #[snafu(display("Failed to write new data to ffmpeg via stdout"))]
     WriteDataToFfmeg { source: std::io::Error },
@@ -99,7 +102,7 @@ impl FfmpegSink {
         }
 
         let ffmpeg_command = format!("ffmpeg {}", ffmpeg_args.join(" "));
-        log::info!("{ffmpeg_command}");
+        debug!("Executing {ffmpeg_command:?}");
         let mut command = Command::new("ffmpeg")
             .kill_on_drop(false)
             .args(ffmpeg_args.clone())
@@ -117,7 +120,37 @@ impl FfmpegSink {
         let mut interval = time::interval(Duration::from_micros(1_000_000 / 30));
         loop {
             if terminate_signal_rx.try_recv().is_ok() {
-                command.kill().await.context(KillFfmpegSnafu)?;
+                // Normally we would send SIGINT to ffmpeg and let the process shutdown gracefully and afterwards call
+                // `command.wait().await`. Hopever using the `nix` crate to send a `SIGINT` resulted in ffmpeg
+                // [2024-05-14T21:35:25Z TRACE breakwater::sinks::ffmpeg] Sending SIGINT to ffmpeg process with pid 58786
+                // [out#0/mp4 @ 0x1048740] Error writing trailer: Immediate exit requested
+                //
+                // As you can see this also corrupted the output mp4 :(
+                // So instead we let the process running here and let the kernel clean up (?), which seems to work (?)
+
+                // trace!("Killing ffmpeg process");
+
+                // if cfg!(target_os = "linux") {
+                //     if let Some(pid) = command.id() {
+                //         trace!("Sending SIGINT to ffmpeg process with pid {pid}");
+                //         nix::sys::signal::kill(
+                //             nix::unistd::Pid::from_raw(pid.try_into().unwrap()),
+                //             nix::sys::signal::Signal::SIGINT,
+                //         )
+                //         .unwrap();
+                //     } else {
+                //         error!("The ffmpeg process had no PID, so I could not kill it. Will let tokio kill it instead");
+                //         command.start_kill().unwrap();
+                //     }
+                // } else {
+                //     trace!("As I'm not on Linux, YOLO-ing it by letting tokio kill it ");
+                //     command.start_kill().unwrap();
+                // }
+
+                // let start = Instant::now();
+                // command.wait().await.unwrap();
+                // trace!("Killied ffmpeg process in {:?}", start.elapsed());
+
                 return Ok(());
             }
             let bytes = self.fb.as_bytes();

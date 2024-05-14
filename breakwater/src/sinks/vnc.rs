@@ -50,7 +50,7 @@ pub struct VncServer<'a> {
 
     statistics_tx: Sender<StatisticsEvent>,
     statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
-    terminate_signal_tx: oneshot::Receiver<String>,
+    terminate_signal_tx: oneshot::Receiver<()>,
 
     text: String,
     font: Font<'a>,
@@ -64,7 +64,7 @@ impl<'a> VncServer<'a> {
         target_fps: u32,
         statistics_tx: Sender<StatisticsEvent>,
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
-        terminate_signal_tx: oneshot::Receiver<String>,
+        terminate_signal_tx: oneshot::Receiver<()>,
         text: String,
         font: String,
     ) -> Result<Self, Error> {
