@@ -45,4 +45,5 @@ codegen-units = 1
 
 [patch.crates-io]
 # https://github.com/rayylee/libvnc-rs/pull/2: Update bindgen to 0.69
+# Also https://github.com/sbernauer/libvnc-rs/commit/2bf903ad64c7e33554b011eb05f96c11eadb8821 to get breakwater to build on NixOS
 vncserver = { git = 'https://github.com/sbernauer/libvnc-rs.git' }

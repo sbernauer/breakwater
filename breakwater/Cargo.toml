@@ -34,6 +34,6 @@ vncserver = { workspace = true, optional = true }
 rstest.workspace = true
 
 [features]
-default = []
+default = ["vnc"]
 vnc = ["dep:vncserver"]
 alpha = []
