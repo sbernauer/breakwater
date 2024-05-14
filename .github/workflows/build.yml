@@ -119,9 +119,21 @@ jobs:
           override: true
       - name: Install libvncserver-dev
         run: sudo apt install -y libvncserver-dev
-      - uses: actions-rs/cargo@v1
+      - name: Test with all features turned off
+        uses: actions-rs/cargo@v1
         with:
           command: test
+          args: --no-default-features
+      - name: Test with all features turned on
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all-features
+      - name: Test vnc features
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --no-default-features --features vnc
 
   run_build:
     name: Build for ${{ matrix.target }}
@@ -159,18 +171,11 @@ jobs:
       #   with:
       #     platform: x64
       #     packages: pkg-config libvncserver-devel
-      - name: Build with without vnc and without alpha
-        uses: actions-rs/cargo@v1
+      - uses: actions-rs/cargo@v1
         with:
           command: build
           args: --target=${{ matrix.target }} --no-default-features
-      - name: Build with with vnc and without alpha
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --target=${{ matrix.target }} --no-default-features --features vnc
-      - name: Build with with all features
-        uses: actions-rs/cargo@v1
+      - uses: actions-rs/cargo@v1
         with:
           command: build
           args: --target=${{ matrix.target }} --all-features
