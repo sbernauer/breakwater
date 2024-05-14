@@ -159,11 +159,18 @@ jobs:
       #   with:
       #     platform: x64
       #     packages: pkg-config libvncserver-devel
-      - uses: actions-rs/cargo@v1
+      - name: Build with without vnc and without alpha
+        uses: actions-rs/cargo@v1
         with:
           command: build
           args: --target=${{ matrix.target }} --no-default-features
-      - uses: actions-rs/cargo@v1
+      - name: Build with with vnc and without alpha
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --target=${{ matrix.target }} --no-default-features --features vnc
+     - name: Build with with all features
+        uses: actions-rs/cargo@v1
         with:
           command: build
           args: --target=${{ matrix.target }} --all-features
