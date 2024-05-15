@@ -95,7 +95,7 @@ As of writing the following features are supported
 * `vnc` (enabled by default): Starts a VNC server, where users can connect to. Needs `libvncserver-dev` to be installed. Please note that the VNC server offers basically no latency, but consumes quite some CPU.
 * `alpha` (disabled by default): Respect alpha values during `PX` commands. Disabled by default as this can cause performance degradation.
 
-To e.g. turn the VNS server off, build with
+To e.g. turn the VNC server off, build with
 
 ```bash
 cargo run --release --no-default-features # --features alpha,vnc to explicitly enable
