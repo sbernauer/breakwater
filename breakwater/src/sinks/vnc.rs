@@ -1,44 +1,92 @@
-use crate::framebuffer::FrameBuffer;
-use crate::statistics::{StatisticsEvent, StatisticsInformationEvent};
+use std::{sync::Arc, time::Duration};
+
+use breakwater_core::framebuffer::FrameBuffer;
 use core::slice;
 use number_prefix::NumberPrefix;
 use rusttype::{point, Font, Scale};
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::mpsc::Sender;
-use tokio::sync::{broadcast, oneshot};
+use snafu::{OptionExt, ResultExt, Snafu};
+use tokio::sync::{
+    broadcast,
+    mpsc::{self, Sender},
+    oneshot,
+};
 use vncserver::{
     rfb_framebuffer_malloc, rfb_get_screen, rfb_init_server, rfb_mark_rect_as_modified,
     rfb_run_event_loop, RfbScreenInfoPtr,
 };
 
+use crate::statistics::{StatisticsEvent, StatisticsInformationEvent};
+
 const STATS_HEIGHT: usize = 35;
 
-pub struct VncServer<'a, 'b> {
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[snafu(display("Failed to read font from file {font_file}"))]
+    ReadFontFile {
+        source: std::io::Error,
+        font_file: String,
+    },
+
+    #[snafu(display("Failed to construct font from font file {font_file}"))]
+    ConstructFontFromFontFile { font_file: String },
+
+    #[snafu(display("Failed to write to statistics channel"))]
+    WriteToStatisticsChannel {
+        source: mpsc::error::SendError<StatisticsEvent>,
+    },
+
+    #[snafu(display("Failed to read from statistics information channel"))]
+    ReadFromStatisticsInformationChannel {
+        source: broadcast::error::TryRecvError,
+    },
+}
+
+// Sorry! Help needed :)
+unsafe impl<'a> Send for VncServer<'a> {}
+pub struct VncServer<'a> {
     fb: Arc<FrameBuffer>,
     screen: RfbScreenInfoPtr,
     target_fps: u32,
 
     statistics_tx: Sender<StatisticsEvent>,
     statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
-    terminate_signal_tx: oneshot::Receiver<&'b str>,
+    terminate_signal_tx: oneshot::Receiver<()>,
 
-    text: &'a str,
+    text: String,
     font: Font<'a>,
 }
 
-impl<'a, 'b> VncServer<'a, 'b> {
+impl<'a> VncServer<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         fb: Arc<FrameBuffer>,
-        port: u32,
+        port: u16,
         target_fps: u32,
         statistics_tx: Sender<StatisticsEvent>,
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
-        terminate_signal_tx: oneshot::Receiver<&'b str>,
-        text: &'a str,
-        font: &'a str,
-    ) -> Self {
+        terminate_signal_tx: oneshot::Receiver<()>,
+        text: String,
+        font: String,
+    ) -> Result<Self, Error> {
+        let font = match font.as_str() {
+            // We ship our own copy of Arial.ttf, so that users don't need to download and provide it
+            "Arial.ttf" => {
+                let font_bytes = include_bytes!("../../../Arial.ttf");
+                Font::try_from_bytes(font_bytes).context(ConstructFontFromFontFileSnafu {
+                    font_file: "Arial.ttf".to_string(),
+                })?
+            }
+            _ => {
+                let font_bytes = std::fs::read(&font).context(ReadFontFileSnafu {
+                    font_file: font.to_string(),
+                })?;
+
+                Font::try_from_vec(font_bytes).context(ConstructFontFromFontFileSnafu {
+                    font_file: font.to_string(),
+                })?
+            }
+        };
+
         let screen = rfb_get_screen(fb.get_width() as i32, fb.get_height() as i32, 8, 3, 4);
         unsafe {
             // We need to set bitsPerPixel and depth to the correct values,
@@ -56,22 +104,7 @@ impl<'a, 'b> VncServer<'a, 'b> {
         rfb_init_server(screen);
         rfb_run_event_loop(screen, 1, 1);
 
-        let font = match font {
-            // We ship our own copy of Arial.ttf, so that users don't need to download and provide it
-            "Arial.ttf" => {
-                let font_bytes = include_bytes!("../../Arial.ttf");
-                Font::try_from_bytes(font_bytes)
-                    .unwrap_or_else(|| panic!("Failed to construct Font from Arial.ttf"))
-            }
-            _ => {
-                let font_bytes = std::fs::read(font)
-                    .unwrap_or_else(|err| panic!("Failed to read font file {font}: {err}"));
-                Font::try_from_vec(font_bytes)
-                    .unwrap_or_else(|| panic!("Failed to construct Font from font file {font}"))
-            }
-        };
-
-        VncServer {
+        Ok(VncServer {
             fb,
             screen,
             target_fps,
@@ -80,29 +113,27 @@ impl<'a, 'b> VncServer<'a, 'b> {
             terminate_signal_tx,
             text,
             font,
-        }
+        })
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self) -> Result<(), Error> {
         let target_loop_duration = Duration::from_micros(1_000_000 / self.target_fps as u64);
 
-        let fb = &self.fb;
         let vnc_fb_slice: &mut [u32] = unsafe {
-            slice::from_raw_parts_mut((*self.screen).frameBuffer as *mut u32, fb.get_size())
+            slice::from_raw_parts_mut((*self.screen).frameBuffer as *mut u32, self.fb.get_size())
         };
-        let fb_slice = unsafe { &*fb.get_buffer() };
         // A line less because the (height - STATS_SURFACE_HEIGHT) belongs to the stats and gets refreshed by them
         let height_up_to_stats_text = self.fb.get_height() - STATS_HEIGHT - 1;
-        let fb_size_up_to_stats_text = fb.get_width() * height_up_to_stats_text;
+        let fb_size_up_to_stats_text = self.fb.get_width() * height_up_to_stats_text;
 
         loop {
             if self.terminate_signal_tx.try_recv().is_ok() {
-                return;
+                return Ok(());
             }
 
             let start = std::time::Instant::now();
             vnc_fb_slice[0..fb_size_up_to_stats_text]
-                .copy_from_slice(&fb_slice[0..fb_size_up_to_stats_text]);
+                .copy_from_slice(&self.fb.get_buffer()[0..fb_size_up_to_stats_text]);
 
             // Only refresh the drawing surface, not the stats surface
             rfb_mark_rect_as_modified(
@@ -114,11 +145,13 @@ impl<'a, 'b> VncServer<'a, 'b> {
             );
             self.statistics_tx
                 .blocking_send(StatisticsEvent::FrameRendered)
-                .unwrap();
+                .context(WriteToStatisticsChannelSnafu)?;
 
             if !self.statistics_information_rx.is_empty() {
-                let statistics_information_event =
-                    self.statistics_information_rx.try_recv().unwrap();
+                let statistics_information_event = self
+                    .statistics_information_rx
+                    .try_recv()
+                    .context(ReadFromStatisticsInformationChannelSnafu)?;
                 self.display_stats(statistics_information_event);
             }
 

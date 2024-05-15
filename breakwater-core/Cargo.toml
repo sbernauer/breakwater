@@ -1,0 +1,15 @@
+[package]
+name = "breakwater-core"
+description = "Core structs"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
+const_format.workspace = true
+tokio.workspace = true
+
+[features]
+alpha = []

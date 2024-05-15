@@ -119,9 +119,21 @@ jobs:
           override: true
       - name: Install libvncserver-dev
         run: sudo apt install -y libvncserver-dev
-      - uses: actions-rs/cargo@v1
+      - name: Test with all features turned off
+        uses: actions-rs/cargo@v1
         with:
           command: test
+          args: --no-default-features
+      - name: Test with all features turned on
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all-features
+      - name: Test vnc features
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --no-default-features --features vnc
 
   run_build:
     name: Build for ${{ matrix.target }}
@@ -139,9 +151,9 @@ jobs:
           - target: x86_64-apple-darwin
             os: macos-latest
             file-suffix: ""
-          # - target: aarch64-apple-darwin
-          #   os: macos-latest
-          #   file-suffix: ""
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            file-suffix: ""
     steps:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
@@ -150,6 +162,8 @@ jobs:
           toolchain: nightly
           target: ${{ matrix.target }}
           override: true
+      - name: Print CPU architecture
+        run: uname -m && uname -a
       - if: runner.os == 'Linux'
         run: sudo apt install -y libvncserver-dev
       - if: runner.os == 'macOS'
@@ -163,7 +177,16 @@ jobs:
         with:
           command: build
           args: --target=${{ matrix.target }} --no-default-features
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --target=${{ matrix.target }} --all-features
+      # Currently the macOS build is broken because of
+      #
+      # error: failed to run custom build command for `vncserver v0.2.2 (https://github.com/sbernauer/libvnc-rs.git#2bf903ad)`
+      #   thread 'main' panicked at /Users/runner/.cargo/git/checkouts/libvnc-rs-5fba04f2b7022219/2bf903a/vncserver/build.rs:9:66:
+      # called `Result::unwrap()` on an `Err` value: pkg-config has not been configured to support cross-compilation.
+      #
+      # This is because GitHub switched their macOS runners to use arm, and they currently can not cross-compile to x86.
+      # What a time to be alive!
+      #
+      # - uses: actions-rs/cargo@v1
+      #   with:
+      #     command: build
+      #     args: --target=${{ matrix.target }} --all-features

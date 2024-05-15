@@ -1,13 +1,10 @@
-use std::{cell::UnsafeCell, slice};
+use std::slice;
 
 pub struct FrameBuffer {
     width: usize,
     height: usize,
-    buffer: UnsafeCell<Vec<u32>>,
+    buffer: Vec<u32>,
 }
-
-// FIXME Nothing to see here, I don't know what I'm doing ¯\_(ツ)_/¯
-unsafe impl Sync for FrameBuffer {}
 
 impl FrameBuffer {
     pub fn new(width: usize, height: usize) -> Self {
@@ -16,7 +13,7 @@ impl FrameBuffer {
         FrameBuffer {
             width,
             height,
-            buffer: UnsafeCell::from(buffer),
+            buffer,
         }
     }
 
@@ -35,7 +32,7 @@ impl FrameBuffer {
     #[inline(always)]
     pub fn get(&self, x: usize, y: usize) -> Option<u32> {
         if x < self.width && y < self.height {
-            unsafe { Some((*self.buffer.get())[x + y * self.width]) }
+            Some(*unsafe { self.buffer.get_unchecked(x + y * self.width) })
         } else {
             None
         }
@@ -43,26 +40,30 @@ impl FrameBuffer {
 
     #[inline(always)]
     pub fn get_unchecked(&self, x: usize, y: usize) -> u32 {
-        unsafe { (*self.buffer.get())[x + y * self.width] }
+        *unsafe { self.buffer.get_unchecked(x + y * self.width) }
     }
 
     #[inline(always)]
     pub fn set(&self, x: usize, y: usize, rgba: u32) {
-        // TODO: If we make the FrameBuffer large enough (e.g. 10_000 x 10_000) we don't need to check the bounds here (x and y are max 4 digit numbers).
-        // (flamegraph has shown 5.21% of runtime in this bound check O.o)
+        // https://github.com/sbernauer/breakwater/pull/11
+        // If we make the FrameBuffer large enough (e.g. 10_000 x 10_000) we don't need to check the bounds here
+        // (x and y are max 4 digit numbers). Flamegraph has shown 5.21% of runtime in this bound check. On the other
+        // hand this can increase the framebuffer size dramatically and lowers the cash locality.
+        // In the end we did *not* go with this change.
         if x < self.width && y < self.height {
-            unsafe { (*self.buffer.get())[x + y * self.width] = rgba }
+            unsafe {
+                let ptr = self.buffer.as_ptr().add(x + y * self.width) as *mut u32;
+                *ptr = rgba;
+            }
         }
     }
 
-    pub fn get_buffer(&self) -> *mut Vec<u32> {
-        self.buffer.get()
+    pub fn get_buffer(&self) -> &[u32] {
+        &self.buffer
     }
 
     pub fn as_bytes(&self) -> &[u8] {
-        let buffer = self.buffer.get();
-        let len_in_bytes: usize = unsafe { (*buffer).len() } * 4;
-
-        unsafe { slice::from_raw_parts((*buffer).as_ptr() as *const u8, len_in_bytes) }
+        let len_in_bytes = self.buffer.len() * 4;
+        unsafe { slice::from_raw_parts(self.buffer.as_ptr() as *const u8, len_in_bytes) }
     }
 }

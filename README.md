@@ -24,7 +24,7 @@ Commands must be sent newline-separated, for more details see [Pixelflut](https:
 # Usage
 The easiest way is to continue with the provided [Ready to use Docker setup](#run-in-docker-container) below.
 
-If you prefer the manual way (the best performance) you need to have [Rust installed](https://www.rust-lang.org/tools/install).
+If you prefer the manual way (the best performance - as e.g. can use native SIMD instructions) you need to have [Rust installed](https://www.rust-lang.org/tools/install).
 You may need to install some additional packages with `sudo apt install pkg-config libvncserver-dev`
 Then you can directly run the server with
 ```bash

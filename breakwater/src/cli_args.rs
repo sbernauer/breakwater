@@ -1,8 +1,12 @@
 use clap::Parser;
+use const_format::formatcp;
+
+pub const DEFAULT_NETWORK_BUFFER_SIZE: usize = 256 * 1024;
+pub const DEFAULT_NETWORK_BUFFER_SIZE_STR: &str = formatcp!("{}", DEFAULT_NETWORK_BUFFER_SIZE);
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
-pub struct Args {
+pub struct CliArgs {
     /// Listen address to bind to.
     /// The default value will listen on all interfaces for IPv4 and IPv6 packets.
     #[clap(short, long, default_value = "[::]:1234")]
@@ -19,6 +23,11 @@ pub struct Args {
     /// Frames per second the server should aim for.
     #[clap(short, long, default_value_t = 30)]
     pub fps: u32,
+
+    /// The size in bytes of the network buffer used for each open TCP connection.
+    /// Please use at least 64 KB (64_000 bytes).
+    #[clap(long, default_value = DEFAULT_NETWORK_BUFFER_SIZE_STR, value_parser = 64_000..100_000_000)]
+    pub network_buffer_size: i64,
 
     /// Text to display on the screen.
     /// The text will be followed by "on <listen_address>".
@@ -58,8 +67,7 @@ pub struct Args {
     pub video_save_folder: Option<String>,
 
     /// Port of the VNC server.
-    // #[cfg_attr(feature = "vnc", clap(short, long, default_value_t = 5900))]
     #[cfg(feature = "vnc")]
     #[clap(short, long, default_value_t = 5900)]
-    pub vnc_port: u32,
+    pub vnc_port: u16,
 }
