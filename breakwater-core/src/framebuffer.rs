@@ -48,7 +48,7 @@ impl FrameBuffer {
         // https://github.com/sbernauer/breakwater/pull/11
         // If we make the FrameBuffer large enough (e.g. 10_000 x 10_000) we don't need to check the bounds here
         // (x and y are max 4 digit numbers). Flamegraph has shown 5.21% of runtime in this bound check. On the other
-        // hand this can increase the framebuffer size dramatically and lower the cash locality.
+        // hand this can increase the framebuffer size dramatically and lowers the cash locality.
         // In the end we did *not* go with this change.
         if x < self.width && y < self.height {
             unsafe {

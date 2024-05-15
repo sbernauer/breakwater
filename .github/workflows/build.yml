@@ -151,9 +151,9 @@ jobs:
           - target: x86_64-apple-darwin
             os: macos-latest
             file-suffix: ""
-          # - target: aarch64-apple-darwin
-          #   os: macos-latest
-          #   file-suffix: ""
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            file-suffix: ""
     steps:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
@@ -162,6 +162,8 @@ jobs:
           toolchain: nightly
           target: ${{ matrix.target }}
           override: true
+      - name: Print CPU architecture
+        run: uname -m && uname -a
       - if: runner.os == 'Linux'
         run: sudo apt install -y libvncserver-dev
       - if: runner.os == 'macOS'
