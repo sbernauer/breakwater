@@ -25,7 +25,7 @@ pub struct CliArgs {
     pub fps: u32,
 
     /// The size in bytes of the network buffer used for each open TCP connection.
-    /// Please use at least 256 KB (256_000 bytes).
+    /// Please use at least 64 KB (64_000 bytes).
     #[clap(long, default_value = DEFAULT_NETWORK_BUFFER_SIZE_STR, value_parser = 64_000..100_000_000)]
     pub network_buffer_size: i64,
 
