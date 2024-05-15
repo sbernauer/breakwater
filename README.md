@@ -248,7 +248,7 @@ As I got access to an server with a single Ampere(R) Altra(R) Processor with 80 
 | Server                                                                                         | Language | Sustainable traffic |
 |------------------------------------------------------------------------------------------------|----------|---------------------|
 | [Shoreline](https://github.com/TobleMiner/shoreline)@05a2bbfb4559090727c51673e1fb47d20eac5672  | C        | 185 Gbit/s          |
-| [Breakwater](https://github.com/sbernauer/breakwater)@135d2b795858a896a73470fd152407c22b0a0d26 | Rust     | 415 Gbit/s          |
+| [Breakwater](https://github.com/sbernauer/breakwater)@135d2b795858a896a73470fd152407c22b0a0d26 | Rust     | 420 Gbit/s          |
 
 <details>
   <summary>lscpu command output</summary>
