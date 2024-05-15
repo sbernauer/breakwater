@@ -127,8 +127,9 @@ The ready to use Docker compose setup contains the Pixelflut server, a Prometheu
 Use the following command to start the whole setup
 
 ```bash
-docker-compose up
+cd docker && docker-compose up
 ```
+
 You should now have access to the following services
 
 | Port | Description                 |
@@ -142,6 +143,19 @@ You should now have access to the following services
 If you visit the Grafana server (user=admin, password=admin) you will have access to dashboards like the dashboard below.
 
 ![Grafana screenshot](docs/images/Screenshot_20220210_215752.png)
+
+## Live streaming via Webinterface (owncast)
+
+The docker-compose setup also contains an owncast server, which breakwater pushes an RTMP stream into.
+owncast than exposes a Web UI where people can watch the game in a web-browser.
+Please note that the stream has a much higer delay compared to VNC and the fmmpeg command used internally consumes much CPU.
+Because of this the components are commented out by default, you need to comment them in!
+
+## Live streaming to internet services (e.g. Youtube, Twich)
+
+This should work the same way as streaming to owncast.
+Simply uncomment the `breakwater` command and adopt `--rtmp-address` accordingly.
+I never used this for a longer time period, so happy about feedback!
 
 # Performance
 

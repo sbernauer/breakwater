@@ -1,19 +1,26 @@
 version: '3'
 services:
   pixelflut:
+    image: sbernauer/breakwater:0.13.0
+    # build: ..
     restart: unless-stopped
-    image: sbernauer/breakwater
-    # build: .
+    entrypoint:
+      - bash
+      - -c
+      - breakwater --width 1280 --height 720
+      # To also stream to owncast (disabled by default as it consumes lots of CPU)
+      # Yes we use the default streaming key, I don't know how to change it in owncast
+      # - echo "Waiting for owncast to be ready" && sleep 5 && breakwater --width 1920 --height 1080 --rtmp-address rtmp://owncast:1935/live/abc123
     ports:
-      - 1234:1234
-      - 5900:5900
-      - 9100:9100
+      - 1234:1234 # Pixelflut
+      - 5900:5900 # VNC
+      - 9100:9100 # Metrics
 
   node-exporter:
-    restart: unless-stopped
     image: prom/node-exporter:v1.8.0
+    restart: unless-stopped
     ports:
-      - 9101:9101
+      - 9101:9101 # Metrics
     pid: host
     volumes:
       - "/:/host:ro,rslave"
@@ -28,17 +35,26 @@ services:
       - "./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml"
       - "prometheus-data:/prometheus"
     ports:
-      - 9090:9090
+      - 9090:9090 # Web UI
 
   grafana:
-    restart: unless-stopped
     image: grafana/grafana:10.1.10
+    restart: unless-stopped
     volumes:
       - "./grafana/provisioning:/etc/grafana/provisioning/"
       - "grafana-data:/var/lib/grafana"
     ports:
-      - 3000:3000
+      - 3000:3000 # Web UI
+
+  # owncast:
+  #   image: gabekangas/owncast:0.1.3
+  #   restart: unless-stopped
+  #   volumes:
+  #     - "owncast-data:/app/data"
+  #   ports:
+  #     - 8080:8080 # Web UI
 
 volumes:
   grafana-data:
   prometheus-data:
+  owncast-data:
