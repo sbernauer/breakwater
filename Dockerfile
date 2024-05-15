@@ -13,10 +13,12 @@ RUN apt-get update && \
     apt-get install -y clang libvncserver-dev && \
     rm -rf /var/lib/apt/lists/*
 
+# Installing it explicitly to make better use of the docker cache
+RUN rustup toolchain install nightly
+
 # We don't want to e.g. set "-C target-cpu=native", so that the binary should run everywhere
 # Also we can always build with vnc server support as the docker image contains all needed dependencies in any case
 RUN RUSTFLAGS='' cargo build --release --features vnc
-
 
 FROM debian:bookworm-slim as final
 RUN apt-get update && \
