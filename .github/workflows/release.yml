@@ -18,6 +18,9 @@ jobs:
           - target: x86_64-apple-darwin
             os: macos-latest
             file-suffix: ""
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            file-suffix: ""
     steps:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
@@ -30,10 +33,9 @@ jobs:
         run: sudo apt install -y libvncserver-dev
       - if: runner.os == 'macOS'
         run: brew install libvncserver
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release --target=${{ matrix.target }}
+      - name: Build binary
+        # We don't want to e.g. set "-C target-cpu=native", so that the binary should run everywhere
+        run: RUSTFLAGS='' cargo build --release --target=${{ matrix.target }} --no-default-features
       - name: Rename binary file
         run: mv target/${{ matrix.target }}/release/breakwater${{ matrix.file-suffix }} breakwater-${{ matrix.target }}${{ matrix.file-suffix }}
       - name: Upload Release binaries

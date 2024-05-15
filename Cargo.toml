@@ -3,7 +3,7 @@ members = ["breakwater-core", "breakwater-parser", "breakwater"]
 resolver = "2"
 
 [workspace.package]
-version = "0.12.0"
+version = "0.13.0"
 license = "Beerware"
 authors = ["Sebastian Bernauer <bernauerse@web.de>"]
 edition = "2021"
