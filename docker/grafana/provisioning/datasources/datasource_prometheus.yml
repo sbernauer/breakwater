@@ -4,4 +4,4 @@ datasources:
  - name: Pixelflut
    type: prometheus
    access: proxy # <string, required> access mode. direct or proxy. Required
-   url: http://pixelflut:9090
+   url: http://prometheus:9090

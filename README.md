@@ -111,18 +111,21 @@ If the SIMD or nightly part causes any problems on your setup please reach out b
 
 # Run in docker container
 This command will start the Pixelflut server in a docker container
+
 ```bash
 docker run --rm --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 sbernauer/breakwater # --help
 ```
 
 If you want to permanently save statistics (to keep them between restarts) you can use the following command:
+
 ```bash
 mkdir -p pixelflut && docker run --rm -u 1000:1000 --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 -v "$(pwd)/pixelflut:/pixelflut" sbernauer/breakwater --statistics-save-file /pixelflut/statistics.json
 ```
 
 # Ready to use Docker compose setup
-The ready to use Docker compose setup contains the Pixelflut server, a prometheus server and a Grafana for monitoring.
+The ready to use Docker compose setup contains the Pixelflut server, a Prometheus server and a Grafana for monitoring.
 Use the following command to start the whole setup
+
 ```bash
 docker-compose up
 ```
@@ -134,9 +137,10 @@ You should now have access to the following services
 | 5900 | VNC server                  |
 | 9100 | Prometheus metrics exporter |
 | 9090 | Prometheus server           |
-| 80   | Grafana                     |
+| 3000 | Grafana                     |
 
 If you visit the Grafana server (user=admin, password=admin) you will have access to dashboards like the dashboard below.
+
 ![Grafana screenshot](docs/images/Screenshot_20220210_215752.png)
 
 # Performance

@@ -4,4 +4,4 @@ global:
 scrape_configs:
   - job_name: 'breakwater'
     static_configs:
-      - targets: ['pixelflut:9100', 'pixelflut:9101']
+      - targets: ['pixelflut:9100', 'node-exporter:9101']

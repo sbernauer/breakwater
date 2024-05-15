@@ -4,12 +4,16 @@ services:
     restart: unless-stopped
     image: sbernauer/breakwater
     # build: .
-    network_mode: host # Used ports are 1234, 5900 and 9100. Choosing host mode here for best performance
+    ports:
+      - 1234:1234
+      - 5900:5900
+      - 9100:9100
 
-  node_exporter:
+  node-exporter:
     restart: unless-stopped
-    image: quay.io/prometheus/node-exporter:latest
-    network_mode: host # Used ports are 9101
+    image: prom/node-exporter:v1.8.0
+    ports:
+      - 9101:9101
     pid: host
     volumes:
       - "/:/host:ro,rslave"
@@ -19,25 +23,21 @@ services:
 
   prometheus:
     restart: unless-stopped
-    image: prom/prometheus:v2.44.0
+    image: prom/prometheus:v2.52.0
     volumes:
       - "./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml"
       - "prometheus-data:/prometheus"
     ports:
       - 9090:9090
-    extra_hosts:
-      - "pixelflut:172.17.0.1"
 
   grafana:
     restart: unless-stopped
-    image: grafana/grafana:9.5.3
+    image: grafana/grafana:10.1.10
     volumes:
       - "./grafana/provisioning:/etc/grafana/provisioning/"
       - "grafana-data:/var/lib/grafana"
     ports:
-      - 80:3000
-    extra_hosts:
-      - "pixelflut:172.17.0.1"
+      - 3000:3000
 
 volumes:
   grafana-data:
