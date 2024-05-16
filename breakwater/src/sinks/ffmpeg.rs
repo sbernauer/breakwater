@@ -15,7 +15,7 @@ use crate::cli_args::CliArgs;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(display("Failed to start ffmpeg command {command:?}"))]
+    #[snafu(display("Failed to start ffmpeg command {command:?}. Is ffmpeg installed?"))]
     StartFfmpeg {
         source: std::io::Error,
         command: String,

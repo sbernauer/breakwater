@@ -142,7 +142,8 @@ async fn main() -> Result<(), Error> {
         tokio::spawn(async move {
             sink.run(ffmpeg_terminate_signal_rx)
                 .await
-                .context(FfmpegDumpThreadSnafu)?;
+                .context(FfmpegDumpThreadSnafu)
+                .unwrap();
             Ok::<(), Error>(())
         })
     });
