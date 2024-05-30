@@ -4,13 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Command line option `--connections-per-ip` that allows limiting the number of connections per ip address. Default is unlimited ([#22])
+
 ### Fixed
 
 - Raise `ffmpeg` errors as early as possible, e.g. when the `ffmpeg` command is not found
 
+[#22]: https://github.com/sbernauer/breakwater/pull/22
+
 ## [0.13.0] - 2024-05-15
 
-## Added
+### Added
 
 - Also release binary for `aarch64-apple-darwin`
 

@@ -60,6 +60,7 @@ async fn test_correct_responses_to_general_commands(
         fb,
         statistics_channel.0,
         DEFAULT_NETWORK_BUFFER_SIZE,
+        None,
     )
     .await
     .unwrap();
@@ -125,6 +126,7 @@ async fn test_setting_pixel(
         fb,
         statistics_channel.0,
         DEFAULT_NETWORK_BUFFER_SIZE,
+        None,
     )
     .await
     .unwrap();
@@ -152,6 +154,7 @@ async fn test_safe(
         fb.clone(),
         statistics_channel.0,
         DEFAULT_NETWORK_BUFFER_SIZE,
+        None,
     )
     .await
     .unwrap();
@@ -225,6 +228,7 @@ async fn test_drawing_rect(
         Arc::clone(&fb),
         statistics_channel.0.clone(),
         DEFAULT_NETWORK_BUFFER_SIZE,
+        None,
     )
     .await
     .unwrap();
@@ -238,6 +242,7 @@ async fn test_drawing_rect(
         Arc::clone(&fb),
         statistics_channel.0.clone(),
         DEFAULT_NETWORK_BUFFER_SIZE,
+        None,
     )
     .await
     .unwrap();
@@ -251,6 +256,7 @@ async fn test_drawing_rect(
         Arc::clone(&fb),
         statistics_channel.0.clone(),
         DEFAULT_NETWORK_BUFFER_SIZE,
+        None,
     )
     .await
     .unwrap();
@@ -264,6 +270,7 @@ async fn test_drawing_rect(
         Arc::clone(&fb),
         statistics_channel.0.clone(),
         DEFAULT_NETWORK_BUFFER_SIZE,
+        None,
     )
     .await
     .unwrap();
