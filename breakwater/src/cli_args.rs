@@ -70,4 +70,8 @@ pub struct CliArgs {
     #[cfg(feature = "vnc")]
     #[clap(short, long, default_value_t = 5900)]
     pub vnc_port: u16,
+
+    /// Allow only a certain number of connections per ip address
+    #[clap(short, long)]
+    pub connections_per_ip: Option<u64>,
 }

@@ -114,7 +114,7 @@ async fn main() -> Result<(), Error> {
         statistics_save_mode,
     );
 
-    let server = Server::new(
+    let mut server = Server::new(
         &args.listen_address,
         Arc::clone(&fb),
         statistics_tx.clone(),
@@ -124,6 +124,7 @@ async fn main() -> Result<(), Error> {
             .context(InvalidNetworkBufferSizeSnafu {
                 network_buffer_size: args.network_buffer_size,
             })?,
+        args.connections_per_ip,
     )
     .await
     .context(StartPixelflutServerSnafu)?;
