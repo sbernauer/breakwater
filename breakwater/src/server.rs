@@ -1,6 +1,6 @@
-use std::{cmp::min, net::IpAddr, sync::Arc, time::Duration};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::{cmp::min, net::IpAddr, sync::Arc, time::Duration};
 
 use breakwater_core::framebuffer::FrameBuffer;
 use breakwater_parser::{original::OriginalParser, Parser, ParserError};
@@ -72,7 +72,8 @@ impl Server {
     }
 
     pub async fn start(&mut self) -> Result<(), Error> {
-        let (connection_dropped_tx, mut connection_dropped_rx) = mpsc::unbounded_channel::<IpAddr>();
+        let (connection_dropped_tx, mut connection_dropped_rx) =
+            mpsc::unbounded_channel::<IpAddr>();
         let connection_dropped_tx = self.max_connections_per_ip.map(|_| connection_dropped_tx);
         loop {
             let (mut socket, socket_addr) = self
@@ -103,7 +104,7 @@ impl Server {
                 } else {
                     // Errors if session is dropped prematurely
                     let _ = socket.shutdown();
-                    continue
+                    continue;
                 }
             };
 
