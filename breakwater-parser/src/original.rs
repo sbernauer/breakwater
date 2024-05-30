@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use breakwater_core::{framebuffer::FrameBuffer, HELP_TEXT};
+use breakwater_core::{framebuffer::FrameBuffer, HELP_TEXT, ALT_HELP_TEXT};
 
 use crate::{Parser, ParserError};
 
@@ -38,6 +38,7 @@ impl Parser for OriginalParser {
         message_sender: &Sender<Box<[u8]>>,
     ) -> Result<usize, ParserError> {
         let mut last_byte_parsed = 0;
+        let mut help_count = 0;
 
         let mut i = 0; // We can't use a for loop here because Rust don't lets use skip characters by incrementing i
         let loop_end = buffer.len().saturating_sub(PARSER_LOOKAHEAD); // Let's extract the .len() call and the subtraction into it's own variable so we only compute it once
@@ -174,10 +175,18 @@ impl Parser for OriginalParser {
             } else if current_command & 0xffff_ffff == HELP_PATTERN {
                 i += 4;
                 last_byte_parsed = i - 1;
-
-                message_sender
-                    .send(HELP_TEXT.into())
-                    .expect("Failed to write message");
+                
+                if help_count < 3 {
+                    message_sender
+                        .send(HELP_TEXT.into())
+                        .expect("Failed to write message");
+                    help_count += 1;
+                } else if help_count == 3 {
+                    message_sender
+                        .send(ALT_HELP_TEXT.into())
+                        .expect("Failed to write message");
+                    help_count += 1;
+                }
                 continue;
             }
 
