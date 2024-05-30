@@ -30,7 +30,7 @@ jobs:
           target: ${{ matrix.target }}
           override: true
       - if: runner.os == 'Linux'
-        run: sudo apt install -y libvncserver-dev
+        run: sudo apt update && sudo apt install -y libvncserver-dev
       - if: runner.os == 'macOS'
         run: brew install libvncserver
       - name: Build binary
