@@ -79,7 +79,7 @@ impl Server {
         let connection_dropped_tx = self.max_connections_per_ip.map(|_| connection_dropped_tx);
 
         let page_size = page_size::get();
-        info!("System has a page size of {page_size} bytes");
+        debug!("System has a page size of {page_size} bytes");
 
         loop {
             let (mut socket, socket_addr) = self
