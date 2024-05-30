@@ -4,7 +4,8 @@ use std::{cmp::min, net::IpAddr, sync::Arc, time::Duration};
 
 use breakwater_core::framebuffer::FrameBuffer;
 use breakwater_parser::{original::OriginalParser, Parser, ParserError};
-use log::{debug, info};
+use log::{debug, error, info};
+use memadvise::{Advice, MemAdviseError};
 use snafu::{ResultExt, Snafu};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -143,6 +144,18 @@ pub async fn handle_connection(
         .context(WriteToStatisticsChannelSnafu)?;
 
     let mut buffer = vec![0u8; network_buffer_size];
+
+    if let Err(err) = memadvise::advise(buffer.as_ptr() as _, buffer.len(), Advice::Sequential) {
+        // [`MemAdviseError`] does not implement Debug...
+        let err = match err {
+            MemAdviseError::NullAddress => "NullAddress",
+            MemAdviseError::InvalidLength => "InvalidLength",
+            MemAdviseError::UnalignedAddress => "UnalignedAddress",
+            MemAdviseError::InvalidRange => "InvalidRange",
+        };
+        error!("Failed to memadvise buffer to kernel, propably having some performance degration: {err}");
+    }
+
     // Number bytes left over **on the first bytes of the buffer** from the previous loop iteration
     let mut leftover_bytes_in_buffer = 0;
 
@@ -235,6 +248,8 @@ pub async fn handle_connection(
         // Will fail if the server thread ends before the client thread
         let _ = tx.send(ip);
     }
+
+    let _ = memadvise::advise(buffer.as_ptr() as _, buffer.len(), Advice::DontNeed);
 
     Ok(())
 }

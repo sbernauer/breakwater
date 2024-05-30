@@ -17,11 +17,12 @@ criterion = {version = "0.5", features = ["async_tokio"]}
 enum_dispatch = "0.3"
 env_logger = "0.11"
 log = "0.4"
+memadvise = "0.1"
 memchr = "2.7"
 number_prefix = "0.4"
 pixelbomber = "0.6"
 prometheus_exporter = "0.8"
-rstest = "0.19"
+rstest = "0.20"
 rusttype = "0.9"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
