@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Try to improve performance by calling `madvise` to inform Kernel we are reading sequentially ([#24])
+
+[#24]: https://github.com/sbernauer/breakwater/pull/24
+
 ## [0.14.0] - 2024-05-30 at GPN 22 :)
 
 ### Added
