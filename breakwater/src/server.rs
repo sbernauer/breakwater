@@ -103,7 +103,7 @@ impl Server {
                     *current_connections += 1;
                 } else {
                     // Errors if session is dropped prematurely
-                    let _ = socket.shutdown();
+                    let _ = socket.shutdown().await;
                     continue;
                 }
             };
