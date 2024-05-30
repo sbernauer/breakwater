@@ -1,7 +1,7 @@
 use std::sync::Arc;
+use std::sync::mpsc::Sender;
 
 use breakwater_core::framebuffer::FrameBuffer;
-use tokio::io::AsyncWriteExt;
 
 use crate::{Parser, ParserError};
 
@@ -16,10 +16,10 @@ impl MemchrParser {
 }
 
 impl Parser for MemchrParser {
-    async fn parse(
+    fn parse(
         &mut self,
         buffer: &[u8],
-        _stream: impl AsyncWriteExt + Send + Unpin,
+        _message_sender: &Sender<Box<[u8]>>,
     ) -> Result<usize, ParserError> {
         let mut last_char_after_newline = 0;
         for newline in memchr::memchr_iter(b'\n', buffer) {

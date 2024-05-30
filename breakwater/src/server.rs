@@ -1,6 +1,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::{cmp::min, net::IpAddr, sync::Arc, time::Duration};
+use std::sync::mpsc::channel;
 
 use breakwater_core::framebuffer::FrameBuffer;
 use breakwater_parser::{original::OriginalParser, Parser, ParserError};
@@ -155,6 +156,8 @@ pub async fn handle_connection(
     // Instead we bulk the statistics and send them pre-aggregated.
     let mut last_statistics = Instant::now();
     let mut statistics_bytes_read: u64 = 0;
+    
+    let (message_sender, message_receiver) = channel::<Box<[u8]>>();
 
     loop {
         // Fill the buffer up with new data from the socket
@@ -204,8 +207,7 @@ pub async fn handle_connection(
             }
 
             let last_byte_parsed = parser
-                .parse(&buffer[..data_end + parser_lookahead], &mut stream)
-                .await
+                .parse(&buffer[..data_end + parser_lookahead], &message_sender)
                 .context(ParsePixelflutCommandsSnafu)?;
 
             // IMPORTANT: We have to subtract 1 here, as e.g. we have "PX 0 0\n" data_end is 7 and parser_state.last_byte_parsed is 6.
@@ -222,6 +224,10 @@ pub async fn handle_connection(
                     last_byte_parsed + 1..last_byte_parsed + 1 + leftover_bytes_in_buffer,
                     0,
                 );
+            }
+
+            while let Ok(message) = message_receiver.try_recv() {
+                stream.write_all(message.as_ref()).await.expect("Failed to write to tcp stream")
             }
         }
     }

@@ -2,9 +2,9 @@ use std::{
     simd::{num::SimdUint, u32x8, Simd},
     sync::Arc,
 };
+use std::sync::mpsc::Sender;
 
 use breakwater_core::{framebuffer::FrameBuffer, HELP_TEXT};
-use tokio::io::AsyncWriteExt;
 
 use crate::{Parser, ParserError};
 
@@ -32,10 +32,10 @@ impl OriginalParser {
 }
 
 impl Parser for OriginalParser {
-    async fn parse(
+    fn parse(
         &mut self,
         buffer: &[u8],
-        mut stream: impl AsyncWriteExt + Send + Unpin,
+        message_sender: &Sender<Box<[u8]>>,
     ) -> Result<usize, ParserError> {
         let mut last_byte_parsed = 0;
 
@@ -130,22 +130,15 @@ impl Parser for OriginalParser {
                         last_byte_parsed = i;
                         i += 1;
                         if let Some(rgb) = self.fb.get(x, y) {
-                            match stream
-                                .write_all(
-                                    format!(
-                                        "PX {} {} {:06x}\n",
-                                        // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
-                                        x - self.connection_x_offset,
-                                        y - self.connection_y_offset,
-                                        rgb.to_be() >> 8
-                                    )
-                                    .as_bytes(),
-                                )
-                                .await
-                            {
-                                Ok(_) => (),
-                                Err(_) => continue,
-                            }
+                            message_sender.send(
+                                format!(
+                                    "PX {} {} {:06x}\n",
+                                    // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
+                                    x - self.connection_x_offset,
+                                    y - self.connection_y_offset,
+                                    rgb.to_be() >> 8
+                                ).into_boxed_str().into_boxed_bytes()
+                            ).expect("Failed to write message");
                         }
                         continue;
                     }
@@ -166,22 +159,18 @@ impl Parser for OriginalParser {
                 i += 4;
                 last_byte_parsed = i - 1;
 
-                stream
-                    .write_all(
+                message_sender.send(
                         format!("SIZE {} {}\n", self.fb.get_width(), self.fb.get_height())
-                            .as_bytes(),
+                            .into_boxed_str().into_boxed_bytes()
                     )
-                    .await
-                    .expect("Failed to write bytes to tcp socket");
+                    .expect("Failed to write message");
                 continue;
             } else if current_command & 0xffff_ffff == HELP_PATTERN {
                 i += 4;
                 last_byte_parsed = i - 1;
 
-                stream
-                    .write_all(HELP_TEXT)
-                    .await
-                    .expect("Failed to write bytes to tcp socket");
+                message_sender.send(HELP_TEXT.into())
+                    .expect("Failed to write message");
                 continue;
             }
 

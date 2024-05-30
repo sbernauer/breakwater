@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use breakwater_core::{framebuffer::FrameBuffer, HELP_TEXT};
 use snafu::ResultExt;
-use tokio::io::AsyncWriteExt;
+use std::sync::mpsc::Sender;
 
 use crate::{
     original::{
@@ -29,11 +29,11 @@ impl RefactoredParser {
     }
 
     #[inline(always)]
-    async fn handle_pixel(
+    fn handle_pixel(
         &self,
         buffer: &[u8],
         mut idx: usize,
-        stream: &mut (impl AsyncWriteExt + Send + Unpin),
+        message_sender: &Sender<Box<[u8]>>,
     ) -> Result<(usize, usize), ParserError> {
         let previous = idx;
         idx += 3;
@@ -75,7 +75,7 @@ impl RefactoredParser {
             // End of command to read Pixel value
             else if unsafe { *buffer.get_unchecked(idx) } == b'\n' {
                 idx += 1;
-                self.handle_get_pixel(stream, x, y).await?;
+                self.handle_get_pixel(message_sender, x, y)?;
                 Ok((idx, idx))
             } else {
                 Ok((idx, previous))
@@ -97,27 +97,25 @@ impl RefactoredParser {
     }
 
     #[inline(always)]
-    async fn handle_size(
+    fn handle_size(
         &self,
-        stream: &mut (impl AsyncWriteExt + Send + Unpin),
+        message_sender: &Sender<Box<[u8]>>,
     ) -> Result<(), ParserError> {
-        stream
-            .write_all(
-                format!("SIZE {} {}\n", self.fb.get_width(), self.fb.get_height()).as_bytes(),
+        message_sender
+            .send(
+                format!("SIZE {} {}\n", self.fb.get_width(), self.fb.get_height()).into_boxed_str().into_boxed_bytes(),
             )
-            .await
             .context(crate::WriteToTcpSocketSnafu)?;
         Ok(())
     }
 
     #[inline(always)]
-    async fn handle_help(
+    fn handle_help(
         &self,
-        stream: &mut (impl AsyncWriteExt + Send + Unpin),
+        message_sender: &Sender<Box<[u8]>>,
     ) -> Result<(), ParserError> {
-        stream
-            .write_all(HELP_TEXT)
-            .await
+        message_sender
+            .send(HELP_TEXT.into())
             .context(crate::WriteToTcpSocketSnafu)?;
         Ok(())
     }
@@ -173,15 +171,15 @@ impl RefactoredParser {
     }
 
     #[inline(always)]
-    async fn handle_get_pixel(
+    fn handle_get_pixel(
         &self,
-        stream: &mut (impl AsyncWriteExt + Send + Unpin),
+        message_sender: &Sender<Box<[u8]>>,
         x: usize,
         y: usize,
     ) -> Result<(), ParserError> {
         if let Some(rgb) = self.fb.get(x, y) {
-            stream
-                .write_all(
+            message_sender
+                .send(
                     format!(
                         "PX {} {} {:06x}\n",
                         // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
@@ -189,9 +187,8 @@ impl RefactoredParser {
                         y - self.connection_y_offset,
                         rgb.to_be() >> 8
                     )
-                    .as_bytes(),
+                    .into_boxed_str().into_boxed_bytes(),
                 )
-                .await
                 .context(crate::WriteToTcpSocketSnafu)?;
         }
         Ok(())
@@ -199,10 +196,10 @@ impl RefactoredParser {
 }
 
 impl Parser for RefactoredParser {
-    async fn parse(
+    fn parse(
         &mut self,
         buffer: &[u8],
-        mut stream: impl AsyncWriteExt + Send + Unpin,
+        message_sender: &Sender<Box<[u8]>>,
     ) -> Result<usize, ParserError> {
         let mut last_byte_parsed = 0;
 
@@ -213,7 +210,7 @@ impl Parser for RefactoredParser {
             let current_command =
                 unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };
             if current_command & 0x00ff_ffff == PX_PATTERN {
-                (i, last_byte_parsed) = self.handle_pixel(buffer, i, &mut stream).await?;
+                (i, last_byte_parsed) = self.handle_pixel(buffer, i, message_sender)?;
             } else if current_command & 0x00ff_ffff_ffff_ffff == OFFSET_PATTERN {
                 i += 7;
                 self.handle_offset(&mut i, buffer);
@@ -221,11 +218,11 @@ impl Parser for RefactoredParser {
             } else if current_command & 0xffff_ffff == SIZE_PATTERN {
                 i += 4;
                 last_byte_parsed = i;
-                self.handle_size(&mut stream).await?;
+                self.handle_size(message_sender)?;
             } else if current_command & 0xffff_ffff == HELP_PATTERN {
                 i += 4;
                 last_byte_parsed = i;
-                self.handle_help(&mut stream).await?;
+                self.handle_help(message_sender)?;
             } else {
                 i += 1;
             }
