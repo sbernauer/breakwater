@@ -1,7 +1,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::{cmp::min, net::IpAddr, sync::Arc, time::Duration};
 use std::sync::mpsc::channel;
+use std::{cmp::min, net::IpAddr, sync::Arc, time::Duration};
 
 use breakwater_core::framebuffer::FrameBuffer;
 use breakwater_parser::{original::OriginalParser, Parser, ParserError};
@@ -156,7 +156,7 @@ pub async fn handle_connection(
     // Instead we bulk the statistics and send them pre-aggregated.
     let mut last_statistics = Instant::now();
     let mut statistics_bytes_read: u64 = 0;
-    
+
     let (message_sender, message_receiver) = channel::<Box<[u8]>>();
 
     loop {
@@ -227,7 +227,10 @@ pub async fn handle_connection(
             }
 
             while let Ok(message) = message_receiver.try_recv() {
-                stream.write_all(message.as_ref()).await.expect("Failed to write to tcp stream")
+                stream
+                    .write_all(message.as_ref())
+                    .await
+                    .expect("Failed to write to tcp stream")
             }
         }
     }

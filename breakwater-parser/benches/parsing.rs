@@ -1,7 +1,7 @@
-use std::{sync::Arc, time::Duration};
 use std::sync::mpsc::channel;
+use std::{sync::Arc, time::Duration};
 
-use breakwater_core::{framebuffer::FrameBuffer};
+use breakwater_core::framebuffer::FrameBuffer;
 #[cfg(target_arch = "x86_64")]
 use breakwater_parser::assembler::AssemblerParser;
 use breakwater_parser::{

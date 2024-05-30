@@ -1,9 +1,9 @@
 // Needed for simple implementation
 #![feature(portable_simd)]
 
-use std::sync::mpsc::Sender;
 use enum_dispatch::enum_dispatch;
 use snafu::Snafu;
+use std::sync::mpsc::Sender;
 
 #[cfg(target_arch = "x86_64")]
 pub mod assembler;
@@ -14,7 +14,9 @@ pub mod refactored;
 #[derive(Debug, Snafu)]
 pub enum ParserError {
     #[snafu(display("Failed to write to TCP socket"))]
-    WriteToTcpSocket { source: std::sync::mpsc::SendError<Box<[u8]>> },
+    WriteToTcpSocket {
+        source: std::sync::mpsc::SendError<Box<[u8]>>,
+    },
 }
 
 #[enum_dispatch(ParserImplementation)]

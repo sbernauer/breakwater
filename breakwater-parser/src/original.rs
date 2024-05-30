@@ -1,8 +1,8 @@
+use std::sync::mpsc::Sender;
 use std::{
     simd::{num::SimdUint, u32x8, Simd},
     sync::Arc,
 };
-use std::sync::mpsc::Sender;
 
 use breakwater_core::{framebuffer::FrameBuffer, HELP_TEXT};
 
@@ -130,15 +130,19 @@ impl Parser for OriginalParser {
                         last_byte_parsed = i;
                         i += 1;
                         if let Some(rgb) = self.fb.get(x, y) {
-                            message_sender.send(
-                                format!(
-                                    "PX {} {} {:06x}\n",
-                                    // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
-                                    x - self.connection_x_offset,
-                                    y - self.connection_y_offset,
-                                    rgb.to_be() >> 8
-                                ).into_boxed_str().into_boxed_bytes()
-                            ).expect("Failed to write message");
+                            message_sender
+                                .send(
+                                    format!(
+                                        "PX {} {} {:06x}\n",
+                                        // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
+                                        x - self.connection_x_offset,
+                                        y - self.connection_y_offset,
+                                        rgb.to_be() >> 8
+                                    )
+                                    .into_boxed_str()
+                                    .into_boxed_bytes(),
+                                )
+                                .expect("Failed to write message");
                         }
                         continue;
                     }
@@ -159,9 +163,11 @@ impl Parser for OriginalParser {
                 i += 4;
                 last_byte_parsed = i - 1;
 
-                message_sender.send(
+                message_sender
+                    .send(
                         format!("SIZE {} {}\n", self.fb.get_width(), self.fb.get_height())
-                            .into_boxed_str().into_boxed_bytes()
+                            .into_boxed_str()
+                            .into_boxed_bytes(),
                     )
                     .expect("Failed to write message");
                 continue;
@@ -169,7 +175,8 @@ impl Parser for OriginalParser {
                 i += 4;
                 last_byte_parsed = i - 1;
 
-                message_sender.send(HELP_TEXT.into())
+                message_sender
+                    .send(HELP_TEXT.into())
                     .expect("Failed to write message");
                 continue;
             }

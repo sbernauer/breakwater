@@ -97,23 +97,19 @@ impl RefactoredParser {
     }
 
     #[inline(always)]
-    fn handle_size(
-        &self,
-        message_sender: &Sender<Box<[u8]>>,
-    ) -> Result<(), ParserError> {
+    fn handle_size(&self, message_sender: &Sender<Box<[u8]>>) -> Result<(), ParserError> {
         message_sender
             .send(
-                format!("SIZE {} {}\n", self.fb.get_width(), self.fb.get_height()).into_boxed_str().into_boxed_bytes(),
+                format!("SIZE {} {}\n", self.fb.get_width(), self.fb.get_height())
+                    .into_boxed_str()
+                    .into_boxed_bytes(),
             )
             .context(crate::WriteToTcpSocketSnafu)?;
         Ok(())
     }
 
     #[inline(always)]
-    fn handle_help(
-        &self,
-        message_sender: &Sender<Box<[u8]>>,
-    ) -> Result<(), ParserError> {
+    fn handle_help(&self, message_sender: &Sender<Box<[u8]>>) -> Result<(), ParserError> {
         message_sender
             .send(HELP_TEXT.into())
             .context(crate::WriteToTcpSocketSnafu)?;
@@ -187,7 +183,8 @@ impl RefactoredParser {
                         y - self.connection_y_offset,
                         rgb.to_be() >> 8
                     )
-                    .into_boxed_str().into_boxed_bytes(),
+                    .into_boxed_str()
+                    .into_boxed_bytes(),
                 )
                 .context(crate::WriteToTcpSocketSnafu)?;
         }
