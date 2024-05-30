@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Try to improve performance by calling `madvise` to inform Kernel we are reading sequentially ([#24])
-- Expose metric on dropped connection counts ([#26])
+- Expose metric on denied connection counts ([#26])
 
 ### Changed
 
