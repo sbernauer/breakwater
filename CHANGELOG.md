@@ -9,7 +9,7 @@ All notable changes to this project will be documented in this file.
 - Try to improve performance by calling `madvise` to inform Kernel we are reading sequentially ([#24])
 
 ### Changed
-- Ignore repeated `HELP` requests ([25])
+- Ignore repeated `HELP` requests ([#25])
   - Only the first 2 requests of any `parse` patch are answered
   - Answers `Stop spamming HELP!` on the third request
   - Doesn't respond to any further requests
