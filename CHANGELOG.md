@@ -12,7 +12,7 @@ All notable changes to this project will be documented in this file.
 
 ## Added
 
-- Also release binary for `aarch64-apple-darwin` ([#22]).
+- Also release binary for `aarch64-apple-darwin`
 
 ### Changed
 
@@ -25,4 +25,3 @@ All notable changes to this project will be documented in this file.
   * Needs a cross-compilation (which didn't work), as the macOS GitHub runners all run on arm and we try to build an x86 binary
 
 [#21]: https://github.com/sbernauer/breakwater/pull/21
-[#22]: https://github.com/sbernauer/breakwater/pull/22
