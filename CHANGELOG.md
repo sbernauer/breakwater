@@ -7,8 +7,10 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Try to improve performance by calling `madvise` to inform Kernel we are reading sequentially ([#24])
+- Expose metric on denied connection counts ([#26])
 
 ### Changed
+
 - Ignore repeated `HELP` requests ([#25])
   - Only the first 2 requests of any `parse` patch are answered
   - Answers `Stop spamming HELP!` on the third request
@@ -16,6 +18,7 @@ All notable changes to this project will be documented in this file.
 
 [#24]: https://github.com/sbernauer/breakwater/pull/24
 [#25]: https://github.com/sbernauer/breakwater/pull/25
+[#26]: https://github.com/sbernauer/breakwater/pull/26
 
 ## [0.14.0] - 2024-05-30 at GPN 22 :)
 

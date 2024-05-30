@@ -37,6 +37,7 @@ pub struct PrometheusExporter {
     metric_statistic_events: IntGauge,
 
     metric_connections_for_ip: IntGaugeVec,
+    metric_denied_connections_for_ip: IntGaugeVec,
     metric_bytes_for_ip: IntGaugeVec,
 }
 
@@ -71,6 +72,11 @@ impl PrometheusExporter {
                 "Number of client connections per IP address",
                 &["ip"],
             )?,
+            metric_denied_connections_for_ip: register_int_gauge_vec(
+                "breakwater_denied_connections",
+                "Number of denied connections per IP address because it tried to open too many connections",
+                &["ip"],
+            )?,
             metric_bytes_for_ip: register_int_gauge_vec(
                 "breakwater_bytes",
                 "Number of bytes received per IP address",
@@ -97,6 +103,15 @@ impl PrometheusExporter {
                     self.metric_connections_for_ip
                         .with_label_values(&[&ip.to_string()])
                         .set(*connections as i64)
+                });
+            self.metric_denied_connections_for_ip.reset();
+            event
+                .denied_connections_for_ip
+                .iter()
+                .for_each(|(ip, denied)| {
+                    self.metric_denied_connections_for_ip
+                        .with_label_values(&[&ip.to_string()])
+                        .set(*denied as i64)
                 });
             self.metric_bytes_for_ip.reset();
             event.bytes_for_ip.iter().for_each(|(ip, bytes)| {
