@@ -20,3 +20,5 @@ if cfg!(feature = "alpha") {
     "PX x y rrggbbaa: Color the pixel (x,y) with the given hexadecimal color rrggbb. The alpha part is discarded for performance reasons, as breakwater was compiled without the alpha feature"
 }
 ).as_bytes();
+
+pub const ALT_HELP_TEXT: &[u8] = b"Stop spamming HELP!\n";
