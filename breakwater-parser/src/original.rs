@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use breakwater_core::{framebuffer::FrameBuffer, HELP_TEXT};
+use breakwater_core::{framebuffer::FrameBuffer, ALT_HELP_TEXT, HELP_TEXT};
 use tokio::io::AsyncWriteExt;
 
 use crate::{Parser, ParserError};
@@ -38,6 +38,7 @@ impl Parser for OriginalParser {
         mut stream: impl AsyncWriteExt + Send + Unpin,
     ) -> Result<usize, ParserError> {
         let mut last_byte_parsed = 0;
+        let mut help_count = 0;
 
         let mut i = 0; // We can't use a for loop here because Rust don't lets use skip characters by incrementing i
         let loop_end = buffer.len().saturating_sub(PARSER_LOOKAHEAD); // Let's extract the .len() call and the subtraction into it's own variable so we only compute it once
@@ -178,10 +179,20 @@ impl Parser for OriginalParser {
                 i += 4;
                 last_byte_parsed = i - 1;
 
-                stream
-                    .write_all(HELP_TEXT)
-                    .await
-                    .expect("Failed to write bytes to tcp socket");
+                #[allow(clippy::comparison_chain)]
+                if help_count < 3 {
+                    stream
+                        .write_all(HELP_TEXT)
+                        .await
+                        .expect("Failed to write bytes to tcp socket");
+                    help_count += 1;
+                } else if help_count == 3 {
+                    stream
+                        .write_all(ALT_HELP_TEXT)
+                        .await
+                        .expect("Failed to write bytes to tcp socket");
+                    help_count += 1;
+                }
                 continue;
             }
 
