@@ -32,8 +32,9 @@ tokio = { version = "1.37", features = ["fs", "rt-multi-thread", "net", "io-util
 trait-variant = "0.1"
 vncserver = "0.2"
 
-breakwater-core = { path = "breakwater-core" }
-breakwater-parser = { path = "breakwater-parser" }
+# Uses the given path when used locally, and uses the specified version from crates.io when published.
+breakwater-core = { path = "breakwater-core", version = "0.14" }
+breakwater-parser = { path = "breakwater-parser", version = "0.14" }
 
 [profile.dev]
 opt-level = 3
