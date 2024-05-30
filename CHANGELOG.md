@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.14.0] - 2024-05-30 at GPN 22 :)
+
 ### Added
 
 - Command line option `--connections-per-ip` that allows limiting the number of connections per ip address. Default is unlimited ([#22])
