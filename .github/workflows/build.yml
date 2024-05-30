@@ -35,7 +35,7 @@ jobs:
           toolchain: nightly
           override: true
       - name: Install libvncserver-dev
-        run: sudo apt install -y libvncserver-dev
+        run: sudo apt update && sudo apt install -y libvncserver-dev
       - uses: actions-rs/cargo@v1
         with:
           command: install
@@ -56,7 +56,7 @@ jobs:
           components: rustfmt
           override: true
       - name: Install libvncserver-dev
-        run: sudo apt install -y libvncserver-dev
+        run: sudo apt update && sudo apt install -y libvncserver-dev
       - uses: actions-rs/cargo@v1
         with:
           command: fmt
@@ -74,7 +74,7 @@ jobs:
           components: clippy
           override: true
       - name: Install libvncserver-dev
-        run: sudo apt install -y libvncserver-dev
+        run: sudo apt update && sudo apt install -y libvncserver-dev
       - name: Run clippy action to produce annotations
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -101,7 +101,7 @@ jobs:
           components: rustfmt
           override: true
       - name: Install libvncserver-dev
-        run: sudo apt install -y libvncserver-dev
+        run: sudo apt update && sudo apt install -y libvncserver-dev
       - uses: actions-rs/cargo@v1
         with:
           command: doc
@@ -118,7 +118,7 @@ jobs:
           toolchain: nightly
           override: true
       - name: Install libvncserver-dev
-        run: sudo apt install -y libvncserver-dev
+        run: sudo apt update && sudo apt install -y libvncserver-dev
       - name: Test with all features turned off
         uses: actions-rs/cargo@v1
         with:
@@ -165,7 +165,7 @@ jobs:
       - name: Print CPU architecture
         run: uname -m && uname -a
       - if: runner.os == 'Linux'
-        run: sudo apt install -y libvncserver-dev
+        run: sudo apt update && sudo apt install -y libvncserver-dev
       - if: runner.os == 'macOS'
         run: brew install libvncserver
       # - if: runner.os == 'Windows'
