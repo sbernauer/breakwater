@@ -22,6 +22,7 @@ env_logger.workspace = true
 log.workspace = true
 memadvise.workspace = true
 number_prefix.workspace = true
+page_size.workspace = true
 prometheus_exporter.workspace = true
 rusttype.workspace = true
 serde_json.workspace = true

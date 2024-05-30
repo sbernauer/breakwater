@@ -183,6 +183,7 @@ dependencies = [
  "log",
  "memadvise",
  "number_prefix",
+ "page_size 0.6.0",
  "prometheus_exporter",
  "rstest",
  "rusttype",
@@ -984,7 +985,7 @@ checksum = "aaf6f86f067270b307b65d17080ac0eac2afd247d60f49646db200c9b8680cf4"
 dependencies = [
  "kernel32-sys",
  "libc",
- "page_size",
+ "page_size 0.4.2",
  "winapi 0.2.8",
 ]
 
@@ -1108,6 +1109,16 @@ name = "page_size"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eebde548fbbf1ea81a99b128872779c437752fb99f217c45245e1a61dcd9edcd"
+dependencies = [
+ "libc",
+ "winapi 0.3.9",
+]
+
+[[package]]
+name = "page_size"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "30d5b2194ed13191c1999ae0704b7839fb18384fa22e49b57eeaa97d79ce40da"
 dependencies = [
  "libc",
  "winapi 0.3.9",

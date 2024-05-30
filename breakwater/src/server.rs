@@ -1,3 +1,4 @@
+use std::alloc;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::{cmp::min, net::IpAddr, sync::Arc, time::Duration};
@@ -76,6 +77,10 @@ impl Server {
         let (connection_dropped_tx, mut connection_dropped_rx) =
             mpsc::unbounded_channel::<IpAddr>();
         let connection_dropped_tx = self.max_connections_per_ip.map(|_| connection_dropped_tx);
+
+        let page_size = page_size::get();
+        info!("System has a page size of {page_size} bytes");
+
         loop {
             let (mut socket, socket_addr) = self
                 .listener
@@ -119,6 +124,7 @@ impl Server {
                     ip,
                     fb_for_thread,
                     statistics_tx_for_thread,
+                    page_size,
                     network_buffer_size,
                     connection_dropped_tx_clone,
                 )
@@ -133,6 +139,7 @@ pub async fn handle_connection(
     ip: IpAddr,
     fb: Arc<FrameBuffer>,
     statistics_tx: mpsc::Sender<StatisticsEvent>,
+    page_size: usize,
     network_buffer_size: usize,
     connection_dropped_tx: Option<mpsc::UnboundedSender<IpAddr>>,
 ) -> Result<(), Error> {
@@ -143,7 +150,9 @@ pub async fn handle_connection(
         .await
         .context(WriteToStatisticsChannelSnafu)?;
 
-    let mut buffer = vec![0u8; network_buffer_size];
+    let layout = alloc::Layout::from_size_align(network_buffer_size, page_size).unwrap();
+    let ptr = unsafe { alloc::alloc(layout) };
+    let buffer = unsafe { std::slice::from_raw_parts_mut(ptr, network_buffer_size) };
 
     if let Err(err) = memadvise::advise(buffer.as_ptr() as _, buffer.len(), Advice::Sequential) {
         // [`MemAdviseError`] does not implement Debug...
