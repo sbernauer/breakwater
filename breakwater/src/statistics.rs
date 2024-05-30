@@ -43,6 +43,7 @@ pub enum Error {
 pub enum StatisticsEvent {
     ConnectionCreated { ip: IpAddr },
     ConnectionClosed { ip: IpAddr },
+    ConnectionDenied { ip: IpAddr },
     BytesRead { ip: IpAddr, bytes: u64 },
     FrameRendered,
 }
@@ -63,6 +64,7 @@ pub struct StatisticsInformationEvent {
     pub bytes_per_s: u64,
 
     pub connections_for_ip: HashMap<IpAddr, u32>,
+    pub blocked_connections_for_ip: HashMap<IpAddr, u32>,
     pub bytes_for_ip: HashMap<IpAddr, u64>,
 
     pub statistic_events: u64,
@@ -75,6 +77,7 @@ pub struct Statistics {
 
     frame: u64,
     connections_for_ip: HashMap<IpAddr, u32>,
+    blocked_connections_for_ip: HashMap<IpAddr, u32>,
     bytes_for_ip: HashMap<IpAddr, u64>,
 
     bytes_per_s_window: SingleSumSMA<u64, u64, STATS_SLIDING_WINDOW_SIZE>,
@@ -115,6 +118,7 @@ impl Statistics {
             statistic_events: 0,
             frame: 0,
             connections_for_ip: HashMap::new(),
+            blocked_connections_for_ip: HashMap::new(),
             bytes_for_ip: HashMap::new(),
             bytes_per_s_window: SingleSumSMA::new(),
             fps_window: SingleSumSMA::new(),
@@ -152,6 +156,9 @@ impl Statistics {
                             o.remove_entry();
                         }
                     }
+                }
+                StatisticsEvent::ConnectionDenied { ip } => {
+                    *self.blocked_connections_for_ip.entry(ip).or_insert(0) += 1;
                 }
                 StatisticsEvent::BytesRead { ip, bytes } => {
                     *self.bytes_for_ip.entry(ip).or_insert(0) += bytes;
@@ -218,6 +225,7 @@ impl Statistics {
             fps: self.fps_window.get_average(),
             bytes_per_s: self.bytes_per_s_window.get_average(),
             connections_for_ip: self.connections_for_ip.clone(),
+            blocked_connections_for_ip: self.blocked_connections_for_ip.clone(),
             bytes_for_ip: self.bytes_for_ip.clone(),
             statistic_events,
         }

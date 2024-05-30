@@ -108,6 +108,10 @@ impl Server {
                 if *current_connections < limit {
                     *current_connections += 1;
                 } else {
+                    self.statistics_tx
+                        .send(StatisticsEvent::ConnectionDenied { ip })
+                        .await
+                        .context(WriteToStatisticsChannelSnafu)?;
                     // Errors if session is dropped prematurely
                     let _ = socket.shutdown().await;
                     continue;
