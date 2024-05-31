@@ -1,6 +1,6 @@
 #![allow(internal_features)]
 #![feature(core_intrinsics)]
-// #![feature(new_uninit)]
+#![feature(new_uninit)]
 
 use std::{
     collections::VecDeque, intrinsics, mem::ManuallyDrop, net::TcpListener, os::fd::AsRawFd,
@@ -111,12 +111,35 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
+struct ProvideBuffer {
+    id_offset: u16,
+    ptr: *mut u8,
+    nr: u16,
+}
+
 fn main_ring(
     fd_report: Option<std::sync::mpsc::Sender<i32>>,
     worker_fds: Vec<i32>,
 ) -> Result<(), Error> {
     let mut ring = new_uring(1024, 1024)?;
     let mut backlog = VecDeque::default();
+
+    const BUF_SIZE: usize = 64 * 1024;
+    const BUFFER_COUNT: usize = 10 * 1024;
+    let mut worker_bufs =
+        unsafe { Box::<[u8; BUFFER_COUNT * BUF_SIZE]>::new_zeroed().assume_init() };
+    {
+        let provide_buffers = opcode::ProvideBuffers::new(
+            worker_bufs.as_mut_ptr(),
+            BUF_SIZE as i32,
+            BUFFER_COUNT as u16,
+            42,
+            0,
+        )
+        .build()
+        .user_data(0);
+        backlog.push_back(provide_buffers);
+    }
 
     match fd_report {
         Some(fd_report) => {
@@ -141,7 +164,50 @@ fn main_ring(
     let res: Result<(), Error> = 'ring_loop: loop {
         ring.completion().sync();
         if backlog.is_empty() || ring.completion().is_full() {
-            handle_cqes(&mut ring, &mut worker_fds_cycle, &mut backlog)?;
+            let mut provide_buffers = vec![];
+            handle_cqes(
+                &mut ring,
+                &mut worker_fds_cycle,
+                &mut backlog,
+                &mut provide_buffers,
+            )?;
+
+            provide_buffers.sort();
+            let provide_buffers = provide_buffers.into_iter().fold(vec![], |mut acc, buf| {
+                match acc.last_mut() {
+                    None => acc.push(ProvideBuffer {
+                        id_offset: buf,
+                        ptr: unsafe { worker_bufs.as_mut_ptr().add(BUF_SIZE * buf as usize) },
+                        nr: 1,
+                    }),
+                    Some(pb) => {
+                        if pb.id_offset + pb.nr + 1 == buf {
+                            pb.nr += 1;
+                        } else {
+                            acc.push(ProvideBuffer {
+                                id_offset: buf,
+                                ptr: unsafe {
+                                    worker_bufs.as_mut_ptr().add(BUF_SIZE * buf as usize)
+                                },
+                                nr: 1,
+                            });
+                        }
+                    }
+                }
+
+                acc
+            });
+            for pb in provide_buffers {
+                let provide_buffers =
+                    opcode::ProvideBuffers::new(pb.ptr, BUF_SIZE as i32, pb.nr, 42, pb.id_offset)
+                        .build()
+                        .user_data(0);
+                if let Err(_) = unsafe { ring.submission().push(&provide_buffers) } {
+                    backlog.push_back(provide_buffers);
+                }
+            }
+
+            // reprovide buffers
         }
 
         while let Some(entry) = backlog.pop_front() {
@@ -179,6 +245,7 @@ fn handle_cqes(
     ring: &mut IoUring,
     worker_fds_cycle: &mut impl Iterator<Item = i32>,
     backlog: &mut VecDeque<squeue::Entry>,
+    provide_buffers: &mut Vec<u16>,
 ) -> Result<(), Error> {
     let (_submitter, mut sq, mut cq) = ring.split();
 
@@ -193,10 +260,9 @@ fn handle_cqes(
                 let fd = *fd;
                 tracing::info!("got client from master: {fd}");
 
-                let mut buf = vec![0u8; 265 * 1024].into_boxed_slice();
-                let read = opcode::Recv::new(Fd(fd), buf.as_mut_ptr(), buf.len() as u32)
+                let read = opcode::RecvMulti::new(Fd(fd), 42)
                     .build()
-                    .user_data(UserData::Read { buf, fd }.into());
+                    .user_data(UserData::Read { fd }.into());
 
                 if let Err(_) = unsafe { sq.push(&read) } {
                     backlog.push_back(read);
@@ -230,7 +296,7 @@ fn handle_cqes(
                     }
                 }
 
-                if intrinsics::unlikely(io_uring::cqueue::more(cqe.flags())) {
+                if intrinsics::unlikely(!io_uring::cqueue::more(cqe.flags())) {
                     // kernel wont emit any more cqe for this request
                     // so we rerequest
                     let recv = opcode::AcceptMulti::new(Fd(listener.as_raw_fd()))
@@ -243,7 +309,16 @@ fn handle_cqes(
                     }
                 }
             }
-            UserData::Read { buf, fd } => match cqe.result() {
+            UserData::Read { fd } => match cqe.result() {
+                -105 => {
+                    // no buffers left
+                    tracing::warn!("ring out of buffers");
+                    let recv = opcode::RecvMulti::new(Fd(*fd), 42)
+                        .build()
+                        .user_data(cqe.user_data())
+                        .into();
+                    backlog.push_back(recv);
+                }
                 e if e < 0 => {
                     let err = std::io::Error::from_raw_os_error(-e);
                     tracing::error!("unable to read from socket: {err}");
@@ -272,12 +347,26 @@ fn handle_cqes(
                 bytes => {
                     tracing::debug!("received {bytes} bytes from {fd}");
 
-                    let read = opcode::Recv::new(Fd(*fd), buf.as_mut_ptr(), buf.len() as u32)
-                        .build()
-                        .user_data(cqe.user_data());
+                    const IORING_CQE_F_BUFFER: u32 = 1;
+                    if intrinsics::unlikely(cqe.flags() & IORING_CQE_F_BUFFER == 0) {
+                        // kernel forgot to pick a buffer??
+                        unreachable!();
+                    }
 
-                    if let Err(_) = unsafe { sq.push(&read) } {
-                        backlog.push_back(read);
+                    let buf_id = cqe.flags() >> 16;
+                    provide_buffers.push(buf_id as u16);
+
+                    if intrinsics::unlikely(!io_uring::cqueue::more(cqe.flags())) {
+                        // kernel wont emit any more cqe for this request
+                        // so we rerequest
+                        let recv = opcode::RecvMulti::new(Fd(*fd), 42)
+                            .build()
+                            .user_data(cqe.user_data())
+                            .into();
+
+                        if let Err(_) = unsafe { sq.push(&recv) } {
+                            backlog.push_back(recv);
+                        }
                     }
                 }
             },
@@ -289,7 +378,7 @@ fn handle_cqes(
 pub enum UserData {
     Accept { listener: TcpListener },
     SendClient { fd: i32 },
-    Read { buf: Box<[u8]>, fd: i32 },
+    Read { fd: i32 },
 }
 
 impl UserData {
