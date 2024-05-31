@@ -202,7 +202,7 @@ fn main_ring(
                     opcode::ProvideBuffers::new(pb.ptr, BUF_SIZE as i32, pb.nr, 42, pb.id_offset)
                         .build()
                         .user_data(0);
-                if let Err(_) = unsafe { ring.submission().push(&provide_buffers) } {
+                if unsafe { ring.submission().push(&provide_buffers) }.is_err() {
                     backlog.push_back(provide_buffers);
                 }
             }
@@ -211,7 +211,7 @@ fn main_ring(
         }
 
         while let Some(entry) = backlog.pop_front() {
-            if let Err(_) = unsafe { ring.submission_shared().push(&entry) } {
+            if unsafe { ring.submission_shared().push(&entry) }.is_err() {
                 backlog.push_front(entry);
 
                 unsafe { ring.submission_shared().sync() };
@@ -264,7 +264,7 @@ fn handle_cqes(
                     .build()
                     .user_data(UserData::Read { fd }.into());
 
-                if let Err(_) = unsafe { sq.push(&read) } {
+                if unsafe { sq.push(&read) }.is_err() {
                     backlog.push_back(read);
                 }
             }
@@ -290,7 +290,7 @@ fn handle_cqes(
                         .build()
                         .user_data(0);
 
-                        if let Err(_) = unsafe { sq.push(&msg) } {
+                        if unsafe { sq.push(&msg) }.is_err() {
                             backlog.push_back(msg);
                         }
                     }
@@ -301,10 +301,9 @@ fn handle_cqes(
                     // so we rerequest
                     let recv = opcode::AcceptMulti::new(Fd(listener.as_raw_fd()))
                         .build()
-                        .user_data(cqe.user_data())
-                        .into();
+                        .user_data(cqe.user_data());
 
-                    if let Err(_) = unsafe { sq.push(&recv) } {
+                    if unsafe { sq.push(&recv) }.is_err() {
                         backlog.push_back(recv);
                     }
                 }
@@ -315,8 +314,7 @@ fn handle_cqes(
                     tracing::warn!("ring out of buffers");
                     let recv = opcode::RecvMulti::new(Fd(*fd), 42)
                         .build()
-                        .user_data(cqe.user_data())
-                        .into();
+                        .user_data(cqe.user_data());
                     backlog.push_back(recv);
                 }
                 e if e < 0 => {
@@ -327,7 +325,7 @@ fn handle_cqes(
                     let _user_data = unsafe { ManuallyDrop::<Box<UserData>>::take(&mut user_data) };
                     let close = opcode::Close::new(Fd(fd)).build().user_data(0);
 
-                    if let Err(_) = unsafe { sq.push(&close) } {
+                    if unsafe { sq.push(&close) }.is_err() {
                         backlog.push_back(close);
                     }
                     continue;
@@ -339,7 +337,7 @@ fn handle_cqes(
                     let _user_data = unsafe { ManuallyDrop::<Box<UserData>>::take(&mut user_data) };
                     let close = opcode::Close::new(Fd(fd)).build().user_data(0);
 
-                    if let Err(_) = unsafe { sq.push(&close) } {
+                    if unsafe { sq.push(&close) }.is_err() {
                         backlog.push_back(close);
                     }
                     continue;
@@ -361,10 +359,9 @@ fn handle_cqes(
                         // so we rerequest
                         let recv = opcode::RecvMulti::new(Fd(*fd), 42)
                             .build()
-                            .user_data(cqe.user_data())
-                            .into();
+                            .user_data(cqe.user_data());
 
-                        if let Err(_) = unsafe { sq.push(&recv) } {
+                        if unsafe { sq.push(&recv) }.is_err() {
                             backlog.push_back(recv);
                         }
                     }
@@ -393,15 +390,15 @@ impl UserData {
     }
 }
 
-impl Into<u64> for UserData {
-    fn into(self) -> u64 {
-        Box::into_raw(Box::new(self)) as u64
+impl From<UserData> for u64 {
+    fn from(val: UserData) -> Self {
+        Box::into_raw(Box::new(val)) as u64
     }
 }
 
-impl Into<u64> for Box<UserData> {
-    fn into(self) -> u64 {
-        Box::into_raw(self) as u64
+impl From<Box<UserData>> for u64 {
+    fn from(val: Box<UserData>) -> Self {
+        Box::into_raw(val) as u64
     }
 }
 
