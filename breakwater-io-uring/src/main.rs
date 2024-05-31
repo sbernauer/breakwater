@@ -4,15 +4,20 @@
 
 use std::{
     collections::VecDeque, intrinsics, mem::ManuallyDrop, net::TcpListener, os::fd::AsRawFd,
-    thread, time::Duration,
+    sync::Arc, thread, time::Duration,
 };
 
+use breakwater_core::framebuffer::FrameBuffer;
+use breakwater_parser::{original::OriginalParser, SyncParser};
 use io_uring::{opcode, squeue, types::Fd, IoUring};
 use snafu::{ResultExt, Snafu};
 use tracing::Level;
 use tracing_subscriber::EnvFilter;
 
 const LISTENER_ADDRESS: &str = "[::]:1234";
+
+const BUFFER_COUNT: usize = 10 * 1024;
+const BUFFER_SIZE: usize = 64 * 1024;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -88,12 +93,14 @@ fn main() -> Result<(), Error> {
     }
 
     let workers = num_cpus::get();
+    let fb = Arc::new(FrameBuffer::new(1280, 720));
 
     let (tx, rx) = std::sync::mpsc::channel();
     let handles = (0..workers)
         .map(|_| {
             let tx = tx.clone();
-            thread::spawn(move || main_ring(Some(tx), vec![]))
+            let fb = Arc::clone(&fb);
+            thread::spawn(move || main_ring(fb, Some(tx), vec![]))
         })
         .collect::<Vec<_>>();
     drop(tx);
@@ -102,7 +109,7 @@ fn main() -> Result<(), Error> {
 
     tracing::debug!(?worker_fds);
 
-    main_ring(None, worker_fds)?;
+    main_ring(fb, None, worker_fds)?;
 
     for handle in handles {
         handle.join().unwrap()?;
@@ -118,20 +125,19 @@ struct ProvideBuffer {
 }
 
 fn main_ring(
+    fb: Arc<FrameBuffer>,
     fd_report: Option<std::sync::mpsc::Sender<i32>>,
     worker_fds: Vec<i32>,
 ) -> Result<(), Error> {
     let mut ring = new_uring(1024, 1024)?;
     let mut backlog = VecDeque::default();
 
-    const BUF_SIZE: usize = 64 * 1024;
-    const BUFFER_COUNT: usize = 10 * 1024;
     let mut worker_bufs =
-        unsafe { Box::<[u8; BUFFER_COUNT * BUF_SIZE]>::new_zeroed().assume_init() };
+        unsafe { Box::<[u8; BUFFER_COUNT * BUFFER_SIZE]>::new_zeroed().assume_init() };
     {
         let provide_buffers = opcode::ProvideBuffers::new(
             worker_bufs.as_mut_ptr(),
-            BUF_SIZE as i32,
+            BUFFER_SIZE as i32,
             BUFFER_COUNT as u16,
             42,
             0,
@@ -166,9 +172,11 @@ fn main_ring(
         if backlog.is_empty() || ring.completion().is_full() {
             let mut provide_buffers = vec![];
             handle_cqes(
+                Arc::clone(&fb),
                 &mut ring,
                 &mut worker_fds_cycle,
                 &mut backlog,
+                &worker_bufs,
                 &mut provide_buffers,
             )?;
 
@@ -177,7 +185,7 @@ fn main_ring(
                 match acc.last_mut() {
                     None => acc.push(ProvideBuffer {
                         id_offset: buf,
-                        ptr: unsafe { worker_bufs.as_mut_ptr().add(BUF_SIZE * buf as usize) },
+                        ptr: unsafe { worker_bufs.as_mut_ptr().add(BUFFER_SIZE * buf as usize) },
                         nr: 1,
                     }),
                     Some(pb) => {
@@ -187,7 +195,7 @@ fn main_ring(
                             acc.push(ProvideBuffer {
                                 id_offset: buf,
                                 ptr: unsafe {
-                                    worker_bufs.as_mut_ptr().add(BUF_SIZE * buf as usize)
+                                    worker_bufs.as_mut_ptr().add(BUFFER_SIZE * buf as usize)
                                 },
                                 nr: 1,
                             });
@@ -198,10 +206,15 @@ fn main_ring(
                 acc
             });
             for pb in provide_buffers {
-                let provide_buffers =
-                    opcode::ProvideBuffers::new(pb.ptr, BUF_SIZE as i32, pb.nr, 42, pb.id_offset)
-                        .build()
-                        .user_data(0);
+                let provide_buffers = opcode::ProvideBuffers::new(
+                    pb.ptr,
+                    BUFFER_SIZE as i32,
+                    pb.nr,
+                    42,
+                    pb.id_offset,
+                )
+                .build()
+                .user_data(0);
                 if unsafe { ring.submission().push(&provide_buffers) }.is_err() {
                     backlog.push_back(provide_buffers);
                 }
@@ -242,11 +255,15 @@ fn main_ring(
 }
 
 fn handle_cqes(
+    fb: Arc<FrameBuffer>,
     ring: &mut IoUring,
     worker_fds_cycle: &mut impl Iterator<Item = i32>,
     backlog: &mut VecDeque<squeue::Entry>,
+    worker_bufs: &Box<[u8; BUFFER_COUNT * BUFFER_SIZE]>,
     provide_buffers: &mut Vec<u16>,
 ) -> Result<(), Error> {
+    let mut parser = OriginalParser::new(fb);
+
     let (_submitter, mut sq, mut cq) = ring.split();
 
     for cqe in &mut cq {
@@ -353,6 +370,12 @@ fn handle_cqes(
 
                     let buf_id = cqe.flags() >> 16;
                     provide_buffers.push(buf_id as u16);
+
+                    let buf_ptr =
+                        unsafe { worker_bufs.as_ptr().add(BUFFER_SIZE * buf_id as usize) };
+                    let buf = unsafe { std::slice::from_raw_parts(buf_ptr, BUFFER_SIZE) };
+
+                    parser.parse_sync(buf).expect("parsing failed");
 
                     if intrinsics::unlikely(!io_uring::cqueue::more(cqe.flags())) {
                         // kernel wont emit any more cqe for this request

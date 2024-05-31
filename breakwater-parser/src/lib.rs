@@ -31,6 +31,10 @@ pub trait Parser {
     fn parser_lookahead(&self) -> usize;
 }
 
+pub trait SyncParser {
+    fn parse_sync(&mut self, buffer: &[u8]) -> Result<usize, ParserError>;
+}
+
 #[enum_dispatch]
 pub enum ParserImplementation {
     Original(original::OriginalParser),

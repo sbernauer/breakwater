@@ -6,7 +6,7 @@ use std::{
 use breakwater_core::{framebuffer::FrameBuffer, ALT_HELP_TEXT, HELP_TEXT};
 use tokio::io::AsyncWriteExt;
 
-use crate::{Parser, ParserError};
+use crate::{Parser, ParserError, SyncParser};
 
 pub const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
 
@@ -279,4 +279,172 @@ pub(crate) fn parse_pixel_coordinates(
     *current_index += 1;
     let (y, y_visited) = parse_coordinate(buffer, current_index);
     (x, y, x_visited && y_visited)
+}
+
+impl SyncParser for OriginalParser {
+    fn parse_sync(&mut self, buffer: &[u8]) -> Result<usize, ParserError> {
+        let mut last_byte_parsed = 0;
+        let mut help_count = 0;
+
+        let mut i = 0; // We can't use a for loop here because Rust don't lets use skip characters by incrementing i
+        let loop_end = buffer.len().saturating_sub(PARSER_LOOKAHEAD); // Let's extract the .len() call and the subtraction into it's own variable so we only compute it once
+
+        while i < loop_end {
+            let current_command =
+                unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };
+            if current_command & 0x00ff_ffff == PX_PATTERN {
+                i += 3;
+
+                let (mut x, mut y, present) = parse_pixel_coordinates(buffer.as_ptr(), &mut i);
+
+                if present {
+                    x += self.connection_x_offset;
+                    y += self.connection_y_offset;
+
+                    // Separator between coordinates and color
+                    if unsafe { *buffer.get_unchecked(i) } == b' ' {
+                        i += 1;
+
+                        // TODO: Determine what clients use more: RGB, RGBA or gg variant.
+                        // If RGBA is used more often move the RGB code below the RGBA code
+
+                        // Must be followed by 6 bytes RGB and newline or ...
+                        if unsafe { *buffer.get_unchecked(i + 6) } == b'\n' {
+                            last_byte_parsed = i + 6;
+                            i += 7; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
+
+                            let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(i - 7) });
+
+                            self.fb.set(x, y, rgba & 0x00ff_ffff);
+                            continue;
+                        }
+
+                        // ... or must be followed by 8 bytes RGBA and newline
+                        #[cfg(not(feature = "alpha"))]
+                        if unsafe { *buffer.get_unchecked(i + 8) } == b'\n' {
+                            last_byte_parsed = i + 8;
+                            i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
+
+                            let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(i - 9) });
+
+                            self.fb.set(x, y, rgba & 0x00ff_ffff);
+                            continue;
+                        }
+                        #[cfg(feature = "alpha")]
+                        if unsafe { *buffer.get_unchecked(i + 8) } == b'\n' {
+                            last_byte_parsed = i + 8;
+                            i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
+
+                            let rgba = simd_unhex(unsafe { buffer.as_ptr().add(i - 9) });
+
+                            let alpha = (rgba >> 24) & 0xff;
+
+                            if alpha == 0 || x >= self.fb.get_width() || y >= self.fb.get_height() {
+                                continue;
+                            }
+
+                            let alpha_comp = 0xff - alpha;
+                            let current = self.fb.get_unchecked(x, y);
+                            let r = (rgba >> 16) & 0xff;
+                            let g = (rgba >> 8) & 0xff;
+                            let b = rgba & 0xff;
+
+                            let r: u32 = (((current >> 24) & 0xff) * alpha_comp + r * alpha) / 0xff;
+                            let g: u32 = (((current >> 16) & 0xff) * alpha_comp + g * alpha) / 0xff;
+                            let b: u32 = (((current >> 8) & 0xff) * alpha_comp + b * alpha) / 0xff;
+
+                            self.fb.set(x, y, r << 16 | g << 8 | b);
+                            continue;
+                        }
+
+                        // ... for the efficient/lazy clients
+                        if unsafe { *buffer.get_unchecked(i + 2) } == b'\n' {
+                            last_byte_parsed = i + 2;
+                            i += 3; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
+
+                            let base = simd_unhex(unsafe { buffer.as_ptr().add(i - 3) }) & 0xff;
+
+                            let rgba: u32 = base << 16 | base << 8 | base;
+
+                            self.fb.set(x, y, rgba);
+
+                            continue;
+                        }
+                    }
+
+                    // End of command to read Pixel value
+                    if unsafe { *buffer.get_unchecked(i) } == b'\n' {
+                        last_byte_parsed = i;
+                        i += 1;
+                        if let Some(_rgb) = self.fb.get(x, y) {
+                            // match stream
+                            //     .write_all(
+                            //         format!(
+                            //             "PX {} {} {:06x}\n",
+                            //             // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
+                            //             x - self.connection_x_offset,
+                            //             y - self.connection_y_offset,
+                            //             rgb.to_be() >> 8
+                            //         )
+                            //         .as_bytes(),
+                            //     )
+                            //     .await
+                            // {
+                            //     Ok(_) => (),
+                            //     Err(_) => continue,
+                            // }
+                        }
+                        continue;
+                    }
+                }
+            } else if current_command & 0x00ff_ffff_ffff_ffff == OFFSET_PATTERN {
+                i += 7;
+
+                let (x, y, present) = parse_pixel_coordinates(buffer.as_ptr(), &mut i);
+
+                // End of command to set offset
+                if present && unsafe { *buffer.get_unchecked(i) } == b'\n' {
+                    last_byte_parsed = i;
+                    self.connection_x_offset = x;
+                    self.connection_y_offset = y;
+                    continue;
+                }
+            } else if current_command & 0xffff_ffff == SIZE_PATTERN {
+                i += 4;
+                last_byte_parsed = i - 1;
+
+                // stream
+                //     .write_all(
+                //         format!("SIZE {} {}\n", self.fb.get_width(), self.fb.get_height())
+                //             .as_bytes(),
+                //     )
+                //     .await
+                //     .expect("Failed to write bytes to tcp socket");
+                continue;
+            } else if current_command & 0xffff_ffff == HELP_PATTERN {
+                i += 4;
+                last_byte_parsed = i - 1;
+
+                #[allow(clippy::comparison_chain)]
+                if help_count < 3 {
+                    // stream
+                    //     .write_all(HELP_TEXT)
+                    //     .await
+                    //     .expect("Failed to write bytes to tcp socket");
+                    help_count += 1;
+                } else if help_count == 3 {
+                    // stream
+                    //     .write_all(ALT_HELP_TEXT)
+                    //     .await
+                    //     .expect("Failed to write bytes to tcp socket");
+                    help_count += 1;
+                }
+                continue;
+            }
+
+            i += 1;
+        }
+
+        Ok(last_byte_parsed.wrapping_sub(1))
+    }
 }
