@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::{cmp::min, net::IpAddr, sync::Arc, time::Duration};
 
 use breakwater_core::framebuffer::FrameBuffer;
+use breakwater_core::CONNECTION_DENIED_TEXT;
 use breakwater_parser::{original::OriginalParser, Parser, ParserError};
 use log::{debug, error, info};
 use memadvise::{Advice, MemAdviseError};
@@ -112,7 +113,10 @@ impl Server {
                         .send(StatisticsEvent::ConnectionDenied { ip })
                         .await
                         .context(WriteToStatisticsChannelSnafu)?;
-                    // Errors if session is dropped prematurely
+
+                    // Only best effort, it's ok if this message get's missed
+                    let _ = socket.write_all(CONNECTION_DENIED_TEXT).await;
+                    // This can error if a connection is dropped prematurely, which is totally fine
                     let _ = socket.shutdown().await;
                     continue;
                 }
