@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use breakwater_core::{framebuffer::FrameBuffer, test_helpers::DevNullTcpStream};
+use breakwater_core::framebuffer::FrameBuffer;
 #[cfg(target_arch = "x86_64")]
 use breakwater_parser::assembler::AssemblerParser;
 use breakwater_parser::{
@@ -95,10 +95,7 @@ fn invoke_benchmark(
                         _ => panic!("Parser implementation {parse_name} not known"),
                     };
 
-                    parser
-                        .parse(input, DevNullTcpStream::default())
-                        .await
-                        .expect("Failed to parse commands");
+                    parser.parse(input, &mut Vec::new());
                 });
         });
     }

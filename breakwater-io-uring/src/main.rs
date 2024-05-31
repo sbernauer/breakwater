@@ -8,7 +8,7 @@ use std::{
 };
 
 use breakwater_core::framebuffer::FrameBuffer;
-use breakwater_parser::{original::OriginalParser, SyncParser};
+use breakwater_parser::{original::OriginalParser, Parser};
 use io_uring::{opcode, squeue, types::Fd, IoUring};
 use snafu::{ResultExt, Snafu};
 use tracing::Level;
@@ -259,10 +259,11 @@ fn handle_cqes(
     ring: &mut IoUring,
     worker_fds_cycle: &mut impl Iterator<Item = i32>,
     backlog: &mut VecDeque<squeue::Entry>,
-    worker_bufs: &Box<[u8; BUFFER_COUNT * BUFFER_SIZE]>,
+    worker_bufs: &[u8; BUFFER_COUNT * BUFFER_SIZE],
     provide_buffers: &mut Vec<u16>,
 ) -> Result<(), Error> {
     let mut parser = OriginalParser::new(fb);
+    let mut response_buffer = Vec::new();
 
     let (_submitter, mut sq, mut cq) = ring.split();
 
@@ -375,7 +376,10 @@ fn handle_cqes(
                         unsafe { worker_bufs.as_ptr().add(BUFFER_SIZE * buf_id as usize) };
                     let buf = unsafe { std::slice::from_raw_parts(buf_ptr, BUFFER_SIZE) };
 
-                    parser.parse_sync(buf).expect("parsing failed");
+                    parser.parse(buf, &mut response_buffer);
+                    // TODO: Send before clearing
+                    // Clearing here to not grow indefenitely
+                    response_buffer.clear();
 
                     if intrinsics::unlikely(!io_uring::cqueue::more(cqe.flags())) {
                         // kernel wont emit any more cqe for this request

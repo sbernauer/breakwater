@@ -2,8 +2,6 @@
 #![feature(portable_simd)]
 
 use enum_dispatch::enum_dispatch;
-use snafu::Snafu;
-use tokio::io::AsyncWriteExt;
 
 #[cfg(target_arch = "x86_64")]
 pub mod assembler;
@@ -11,28 +9,12 @@ pub mod memchr;
 pub mod original;
 pub mod refactored;
 
-#[derive(Debug, Snafu)]
-pub enum ParserError {
-    #[snafu(display("Failed to write to TCP socket"))]
-    WriteToTcpSocket { source: std::io::Error },
-}
-
 #[enum_dispatch(ParserImplementation)]
-// According to https://blog.rust-lang.org/2023/12/21/async-fn-rpit-in-traits.html
-#[trait_variant::make(SendParser: Send)]
 pub trait Parser {
-    async fn parse(
-        &mut self,
-        buffer: &[u8],
-        stream: impl AsyncWriteExt + Send + Unpin,
-    ) -> Result<usize, ParserError>;
+    fn parse(&mut self, buffer: &[u8], response: &mut Vec<u8>) -> usize;
 
     // Sadly this cant be const (yet?) (https://github.com/rust-lang/rust/issues/71971 and https://github.com/rust-lang/rfcs/pull/2632)
     fn parser_lookahead(&self) -> usize;
-}
-
-pub trait SyncParser {
-    fn parse_sync(&mut self, buffer: &[u8]) -> Result<usize, ParserError>;
 }
 
 #[enum_dispatch]
