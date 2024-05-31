@@ -22,4 +22,4 @@ if cfg!(feature = "alpha") {
 ).as_bytes();
 
 pub const ALT_HELP_TEXT: &[u8] = b"Stop spamming HELP!\n";
-pub const CONNECTION_DENIED_TEXT: &[u8] = b"Connection denied because connection limit reached";
+pub const CONNECTION_DENIED_TEXT: &[u8] = b"Connection denied as  connection limit is reached";
