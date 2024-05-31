@@ -1,0 +1,23 @@
+[package]
+name = "breakwater-io-uring"
+description = "Pixelflut server using io_uring"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "breakwater-io-uring"
+path = "src/main.rs"
+
+[dependencies]
+breakwater-core.workspace = true
+breakwater-parser.workspace = true
+
+num_cpus.workspace = true
+io-uring.workspace = true
+snafu.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+libc.workspace = true

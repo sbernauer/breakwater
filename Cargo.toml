@@ -1,5 +1,5 @@
 [workspace]
-members = ["breakwater-core", "breakwater-parser", "breakwater"]
+members = ["breakwater-core", "breakwater-parser", "breakwater", "breakwater-io-uring"]
 resolver = "2"
 
 [workspace.package]
@@ -16,9 +16,12 @@ const_format = "0.2"
 criterion = {version = "0.5", features = ["async_tokio"]}
 enum_dispatch = "0.3"
 env_logger = "0.11"
+io-uring = "0.6"
+libc = "0.2"
 log = "0.4"
 memadvise = "0.1"
 memchr = "2.7"
+num_cpus = "1.0"
 number_prefix = "0.4"
 page_size = "0.6"
 pixelbomber = "0.6"
@@ -31,6 +34,8 @@ simple_moving_average = "1.0"
 snafu = "0.8"
 thread-priority = "1.1"
 tokio = { version = "1.37", features = ["fs", "rt-multi-thread", "net", "io-util", "macros", "process", "signal", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 trait-variant = "0.1"
 vncserver = "0.2"
 
