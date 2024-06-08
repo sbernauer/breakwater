@@ -3,9 +3,8 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::{cmp::min, net::IpAddr, sync::Arc, time::Duration};
 
-use breakwater_core::framebuffer::FrameBuffer;
-use breakwater_core::CONNECTION_DENIED_TEXT;
-use breakwater_parser::{original::OriginalParser, Parser, ParserError};
+use breakwater_core::{framebuffer::FrameBuffer, CONNECTION_DENIED_TEXT};
+use breakwater_parser::{original::OriginalParser, Parser};
 use log::{debug, info, warn};
 use memadvise::{Advice, MemAdviseError};
 use snafu::{ResultExt, Snafu};
@@ -32,13 +31,13 @@ pub enum Error {
     #[snafu(display("Failed to accept new client connection"))]
     AcceptNewClientConnection { source: std::io::Error },
 
+    #[snafu(display("Failed to write to client connection"))]
+    WriteToClientConnection { source: std::io::Error },
+
     #[snafu(display("Failed to write to statistics channel"))]
     WriteToStatisticsChannel {
         source: mpsc::error::SendError<StatisticsEvent>,
     },
-
-    #[snafu(display("Failed to parse Pixelflut commands"))]
-    ParsePixelflutCommands { source: ParserError },
 }
 
 pub struct Server {
@@ -161,6 +160,7 @@ pub async fn handle_connection(
     let layout = alloc::Layout::from_size_align(network_buffer_size, page_size).unwrap();
     let ptr = unsafe { alloc::alloc(layout) };
     let buffer = unsafe { std::slice::from_raw_parts_mut(ptr, network_buffer_size) };
+    let mut response_buf = Vec::new();
 
     if let Err(err) = memadvise::advise(buffer.as_ptr() as _, buffer.len(), Advice::Sequential) {
         // [`MemAdviseError`] does not implement Debug...
@@ -233,10 +233,16 @@ pub async fn handle_connection(
                 *i = 0;
             }
 
-            let last_byte_parsed = parser
-                .parse(&buffer[..data_end + parser_lookahead], &mut stream)
-                .await
-                .context(ParsePixelflutCommandsSnafu)?;
+            let last_byte_parsed =
+                parser.parse(&buffer[..data_end + parser_lookahead], &mut response_buf);
+
+            if !response_buf.is_empty() {
+                stream
+                    .write_all(&response_buf)
+                    .await
+                    .context(WriteToClientConnectionSnafu)?;
+                response_buf.clear();
+            }
 
             // IMPORTANT: We have to subtract 1 here, as e.g. we have "PX 0 0\n" data_end is 7 and parser_state.last_byte_parsed is 6.
             // This happens, because last_byte_parsed is an index starting at 0, so index 6 is from an array of length 7

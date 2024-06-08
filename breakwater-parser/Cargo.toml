@@ -17,7 +17,6 @@ breakwater-core.workspace = true
 enum_dispatch.workspace = true
 memchr.workspace = true
 snafu.workspace = true
-tokio.workspace = true
 trait-variant.workspace = true
 
 [dev-dependencies]

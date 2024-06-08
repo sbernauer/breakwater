@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use breakwater_core::{framebuffer::FrameBuffer, test_helpers::DevNullTcpStream};
+use breakwater_core::framebuffer::FrameBuffer;
 #[cfg(target_arch = "x86_64")]
 use breakwater_parser::assembler::AssemblerParser;
 use breakwater_parser::{
@@ -80,26 +80,20 @@ fn invoke_benchmark(
 
     for parse_name in parser_names {
         c_group.bench_with_input(parse_name, &commands, |b, input| {
-            b.to_async(tokio::runtime::Runtime::new().expect("Failed to start tokio runtime"))
-                .iter(|| async {
-                    let mut parser = match parse_name {
-                        "original" => {
-                            ParserImplementation::Original(OriginalParser::new(fb.clone()))
-                        }
-                        "refactored" => {
-                            ParserImplementation::Refactored(RefactoredParser::new(fb.clone()))
-                        }
-                        "memchr" => ParserImplementation::Naive(MemchrParser::new(fb.clone())),
-                        #[cfg(target_arch = "x86_64")]
-                        "assembler" => ParserImplementation::Assembler(AssemblerParser::default()),
-                        _ => panic!("Parser implementation {parse_name} not known"),
-                    };
+            b.iter(|| {
+                let mut parser = match parse_name {
+                    "original" => ParserImplementation::Original(OriginalParser::new(fb.clone())),
+                    "refactored" => {
+                        ParserImplementation::Refactored(RefactoredParser::new(fb.clone()))
+                    }
+                    "memchr" => ParserImplementation::Naive(MemchrParser::new(fb.clone())),
+                    #[cfg(target_arch = "x86_64")]
+                    "assembler" => ParserImplementation::Assembler(AssemblerParser::default()),
+                    _ => panic!("Parser implementation {parse_name} not known"),
+                };
 
-                    parser
-                        .parse(input, DevNullTcpStream::default())
-                        .await
-                        .expect("Failed to parse commands");
-                });
+                parser.parse(input, &mut Vec::new());
+            });
         });
     }
 }

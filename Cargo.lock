@@ -214,7 +214,6 @@ dependencies = [
  "memchr",
  "pixelbomber",
  "snafu",
- "tokio",
  "trait-variant",
 ]
 

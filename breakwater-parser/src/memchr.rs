@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 use breakwater_core::framebuffer::FrameBuffer;
-use tokio::io::AsyncWriteExt;
 
-use crate::{Parser, ParserError};
+use crate::Parser;
 
 pub struct MemchrParser {
     fb: Arc<FrameBuffer>,
@@ -16,11 +15,7 @@ impl MemchrParser {
 }
 
 impl Parser for MemchrParser {
-    async fn parse(
-        &mut self,
-        buffer: &[u8],
-        _stream: impl AsyncWriteExt + Send + Unpin,
-    ) -> Result<usize, ParserError> {
+    fn parse(&mut self, buffer: &[u8], _response: &mut Vec<u8>) -> usize {
         let mut last_char_after_newline = 0;
         for newline in memchr::memchr_iter(b'\n', buffer) {
             // TODO Use get_unchecked everywhere
@@ -68,7 +63,7 @@ impl Parser for MemchrParser {
             }
         }
 
-        Ok(last_char_after_newline.saturating_sub(1))
+        last_char_after_newline.saturating_sub(1)
     }
 
     fn parser_lookahead(&self) -> usize {
