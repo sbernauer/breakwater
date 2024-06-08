@@ -6,7 +6,7 @@ use std::{cmp::min, net::IpAddr, sync::Arc, time::Duration};
 use breakwater_core::framebuffer::FrameBuffer;
 use breakwater_core::CONNECTION_DENIED_TEXT;
 use breakwater_parser::{original::OriginalParser, Parser, ParserError};
-use log::{debug, error, info};
+use log::{debug, info, warn};
 use memadvise::{Advice, MemAdviseError};
 use snafu::{ResultExt, Snafu};
 use tokio::{
@@ -170,7 +170,7 @@ pub async fn handle_connection(
             MemAdviseError::UnalignedAddress => "UnalignedAddress",
             MemAdviseError::InvalidRange => "InvalidRange",
         };
-        error!("Failed to memadvise buffer to kernel, propably having some performance degration: {err}");
+        warn!("Failed to memadvise sequential read access for buffer to kernel. This should not effect any client connections, but might having some minor performance degration: {err}");
     }
 
     // Number bytes left over **on the first bytes of the buffer** from the previous loop iteration

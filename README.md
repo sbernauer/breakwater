@@ -157,6 +157,17 @@ This should work the same way as streaming to owncast.
 Simply uncomment the `breakwater` command and adopt `--rtmp-address` accordingly.
 I never used this for a longer time period, so happy about feedback!
 
+# Known issues
+
+## Failed to memadvise sequential read access for buffer to kernel
+
+During high traffic at GPN22 a few warnings where raised as breakwater was not able to memadvise the created buffer to the kernel.
+
+This *should* not happen, as we allocate the memory area directly before but who knows.
+The memadvise is only on a best-effort base, client connections while still be served even if the call fails.
+The worst thing that should happen is a minimal performance degradation.
+Have a look at [the issue report](https://github.com/sbernauer/breakwater/issues/28) for details.
+
 # Performance
 
 ## Laptop
@@ -177,6 +188,7 @@ These are the results of different Pixelflut servers:
 | [Breakwater](https://github.com/sbernauer/breakwater)                   | Rust     | 30 Gbit/s                | 22 Gbit/s               |
 
 ## Server
+
 As I don't have access to a dedicated server any more I did run the following benchmark on a Hetzner sever.
 
 Server type: [`CCX62`](https://www.hetzner.com/cloud) with `48` dedicated AMD EPYC cores and `192` GB RAM.
