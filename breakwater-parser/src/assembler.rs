@@ -1,8 +1,6 @@
 use std::arch::asm;
 
-use tokio::io::AsyncWriteExt;
-
-use crate::{Parser, ParserError};
+use crate::Parser;
 
 const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
 
@@ -10,11 +8,7 @@ const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest poss
 pub struct AssemblerParser {}
 
 impl Parser for AssemblerParser {
-    async fn parse(
-        &mut self,
-        buffer: &[u8],
-        _stream: impl AsyncWriteExt + Send + Unpin,
-    ) -> Result<usize, ParserError> {
+    fn parse(&mut self, buffer: &[u8], _response: &mut Vec<u8>) -> usize {
         let mut last_byte_parsed = 0;
 
         // This loop does nothing and should be seen as a placeholder
@@ -33,7 +27,7 @@ impl Parser for AssemblerParser {
             )
         }
 
-        Ok(last_byte_parsed)
+        last_byte_parsed
     }
 
     fn parser_lookahead(&self) -> usize {

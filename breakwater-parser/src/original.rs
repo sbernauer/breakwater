@@ -4,9 +4,8 @@ use std::{
 };
 
 use breakwater_core::{framebuffer::FrameBuffer, ALT_HELP_TEXT, HELP_TEXT};
-use tokio::io::AsyncWriteExt;
 
-use crate::{Parser, ParserError};
+use crate::Parser;
 
 pub const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
 
@@ -32,11 +31,7 @@ impl OriginalParser {
 }
 
 impl Parser for OriginalParser {
-    async fn parse(
-        &mut self,
-        buffer: &[u8],
-        mut stream: impl AsyncWriteExt + Send + Unpin,
-    ) -> Result<usize, ParserError> {
+    fn parse(&mut self, buffer: &[u8], response: &mut Vec<u8>) -> usize {
         let mut last_byte_parsed = 0;
         let mut help_count = 0;
 
@@ -131,22 +126,16 @@ impl Parser for OriginalParser {
                         last_byte_parsed = i;
                         i += 1;
                         if let Some(rgb) = self.fb.get(x, y) {
-                            match stream
-                                .write_all(
-                                    format!(
-                                        "PX {} {} {:06x}\n",
-                                        // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
-                                        x - self.connection_x_offset,
-                                        y - self.connection_y_offset,
-                                        rgb.to_be() >> 8
-                                    )
-                                    .as_bytes(),
+                            response.extend_from_slice(
+                                format!(
+                                    "PX {} {} {:06x}\n",
+                                    // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
+                                    x - self.connection_x_offset,
+                                    y - self.connection_y_offset,
+                                    rgb.to_be() >> 8
                                 )
-                                .await
-                            {
-                                Ok(_) => (),
-                                Err(_) => continue,
-                            }
+                                .as_bytes(),
+                            );
                         }
                         continue;
                     }
@@ -167,31 +156,26 @@ impl Parser for OriginalParser {
                 i += 4;
                 last_byte_parsed = i - 1;
 
-                stream
-                    .write_all(
-                        format!("SIZE {} {}\n", self.fb.get_width(), self.fb.get_height())
-                            .as_bytes(),
-                    )
-                    .await
-                    .expect("Failed to write bytes to tcp socket");
+                response.extend_from_slice(
+                    format!("SIZE {} {}\n", self.fb.get_width(), self.fb.get_height()).as_bytes(),
+                );
                 continue;
             } else if current_command & 0xffff_ffff == HELP_PATTERN {
                 i += 4;
                 last_byte_parsed = i - 1;
 
-                #[allow(clippy::comparison_chain)]
-                if help_count < 3 {
-                    stream
-                        .write_all(HELP_TEXT)
-                        .await
-                        .expect("Failed to write bytes to tcp socket");
-                    help_count += 1;
-                } else if help_count == 3 {
-                    stream
-                        .write_all(ALT_HELP_TEXT)
-                        .await
-                        .expect("Failed to write bytes to tcp socket");
-                    help_count += 1;
+                match help_count {
+                    0..=2 => {
+                        response.extend_from_slice(HELP_TEXT);
+                        help_count += 1;
+                    }
+                    3 => {
+                        response.extend_from_slice(ALT_HELP_TEXT);
+                        help_count += 1;
+                    }
+                    _ => {
+                        // The client has requested the help to often, let's just ignore it
+                    }
                 }
                 continue;
             }
@@ -199,7 +183,7 @@ impl Parser for OriginalParser {
             i += 1;
         }
 
-        Ok(last_byte_parsed.wrapping_sub(1))
+        last_byte_parsed.wrapping_sub(1)
     }
 
     fn parser_lookahead(&self) -> usize {
