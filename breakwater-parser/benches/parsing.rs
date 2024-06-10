@@ -64,10 +64,23 @@ fn invoke_benchmark(
             .shuffle(shuffle)
             .offset_usage(use_offset)
             .gray_usage(use_gray)
+            .chunks(1)
             .build(),
-    )
-    .pop()
-    .expect("Fail to retrieve Pixelflut commands");
+    );
+
+    assert_eq!(
+        commands.len(),
+        1,
+        "The returned commands should only return a single image",
+    );
+    let commands = commands.first().unwrap();
+
+    assert_eq!(
+        commands.len(),
+        1,
+        "The returned commands should only return a single chunk",
+    );
+    let commands = commands.first().unwrap();
 
     let mut c_group = c.benchmark_group(bench_name);
 
