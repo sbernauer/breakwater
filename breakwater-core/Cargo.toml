@@ -13,3 +13,4 @@ tokio.workspace = true
 
 [features]
 alpha = []
+binary-commands = []
