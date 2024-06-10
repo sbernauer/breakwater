@@ -123,17 +123,17 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --no-default-features
+          args: --no-default-features --all-targets
       - name: Test with all features turned on
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all-features
-      - name: Test vnc features
+          args: --all-features --all-targets
+      - name: Test vnc feature
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --no-default-features --features vnc
+          args: --no-default-features --features vnc --all-targets
 
   run_build:
     name: Build for ${{ matrix.target }}

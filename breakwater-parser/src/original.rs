@@ -10,6 +10,7 @@ use crate::Parser;
 pub const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
 
 pub(crate) const PX_PATTERN: u64 = string_to_number(b"PX \0\0\0\0\0");
+pub(crate) const PB_PATTERN: u64 = string_to_number(b"PB\0\0\0\0\0\0");
 pub(crate) const OFFSET_PATTERN: u64 = string_to_number(b"OFFSET \0\0");
 pub(crate) const SIZE_PATTERN: u64 = string_to_number(b"SIZE\0\0\0\0");
 pub(crate) const HELP_PATTERN: u64 = string_to_number(b"HELP\0\0\0\0");
@@ -140,6 +141,21 @@ impl Parser for OriginalParser {
                         continue;
                     }
                 }
+            // In case the feature is disabled this if should be optimized away, as "cfg!" should be a constant expression.
+            } else if cfg!(feature = "binary-commands")
+                && current_command & 0x0000_ffff == PB_PATTERN
+            {
+                let command_bytes =
+                    unsafe { (buffer.as_ptr().add(i + 2) as *const u64).read_unaligned() };
+
+                let x = u16::from_le((command_bytes) as u16);
+                let y = u16::from_le((command_bytes >> 16) as u16);
+                let rgba = u32::from_le((command_bytes >> 32) as u32);
+
+                self.fb.set(x as usize, y as usize, rgba & 0x00ff_ffff);
+
+                i += 10;
+                continue;
             } else if current_command & 0x00ff_ffff_ffff_ffff == OFFSET_PATTERN {
                 i += 7;
 

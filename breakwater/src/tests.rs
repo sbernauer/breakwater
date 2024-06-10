@@ -136,6 +136,44 @@ async fn test_setting_pixel(
     assert_eq!(expected, stream.get_output());
 }
 
+#[cfg(feature = "binary-commands")]
+#[rstest]
+// No newline in between needed
+#[case("PB\0\0\0\0\0\0\0\0PX 0 0\n", "PX 0 0 000000\n")]
+#[case("PB\0\0\0\01234PX 0 0\n", "PX 0 0 313233\n")]
+#[case("PB\0\0\0\0\0\0\0\0PB\0\0\0\01234PX 0 0\n", "PX 0 0 313233\n")]
+#[case(
+    "PB\0\0\0\0\0\0\0\0PX 0 0\nPB\0\0\0\01234PX 0 0\n",
+    "PX 0 0 000000\nPX 0 0 313233\n"
+)]
+#[case("PB \0*\0____PX 32 42\n", "PX 32 42 5f5f5f\n")]
+#[tokio::test]
+async fn test_binary_commands(
+    #[case] input: &str,
+    #[case] expected: &str,
+    ip: IpAddr,
+    fb: Arc<FrameBuffer>,
+    statistics_channel: (
+        mpsc::Sender<StatisticsEvent>,
+        mpsc::Receiver<StatisticsEvent>,
+    ),
+) {
+    let mut stream = MockTcpStream::from_input(input);
+    handle_connection(
+        &mut stream,
+        ip,
+        fb,
+        statistics_channel.0,
+        DEFAULT_NETWORK_BUFFER_SIZE,
+        page_size::get(),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(expected, stream.get_output());
+}
+
 #[rstest]
 #[case("PX 0 0 aaaaaa\n")]
 #[case("PX 0 0 aa\n")]
@@ -180,8 +218,8 @@ async fn test_safe(
 #[case(479, 361, 721, 391)]
 #[case(500, 500, 0, 0)]
 #[case(500, 500, 300, 400)]
-#[case(fb().get_width(), fb().get_height(), 0, 0)]
-#[case(fb().get_width() - 1, fb().get_height() - 1, 1, 1)]
+// Yes, this exceeds the framebuffer size
+#[case(10, 10, fb().get_width(), fb().get_height())]
 #[tokio::test]
 async fn test_drawing_rect(
     #[case] width: usize,
