@@ -64,13 +64,23 @@ fn invoke_benchmark(
             .shuffle(shuffle)
             .offset_usage(use_offset)
             .gray_usage(use_gray)
+            .chunks(1)
             .build(),
-    )
-    .pop()
-    .expect("Fail to retrieve Pixelflut commands");
-    // We might be able to use `std::mem::transmute` for better performance here, but this is just setting up a
-    // benchmark, so IMHO not worth using unsafe.
-    let commands = commands.iter().flatten().cloned().collect::<Vec<u8>>();
+    );
+
+    assert_eq!(
+        commands.len(),
+        1,
+        "The returned commands should only return a single image",
+    );
+    let commands = commands.first().unwrap();
+
+    assert_eq!(
+        commands.len(),
+        1,
+        "The returned commands should only return a single chunk",
+    );
+    let commands = commands.first().unwrap();
 
     let mut c_group = c.benchmark_group(bench_name);
 
