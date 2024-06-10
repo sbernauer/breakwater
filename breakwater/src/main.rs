@@ -78,6 +78,7 @@ pub enum Error {
 }
 
 #[tokio::main]
+#[snafu::report]
 async fn main() -> Result<(), Error> {
     if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "info")
