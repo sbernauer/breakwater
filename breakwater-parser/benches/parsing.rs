@@ -68,6 +68,9 @@ fn invoke_benchmark(
     )
     .pop()
     .expect("Fail to retrieve Pixelflut commands");
+    // We might be able to use `std::mem::transmute` for better performance here, but this is just setting up a
+    // benchmark, so IMHO not worth using unsafe.
+    let commands = commands.iter().flatten().cloned().collect::<Vec<u8>>();
 
     let mut c_group = c.benchmark_group(bench_name);
 
