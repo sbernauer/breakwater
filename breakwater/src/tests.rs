@@ -147,6 +147,11 @@ async fn test_setting_pixel(
     "PX 0 0 000000\nPX 0 0 313233\n"
 )]
 #[case("PB \0*\0____PX 32 42\n", "PX 32 42 5f5f5f\n")]
+// Also test that there can be newlines in between
+#[case(
+    "PB\0\0\0\0\0\0\0\0\nPX 0 0\nPB\0\0\0\01234\n\n\nPX 0 0\n",
+    "PX 0 0 000000\nPX 0 0 313233\n"
+)]
 #[tokio::test]
 async fn test_binary_commands(
     #[case] input: &str,
