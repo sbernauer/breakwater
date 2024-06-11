@@ -152,6 +152,7 @@ impl Parser for OriginalParser {
                 let y = u16::from_le((command_bytes >> 16) as u16);
                 let rgba = u32::from_le((command_bytes >> 32) as u32);
 
+                // TODO: Support alpha channel (behind alpha feature flag)
                 self.fb.set(x as usize, y as usize, rgba & 0x00ff_ffff);
 
                 i += 10;

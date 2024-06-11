@@ -18,6 +18,8 @@ Commands must be sent newline-separated, for more details see [Pixelflut](https:
 * `PX x y rrggbbaa`: Color the pixel (x,y) with the given hexadecimal color rrggbb (alpha channel is ignored for now), e.g. `PX 10 10 ff0000ff`
 * `PX x y gg`: Color the pixel (x,y) with the hexadecimal color gggggg. Basically this is the same as the other commands, but is a more efficient way of filling white, black or gray areas, e.g. `PX 10 10 00` to paint black
 * `PX x y`: Get the color value of the pixel (x,y), e.g. `PX 10 10`
+* `PBxxyyrgba`: Binary version of the `PX` command. `x` and `y` are little-endian 16 bit coordinates, `r`, `g`, `b` and `a` are a byte each. There is **no** newline after the command.
+Tipp: For most use-cases this is the most efficient format with 10 bytes per pixel ;)
 * `SIZE`: Get the size of the drawing surface, e.g. `SIZE 1920 1080`
 * `OFFSET x y`: Apply offset (x,y) to all further pixel draws on this connection. This can e.g. be used to pre-calculate an image/animation and simply use the OFFSET command to move it around the screen without the need to re-calculate it, e.g. `OFFSET 100 100`
 
@@ -60,6 +62,8 @@ Options:
           Height of the drawing surface [default: 720]
   -f, --fps <FPS>
           Frames per second the server should aim for [default: 30]
+      --network-buffer-size <NETWORK_BUFFER_SIZE>
+          The size in bytes of the network buffer used for each open TCP connection. Please use at least 64 KB (64_000 bytes) [default: 262144]
   -t, --text <TEXT>
           Text to display on the screen. The text will be followed by "on <listen_address>" [default: "Pixelflut server (breakwater)"]
       --font <FONT>
@@ -78,6 +82,8 @@ Options:
           Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4
   -v, --vnc-port <VNC_PORT>
           Port of the VNC server [default: 5900]
+  -c, --connections-per-ip <CONNECTIONS_PER_IP>
+          Allow only a certain number of connections per ip address
   -h, --help
           Print help
   -V, --version
