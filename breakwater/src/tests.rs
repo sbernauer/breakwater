@@ -20,7 +20,8 @@ fn ip() -> IpAddr {
 
 #[fixture]
 fn fb() -> Arc<FrameBuffer> {
-    Arc::new(FrameBuffer::new(1920, 1080))
+    // We keep the framebuffer so small, so that we can easily test all pixels in a test run
+    Arc::new(FrameBuffer::new(640, 480))
 }
 
 #[fixture]
@@ -37,13 +38,13 @@ fn statistics_channel() -> (
 #[case("\n", "")]
 #[case("not a pixelflut command", "")]
 #[case("not a pixelflut command with newline\n", "")]
-#[case("SIZE", "SIZE 1920 1080\n")]
-#[case("SIZE\n", "SIZE 1920 1080\n")]
-#[case("SIZE\nSIZE\n", "SIZE 1920 1080\nSIZE 1920 1080\n")]
-#[case("SIZE", "SIZE 1920 1080\n")]
+#[case("SIZE", "SIZE 640 480\n")]
+#[case("SIZE\n", "SIZE 640 480\n")]
+#[case("SIZE\nSIZE\n", "SIZE 640 480\nSIZE 640 480\n")]
+#[case("SIZE", "SIZE 640 480\n")]
 #[case("HELP", std::str::from_utf8(HELP_TEXT).unwrap())]
 #[case("HELP\n", std::str::from_utf8(HELP_TEXT).unwrap())]
-#[case("bla bla bla\nSIZE\nblub\nbla", "SIZE 1920 1080\n")]
+#[case("bla bla bla\nSIZE\nblub\nbla", "SIZE 640 480\n")]
 #[tokio::test]
 async fn test_correct_responses_to_general_commands(
     #[case] input: &str,
@@ -248,8 +249,8 @@ async fn test_drawing_rect(
     let mut read_other_pixels_commands = String::new();
     let mut read_other_pixels_commands_expected = String::new();
 
-    for x in 0..height {
-        for y in 0..height {
+    for x in 0..fb.get_width() {
+        for y in 0..fb.get_height() {
             // Inside the rect
             if x >= offset_x && x <= offset_x + width && y >= offset_y && y <= offset_y + height {
                 fill_commands += &format!("PX {x} {y} {color:06x}\n");
