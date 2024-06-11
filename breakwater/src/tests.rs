@@ -1,3 +1,5 @@
+#![allow(clippy::octal_escapes)]
+
 use std::{
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
