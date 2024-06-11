@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Support binary protocol ([#XX])
+- Support binary protocol ([#33])
 - Try to improve performance by calling `madvise` to inform Kernel we are reading sequentially ([#24])
 - Expose metric on denied connection counts ([#26])
 - Print nicer error messages ([#32])
@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file.
 [#25]: https://github.com/sbernauer/breakwater/pull/25
 [#26]: https://github.com/sbernauer/breakwater/pull/26
 [#32]: https://github.com/sbernauer/breakwater/pull/32
+[#33]: https://github.com/sbernauer/breakwater/pull/33
 
 ## [0.14.0] - 2024-05-30 at GPN 22 :)
 
