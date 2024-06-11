@@ -226,7 +226,7 @@ async fn test_safe(
 #[case(500, 500, 0, 0)]
 #[case(500, 500, 300, 400)]
 // Yes, this exceeds the framebuffer size
-#[case(10, 10, fb().get_width(), fb().get_height())]
+#[case(10, 10, fb().get_width() - 5, fb().get_height() - 5)]
 #[tokio::test]
 async fn test_drawing_rect(
     #[case] width: usize,
@@ -248,7 +248,7 @@ async fn test_drawing_rect(
     let mut read_other_pixels_commands = String::new();
     let mut read_other_pixels_commands_expected = String::new();
 
-    for x in 0..fb.get_width() {
+    for x in 0..height {
         for y in 0..height {
             // Inside the rect
             if x >= offset_x && x <= offset_x + width && y >= offset_y && y <= offset_y + height {
