@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.15.0] - 2024-06-12
+
 ### Added
 
 - Support binary protocol ([#33])

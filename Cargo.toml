@@ -3,7 +3,7 @@ members = ["breakwater-core", "breakwater-parser", "breakwater"]
 resolver = "2"
 
 [workspace.package]
-version = "0.14.0"
+version = "0.15.0"
 license = "Beerware"
 authors = ["Sebastian Bernauer <bernauerse@web.de>"]
 edition = "2021"
@@ -35,8 +35,8 @@ trait-variant = "0.1"
 vncserver = "0.2"
 
 # Uses the given path when used locally, and uses the specified version from crates.io when published.
-breakwater-core = { path = "breakwater-core", version = "0.14" }
-breakwater-parser = { path = "breakwater-parser", version = "0.14" }
+breakwater-core = { path = "breakwater-core", version = "0.15.0" }
+breakwater-parser = { path = "breakwater-parser", version = "0.15.0" }
 
 [profile.dev]
 opt-level = 3

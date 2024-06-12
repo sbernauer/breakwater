@@ -236,7 +236,7 @@ checksum = "7c12d1856e42f0d817a835fe55853957c85c8c8a470114029143d3f12671446e"
 
 [[package]]
 name = "breakwater"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "breakwater-core",
  "breakwater-parser",
@@ -262,7 +262,7 @@ dependencies = [
 
 [[package]]
 name = "breakwater-core"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "const_format",
  "tokio",
@@ -270,7 +270,7 @@ dependencies = [
 
 [[package]]
 name = "breakwater-parser"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "breakwater-core",
  "criterion",
