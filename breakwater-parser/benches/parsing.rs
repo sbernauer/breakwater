@@ -21,12 +21,23 @@ fn compare_implementations(c: &mut Criterion) {
         false,
         false,
         false,
+        false,
+    );
+    invoke_benchmark(
+        c,
+        "parse_binary_draw_commands",
+        "benches/non-transparent.png",
+        false,
+        false,
+        false,
+        true,
     );
     invoke_benchmark(
         c,
         "parse_draw_commands_unordered",
         "benches/non-transparent.png",
         true,
+        false,
         false,
         false,
     );
@@ -37,6 +48,7 @@ fn compare_implementations(c: &mut Criterion) {
         true,
         true,
         false,
+        false,
     );
     invoke_benchmark(
         c,
@@ -45,6 +57,7 @@ fn compare_implementations(c: &mut Criterion) {
         false,
         false,
         true,
+        false,
     );
 }
 
@@ -55,6 +68,7 @@ fn invoke_benchmark(
     shuffle: bool,
     use_offset: bool,
     use_gray: bool,
+    binary_usage: bool,
 ) {
     let commands = image_handler::load(
         vec![image],
@@ -64,6 +78,7 @@ fn invoke_benchmark(
             .shuffle(shuffle)
             .offset_usage(use_offset)
             .gray_usage(use_gray)
+            .binary_usage(binary_usage)
             .chunks(1)
             .build(),
     );
@@ -86,10 +101,10 @@ fn invoke_benchmark(
 
     let fb = Arc::new(FrameBuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT));
 
-    #[cfg(target_arch = "x86_64")]
-    let parser_names = ["original", "refactored", "memchr", "assembler"];
-    #[cfg(not(target_arch = "x86_64"))]
-    let parser_names = ["original", "refactored", "memchr"];
+    let parser_names = vec!["original", "refactored" /*"memchr"*/];
+
+    // #[cfg(target_arch = "x86_64")]
+    // parser_names.push("assembler");
 
     for parse_name in parser_names {
         c_group.bench_with_input(parse_name, &commands, |b, input| {

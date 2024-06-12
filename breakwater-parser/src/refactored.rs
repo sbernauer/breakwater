@@ -4,7 +4,8 @@ use breakwater_core::{framebuffer::FrameBuffer, HELP_TEXT};
 
 use crate::{
     original::{
-        parse_pixel_coordinates, simd_unhex, HELP_PATTERN, OFFSET_PATTERN, PX_PATTERN, SIZE_PATTERN,
+        parse_pixel_coordinates, simd_unhex, HELP_PATTERN, OFFSET_PATTERN, PB_PATTERN, PX_PATTERN,
+        SIZE_PATTERN,
     },
     Parser,
 };
@@ -81,6 +82,24 @@ impl RefactoredParser {
         } else {
             (idx, previous)
         }
+    }
+
+    #[inline(always)]
+    fn handle_binary_pixel(&self, buffer: &[u8], mut idx: usize) -> (usize, usize) {
+        let previous = idx;
+        idx += 2;
+
+        let command_bytes = unsafe { (buffer.as_ptr().add(idx) as *const u64).read_unaligned() };
+
+        let x = u16::from_le((command_bytes) as u16);
+        let y = u16::from_le((command_bytes >> 16) as u16);
+        let rgba = u32::from_le((command_bytes >> 32) as u32);
+
+        // TODO: Support alpha channel (behind alpha feature flag)
+        self.fb.set(x as usize, y as usize, rgba & 0x00ff_ffff);
+
+        idx += 8;
+        (idx, previous)
     }
 
     #[inline(always)]
@@ -185,6 +204,10 @@ impl Parser for RefactoredParser {
                 unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };
             if current_command & 0x00ff_ffff == PX_PATTERN {
                 (i, last_byte_parsed) = self.handle_pixel(buffer, i, response);
+            } else if cfg!(feature = "binary-commands")
+                && current_command & 0x0000_ffff == PB_PATTERN
+            {
+                (i, last_byte_parsed) = self.handle_binary_pixel(buffer, i);
             } else if current_command & 0x00ff_ffff_ffff_ffff == OFFSET_PATTERN {
                 i += 7;
                 self.handle_offset(&mut i, buffer);

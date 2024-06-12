@@ -1,3 +1,5 @@
+#![allow(clippy::octal_escapes)]
+
 use std::{
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
@@ -18,7 +20,8 @@ fn ip() -> IpAddr {
 
 #[fixture]
 fn fb() -> Arc<FrameBuffer> {
-    Arc::new(FrameBuffer::new(1920, 1080))
+    // We keep the framebuffer so small, so that we can easily test all pixels in a test run
+    Arc::new(FrameBuffer::new(640, 480))
 }
 
 #[fixture]
@@ -35,13 +38,13 @@ fn statistics_channel() -> (
 #[case("\n", "")]
 #[case("not a pixelflut command", "")]
 #[case("not a pixelflut command with newline\n", "")]
-#[case("SIZE", "SIZE 1920 1080\n")]
-#[case("SIZE\n", "SIZE 1920 1080\n")]
-#[case("SIZE\nSIZE\n", "SIZE 1920 1080\nSIZE 1920 1080\n")]
-#[case("SIZE", "SIZE 1920 1080\n")]
+#[case("SIZE", "SIZE 640 480\n")]
+#[case("SIZE\n", "SIZE 640 480\n")]
+#[case("SIZE\nSIZE\n", "SIZE 640 480\nSIZE 640 480\n")]
+#[case("SIZE", "SIZE 640 480\n")]
 #[case("HELP", std::str::from_utf8(HELP_TEXT).unwrap())]
 #[case("HELP\n", std::str::from_utf8(HELP_TEXT).unwrap())]
-#[case("bla bla bla\nSIZE\nblub\nbla", "SIZE 1920 1080\n")]
+#[case("bla bla bla\nSIZE\nblub\nbla", "SIZE 640 480\n")]
 #[tokio::test]
 async fn test_correct_responses_to_general_commands(
     #[case] input: &str,
@@ -136,6 +139,49 @@ async fn test_setting_pixel(
     assert_eq!(expected, stream.get_output());
 }
 
+#[cfg(feature = "binary-commands")]
+#[rstest]
+// No newline in between needed
+#[case("PB\0\0\0\0\0\0\0\0PX 0 0\n", "PX 0 0 000000\n")]
+#[case("PB\0\0\0\01234PX 0 0\n", "PX 0 0 313233\n")]
+#[case("PB\0\0\0\0\0\0\0\0PB\0\0\0\01234PX 0 0\n", "PX 0 0 313233\n")]
+#[case(
+    "PB\0\0\0\0\0\0\0\0PX 0 0\nPB\0\0\0\01234PX 0 0\n",
+    "PX 0 0 000000\nPX 0 0 313233\n"
+)]
+#[case("PB \0*\0____PX 32 42\n", "PX 32 42 5f5f5f\n")]
+// Also test that there can be newlines in between
+#[case(
+    "PB\0\0\0\0\0\0\0\0\nPX 0 0\nPB\0\0\0\01234\n\n\nPX 0 0\n",
+    "PX 0 0 000000\nPX 0 0 313233\n"
+)]
+#[tokio::test]
+async fn test_binary_commands(
+    #[case] input: &str,
+    #[case] expected: &str,
+    ip: IpAddr,
+    fb: Arc<FrameBuffer>,
+    statistics_channel: (
+        mpsc::Sender<StatisticsEvent>,
+        mpsc::Receiver<StatisticsEvent>,
+    ),
+) {
+    let mut stream = MockTcpStream::from_input(input);
+    handle_connection(
+        &mut stream,
+        ip,
+        fb,
+        statistics_channel.0,
+        DEFAULT_NETWORK_BUFFER_SIZE,
+        page_size::get(),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(expected, stream.get_output());
+}
+
 #[rstest]
 #[case("PX 0 0 aaaaaa\n")]
 #[case("PX 0 0 aa\n")]
@@ -180,8 +226,8 @@ async fn test_safe(
 #[case(479, 361, 721, 391)]
 #[case(500, 500, 0, 0)]
 #[case(500, 500, 300, 400)]
-#[case(fb().get_width(), fb().get_height(), 0, 0)]
-#[case(fb().get_width() - 1, fb().get_height() - 1, 1, 1)]
+// Yes, this exceeds the framebuffer size
+#[case(10, 10, fb().get_width() - 5, fb().get_height() - 5)]
 #[tokio::test]
 async fn test_drawing_rect(
     #[case] width: usize,
@@ -204,7 +250,7 @@ async fn test_drawing_rect(
     let mut read_other_pixels_commands_expected = String::new();
 
     for x in 0..fb.get_width() {
-        for y in 0..height {
+        for y in 0..fb.get_height() {
             // Inside the rect
             if x >= offset_x && x <= offset_x + width && y >= offset_y && y <= offset_y + height {
                 fill_commands += &format!("PX {x} {y} {color:06x}\n");
