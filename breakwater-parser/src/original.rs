@@ -14,6 +14,8 @@ pub(crate) const PB_PATTERN: u64 = string_to_number(b"PB\0\0\0\0\0\0");
 pub(crate) const OFFSET_PATTERN: u64 = string_to_number(b"OFFSET \0\0");
 pub(crate) const SIZE_PATTERN: u64 = string_to_number(b"SIZE\0\0\0\0");
 pub(crate) const HELP_PATTERN: u64 = string_to_number(b"HELP\0\0\0\0");
+#[cfg(feature = "binary-sync-pixels")]
+pub(crate) const PXMULTI_PATTERN: u64 = string_to_number(b"PXMULTI\0");
 
 pub struct OriginalParser {
     connection_x_offset: usize,
@@ -141,10 +143,10 @@ impl Parser for OriginalParser {
                         continue;
                     }
                 }
-            // In case the feature is disabled this if should be optimized away, as "cfg!" should be a constant expression.
-            } else if cfg!(feature = "binary-set-single-pixel")
-                && current_command & 0x0000_ffff == PB_PATTERN
-            {
+                // In case the feature is disabled this if should be optimized away, as "cfg!" should be a constant expression.
+            }
+            #[cfg(feature = "binary-set-single-pixel")]
+            if current_command & 0x0000_ffff == PB_PATTERN {
                 let command_bytes =
                     unsafe { (buffer.as_ptr().add(i + 2) as *const u64).read_unaligned() };
 
@@ -157,7 +159,16 @@ impl Parser for OriginalParser {
 
                 i += 10;
                 continue;
-            } else if current_command & 0x00ff_ffff_ffff_ffff == OFFSET_PATTERN {
+            }
+            #[cfg(feature = "binary-sync-pixels")]
+            if current_command & 0x00ff_ffff_ffff_ffff == PXMULTI_PATTERN {
+                i += "PXMULTI".len();
+
+                todo!();
+
+                continue;
+            }
+            if current_command & 0x00ff_ffff_ffff_ffff == OFFSET_PATTERN {
                 i += 7;
 
                 let (x, y, present) = parse_pixel_coordinates(buffer.as_ptr(), &mut i);
@@ -169,7 +180,8 @@ impl Parser for OriginalParser {
                     self.connection_y_offset = y;
                     continue;
                 }
-            } else if current_command & 0xffff_ffff == SIZE_PATTERN {
+            }
+            if current_command & 0xffff_ffff == SIZE_PATTERN {
                 i += 4;
                 last_byte_parsed = i - 1;
 
@@ -177,7 +189,8 @@ impl Parser for OriginalParser {
                     format!("SIZE {} {}\n", self.fb.get_width(), self.fb.get_height()).as_bytes(),
                 );
                 continue;
-            } else if current_command & 0xffff_ffff == HELP_PATTERN {
+            }
+            if current_command & 0xffff_ffff == HELP_PATTERN {
                 i += 4;
                 last_byte_parsed = i - 1;
 

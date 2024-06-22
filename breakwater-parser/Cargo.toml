@@ -24,3 +24,4 @@ pixelbomber.workspace = true
 [features]
 alpha = []
 binary-set-single-pixel = []
+binary-sync-pixels = []
