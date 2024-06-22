@@ -204,7 +204,7 @@ impl Parser for RefactoredParser {
                 unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };
             if current_command & 0x00ff_ffff == PX_PATTERN {
                 (i, last_byte_parsed) = self.handle_pixel(buffer, i, response);
-            } else if cfg!(feature = "binary-commands")
+            } else if cfg!(feature = "binary-set-single-pixel")
                 && current_command & 0x0000_ffff == PB_PATTERN
             {
                 (i, last_byte_parsed) = self.handle_binary_pixel(buffer, i);

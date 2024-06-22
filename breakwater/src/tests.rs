@@ -139,7 +139,7 @@ async fn test_setting_pixel(
     assert_eq!(expected, stream.get_output());
 }
 
-#[cfg(feature = "binary-commands")]
+#[cfg(feature = "binary-set-single-pixel")]
 #[rstest]
 // No newline in between needed
 #[case("PB\0\0\0\0\0\0\0\0PX 0 0\n", "PX 0 0 000000\n")]

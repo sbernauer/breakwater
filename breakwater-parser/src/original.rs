@@ -142,7 +142,7 @@ impl Parser for OriginalParser {
                     }
                 }
             // In case the feature is disabled this if should be optimized away, as "cfg!" should be a constant expression.
-            } else if cfg!(feature = "binary-commands")
+            } else if cfg!(feature = "binary-set-single-pixel")
                 && current_command & 0x0000_ffff == PB_PATTERN
             {
                 let command_bytes =

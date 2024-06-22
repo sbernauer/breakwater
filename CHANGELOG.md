@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- BREAKING: Feature `binary-commands` has been renamed to `binary-set-single-pixel`
+
 ## [0.15.0] - 2024-06-12
 
 ### Added
