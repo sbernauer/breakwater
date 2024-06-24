@@ -61,25 +61,41 @@ impl FrameBuffer {
     /// We can *not* take an `&[u32]` for the pixel here, as `std::slice::from_raw_parts` requires the data to be
     /// aligned. As the data already is stored in a buffer we can not guarantee it's correctly aligned, so let's just
     /// treat the pixels as raw bytes.
+    ///
+    /// Returns the coordinates where we landed after filling
     #[inline(always)]
-    pub fn set_multi(&self, start_x: usize, start_y: usize, pixels: &[u8]) {
-        let num_pixels = pixels.len() / 4;
+    pub fn set_multi(&self, start_x: usize, start_y: usize, pixels: &[u8]) -> (usize, usize) {
         let starting_index = start_x + start_y * self.width;
+        let pixels_copied = self.set_multi_from_start_index(starting_index, pixels);
+
+        let new_x = (start_x + pixels_copied) % self.width;
+        let new_y = start_y + (pixels_copied / self.width);
+
+        (new_x, new_y)
+    }
+
+    /// Returns the number of pixels copied
+    #[inline(always)]
+    pub fn set_multi_from_start_index(&self, starting_index: usize, pixels: &[u8]) -> usize {
+        let num_pixels = pixels.len() / 4;
 
         if starting_index + num_pixels > self.buffer.len() {
-            // dbg!(
-            //     "Ignoring invalid set_multi call, which would exceed the screen",
-            //     starting_index,
-            //     num_pixels,
-            //     self.buffer.len()
-            // );
-            return;
+            dbg!(
+                "Ignoring invalid set_multi call, which would exceed the screen",
+                starting_index,
+                num_pixels,
+                self.buffer.len()
+            );
+            // We did not move
+            return 0;
         }
 
         let starting_ptr = unsafe { self.buffer.as_ptr().add(starting_index) };
         let target_slice =
             unsafe { slice::from_raw_parts_mut(starting_ptr as *mut u8, pixels.len()) };
         target_slice.copy_from_slice(pixels);
+
+        num_pixels
     }
 
     pub fn get_buffer(&self) -> &[u32] {
@@ -125,7 +141,11 @@ mod tests {
         let pixels = (0..10_u32).collect::<Vec<_>>();
         let pixel_bytes: Vec<u8> = pixels.iter().flat_map(|p| p.to_le_bytes()).collect();
 
-        fb.set_multi(0, 0, &pixel_bytes);
+        let (current_x, current_y) = fb.set_multi(0, 0, &pixel_bytes);
+
+        assert_eq!(current_x, 10);
+        assert_eq!(current_y, 0);
+
         for x in 0..10 {
             assert_eq!(fb.get(x as usize, 0), Some(x), "Checking pixel {x}");
         }
@@ -139,13 +159,16 @@ mod tests {
         let mut x = 10;
         let mut y = 100;
 
-        // Let's color exactly 3 lines
-        let pixels = (0..3 * fb.width as u32).collect::<Vec<_>>();
+        // Let's color exactly 3 lines and 42 pixels
+        let pixels = (0..3 * fb.width as u32 + 42).collect::<Vec<_>>();
         let pixel_bytes: Vec<u8> = pixels.iter().flat_map(|p| p.to_le_bytes()).collect();
-        fb.set_multi(x, y, &pixel_bytes);
+        let (current_x, current_y) = fb.set_multi(x, y, &pixel_bytes);
+
+        assert_eq!(current_x, 52);
+        assert_eq!(current_y, 103);
 
         // Let's check everything has been colored
-        for rgba in 0..3 * fb.width as u32 {
+        for rgba in 0..3 * fb.width as u32 + 42 {
             assert_eq!(fb.get(x, y), Some(rgba));
 
             x += 1;
@@ -171,7 +194,11 @@ mod tests {
     pub fn test_set_multi_does_nothing_when_too_long(fb: FrameBuffer) {
         let mut too_long = Vec::with_capacity(fb.width * fb.height * 4 /* pixels per byte */);
         too_long.fill_with(|| 42_u8);
-        fb.set_multi(1, 0, &too_long);
+        let (current_x, current_y) = fb.set_multi(1, 0, &too_long);
+
+        // Should be unchanged
+        assert_eq!(current_x, 1);
+        assert_eq!(current_y, 0);
 
         for x in 0..fb.width {
             for y in 0..fb.height {

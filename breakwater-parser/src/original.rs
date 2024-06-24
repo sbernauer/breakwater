@@ -1,6 +1,5 @@
 use core::slice;
 use std::{
-    cmp::min,
     simd::{num::SimdUint, u32x8, Simd},
     sync::Arc,
 };
@@ -23,6 +22,15 @@ pub struct OriginalParser {
     connection_x_offset: usize,
     connection_y_offset: usize,
     fb: Arc<FrameBuffer>,
+    #[cfg(feature = "binary-sync-pixels")]
+    remaining_pixel_sync: Option<RemaingPixelSync>,
+}
+
+#[derive(Debug)]
+#[cfg(feature = "binary-sync-pixels")]
+pub struct RemaingPixelSync {
+    current_index: usize,
+    bytes_remaining: usize,
 }
 
 impl OriginalParser {
@@ -31,6 +39,8 @@ impl OriginalParser {
             connection_x_offset: 0,
             connection_y_offset: 0,
             fb,
+            #[cfg(feature = "binary-sync-pixels")]
+            remaining_pixel_sync: None,
         }
     }
 }
@@ -42,6 +52,50 @@ impl Parser for OriginalParser {
 
         let mut i = 0; // We can't use a for loop here because Rust don't lets use skip characters by incrementing i
         let loop_end = buffer.len().saturating_sub(PARSER_LOOKAHEAD); // Let's extract the .len() call and the subtraction into it's own variable so we only compute it once
+
+        #[cfg(feature = "binary-sync-pixels")]
+        if let Some(remaining) = &self.remaining_pixel_sync {
+            if remaining.bytes_remaining <= buffer.len() {
+                // Easy going here
+                self.fb
+                    .set_multi_from_start_index(remaining.current_index, unsafe {
+                        slice::from_raw_parts(buffer.as_ptr(), remaining.bytes_remaining)
+                    });
+                i += remaining.bytes_remaining;
+                last_byte_parsed = i;
+                self.remaining_pixel_sync = None;
+            } else {
+                // The client requested to write more bytes that are currently in the buffer, we need to remember
+                // what the client is doing.
+
+                // We need to round down to the 4 bytes of a pixel alignment
+                let pixel_bytes = buffer.len() / 4 * 4;
+
+                println!(
+                    "Will read {pixel_bytes} off of {} remaining bytes",
+                    remaining.bytes_remaining
+                );
+
+                let current_index = self
+                    .fb
+                    .set_multi_from_start_index(remaining.current_index, unsafe {
+                        slice::from_raw_parts(buffer.as_ptr(), pixel_bytes)
+                    });
+
+                self.remaining_pixel_sync = Some(RemaingPixelSync {
+                    current_index,
+                    bytes_remaining: remaining.bytes_remaining - pixel_bytes,
+                });
+
+                dbg!(&self.remaining_pixel_sync);
+
+                // Nothing to do left, we parsed everything that's possible
+                // return pixel_bytes;
+
+                i += pixel_bytes;
+                last_byte_parsed = i;
+            }
+        }
 
         while i < loop_end {
             let current_command =
@@ -166,30 +220,60 @@ impl Parser for OriginalParser {
             if current_command & 0x00ff_ffff_ffff_ffff == PXMULTI_PATTERN {
                 i += "PXMULTI".len();
                 let header = unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };
+                i += 8;
 
                 let start_x = u16::from_le((header) as u16);
                 let start_y = u16::from_le((header >> 16) as u16);
                 let len = u32::from_le((header >> 32) as u32);
-
+                let len_in_bytes = len as usize * 4;
                 let bytes_left_in_buffer = buffer.len() - i;
-                let pixel_bytes_len = min(
-                    len as usize * 4, /* bytes per pixel */
-                    bytes_left_in_buffer,
-                );
 
-                dbg!(start_x, start_y, len, bytes_left_in_buffer, pixel_bytes_len);
+                dbg!(start_x, start_y, len, len_in_bytes, bytes_left_in_buffer);
 
-                self.fb
-                    .set_multi(start_x as usize, start_y as usize, unsafe {
-                        slice::from_raw_parts(
-                            buffer.as_ptr().add(i).add(8 /* header size */),
-                            pixel_bytes_len,
-                        )
+                if len_in_bytes <= bytes_left_in_buffer {
+                    // Easy going here
+                    self.fb
+                        .set_multi(start_x as usize, start_y as usize, unsafe {
+                            slice::from_raw_parts(buffer.as_ptr().add(i), len_in_bytes)
+                        });
+
+                    i += len_in_bytes;
+                    last_byte_parsed = i;
+                    continue;
+                } else {
+                    // We need to round down to the 4 bytes of a pixel alignment
+                    let pixel_bytes: usize = bytes_left_in_buffer / 4 * 4;
+
+                    println!("Will read {pixel_bytes} off of {len_in_bytes} bytes");
+
+                    // The client requested to write more bytes that are currently in the buffer, we need to remember
+                    // what the client is doing.
+                    let current_index = start_x as usize + start_y as usize * self.fb.get_width();
+                    let current_index = self.fb.set_multi_from_start_index(current_index, unsafe {
+                        slice::from_raw_parts(buffer.as_ptr().add(i), pixel_bytes)
+                    });
+                    i += pixel_bytes;
+                    last_byte_parsed = i;
+
+                    self.remaining_pixel_sync = Some(RemaingPixelSync {
+                        current_index,
+                        bytes_remaining: len_in_bytes - pixel_bytes,
                     });
 
-                // FIXME: Handle pixel dumps that wrap around the buffer sizes by storing information accross the parse invocation
+                    dbg!(&self.remaining_pixel_sync);
 
-                continue;
+                    continue;
+                }
+
+                // self.fb
+                //     .set_multi(start_x as usize, start_y as usize, unsafe {
+                //         slice::from_raw_parts(
+                //             buffer.as_ptr().add(i).add(8 /* header size */),
+                //             pixel_bytes_len,
+                //         )
+                //     });
+
+                // FIXME: Handle pixel dumps that wrap around the buffer sizes by storing information accross the parse invocation
             }
             if current_command & 0x00ff_ffff_ffff_ffff == OFFSET_PATTERN {
                 i += 7;
