@@ -63,8 +63,16 @@ impl FrameBuffer {
     /// treat the pixels as raw bytes.
     #[inline(always)]
     pub fn set_multi(&self, start_x: usize, start_y: usize, pixels: &[u8]) {
+        let num_pixels = pixels.len() / 4;
         let starting_index = start_x + start_y * self.width;
-        if starting_index + pixels.len() >= self.buffer.len() {
+
+        if starting_index + num_pixels > self.buffer.len() {
+            // dbg!(
+            //     "Ignoring invalid set_multi call, which would exceed the screen",
+            //     starting_index,
+            //     num_pixels,
+            //     self.buffer.len()
+            // );
             return;
         }
 

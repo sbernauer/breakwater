@@ -25,7 +25,7 @@ if cfg!(feature = "binary-set-single-pixel") {
     ""
 },
 if cfg!(feature = "binary-sync-pixels") {
-    "PXMULTI<startX:16><startY:16><len:32><rgba 1 of (startX, startY)><rgba 2 of (startX + 1, startY)><rgba 3 of (startX + 1, startY)>...<rgba len>: Binary syncing of whole pixel areas. Please note that for performance reasons this will be copied 1:1 to the servers framebuffer. The server will just take the following <len> bytes and memcpy it into the framebuffer, so the alpha channel doesn't matter and you might mess up the screen. This is intended dor export-use, especially when syncing or combining multiple Pixelflut screens across multiple servers"
+    "PXMULTI<startX:16><startY:16><len:32><rgba 1 of (startX, startY)><rgba 2 of (startX + 1, startY)><rgba 3 of (startX + 1, startY)>...<rgba len>: EXPERIMENTAL binary syncing of whole pixel areas. Please note that for performance reasons this will be copied 1:1 to the servers framebuffer. The server will just take the following <len> bytes and memcpy it into the framebuffer, so the alpha channel doesn't matter and you might mess up the screen. This is intended dor export-use, especially when syncing or combining multiple Pixelflut screens across multiple servers"
 } else {
     ""
 },
