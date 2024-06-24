@@ -11,6 +11,9 @@ repository.workspace = true
 const_format.workspace = true
 tokio.workspace = true
 
+[dev-dependencies]
+rstest.workspace = true
+
 [features]
 alpha = []
 binary-set-single-pixel = []

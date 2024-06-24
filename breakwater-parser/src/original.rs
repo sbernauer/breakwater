@@ -1,4 +1,6 @@
+use core::slice;
 use std::{
+    cmp::min,
     simd::{num::SimdUint, u32x8, Simd},
     sync::Arc,
 };
@@ -163,8 +165,29 @@ impl Parser for OriginalParser {
             #[cfg(feature = "binary-sync-pixels")]
             if current_command & 0x00ff_ffff_ffff_ffff == PXMULTI_PATTERN {
                 i += "PXMULTI".len();
+                let header = unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };
 
-                todo!();
+                let start_x = u16::from_le((header) as u16);
+                let start_y = u16::from_le((header >> 16) as u16);
+                let len = u32::from_le((header >> 32) as u32);
+
+                let bytes_left_in_buffer = buffer.len() - i;
+                let pixel_bytes_len = min(
+                    len as usize * 4, /* bytes per pixel */
+                    bytes_left_in_buffer,
+                );
+
+                dbg!(start_x, start_y, len, bytes_left_in_buffer, pixel_bytes_len);
+
+                self.fb
+                    .set_multi(start_x as usize, start_y as usize, unsafe {
+                        slice::from_raw_parts(
+                            buffer.as_ptr().add(i).add(8 /* header size */),
+                            pixel_bytes_len,
+                        )
+                    });
+
+                // FIXME: Handle pixel dumps that wrap around the buffer sizes by storing information accross the parse invocation
 
                 continue;
             }

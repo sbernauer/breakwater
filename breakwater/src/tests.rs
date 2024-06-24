@@ -46,30 +46,8 @@ fn statistics_channel() -> (
 #[case("HELP\n", std::str::from_utf8(HELP_TEXT).unwrap())]
 #[case("bla bla bla\nSIZE\nblub\nbla", "SIZE 640 480\n")]
 #[tokio::test]
-async fn test_correct_responses_to_general_commands(
-    #[case] input: &str,
-    #[case] expected: &str,
-    ip: IpAddr,
-    fb: Arc<FrameBuffer>,
-    statistics_channel: (
-        mpsc::Sender<StatisticsEvent>,
-        mpsc::Receiver<StatisticsEvent>,
-    ),
-) {
-    let mut stream = MockTcpStream::from_input(input);
-    handle_connection(
-        &mut stream,
-        ip,
-        fb,
-        statistics_channel.0,
-        page_size::get(),
-        DEFAULT_NETWORK_BUFFER_SIZE,
-        None,
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(expected, stream.get_output());
+async fn test_correct_responses_to_general_commands(#[case] input: &str, #[case] expected: &str) {
+    assert_returns(input.as_bytes(), expected).await;
 }
 
 #[rstest]
@@ -113,73 +91,8 @@ async fn test_correct_responses_to_general_commands(
 )] // The get pixel result is also offseted
 #[case("OFFSET 0 0\nPX 0 42 abcdef\nPX 0 42\n", "PX 0 42 abcdef\n")]
 #[tokio::test]
-async fn test_setting_pixel(
-    #[case] input: &str,
-    #[case] expected: &str,
-    ip: IpAddr,
-    fb: Arc<FrameBuffer>,
-    statistics_channel: (
-        mpsc::Sender<StatisticsEvent>,
-        mpsc::Receiver<StatisticsEvent>,
-    ),
-) {
-    let mut stream = MockTcpStream::from_input(input);
-    handle_connection(
-        &mut stream,
-        ip,
-        fb,
-        statistics_channel.0,
-        DEFAULT_NETWORK_BUFFER_SIZE,
-        page_size::get(),
-        None,
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(expected, stream.get_output());
-}
-
-#[cfg(feature = "binary-set-single-pixel")]
-#[rstest]
-// No newline in between needed
-#[case("PB\0\0\0\0\0\0\0\0PX 0 0\n", "PX 0 0 000000\n")]
-#[case("PB\0\0\0\01234PX 0 0\n", "PX 0 0 313233\n")]
-#[case("PB\0\0\0\0\0\0\0\0PB\0\0\0\01234PX 0 0\n", "PX 0 0 313233\n")]
-#[case(
-    "PB\0\0\0\0\0\0\0\0PX 0 0\nPB\0\0\0\01234PX 0 0\n",
-    "PX 0 0 000000\nPX 0 0 313233\n"
-)]
-#[case("PB \0*\0____PX 32 42\n", "PX 32 42 5f5f5f\n")]
-// Also test that there can be newlines in between
-#[case(
-    "PB\0\0\0\0\0\0\0\0\nPX 0 0\nPB\0\0\0\01234\n\n\nPX 0 0\n",
-    "PX 0 0 000000\nPX 0 0 313233\n"
-)]
-#[tokio::test]
-async fn test_binary_commands(
-    #[case] input: &str,
-    #[case] expected: &str,
-    ip: IpAddr,
-    fb: Arc<FrameBuffer>,
-    statistics_channel: (
-        mpsc::Sender<StatisticsEvent>,
-        mpsc::Receiver<StatisticsEvent>,
-    ),
-) {
-    let mut stream = MockTcpStream::from_input(input);
-    handle_connection(
-        &mut stream,
-        ip,
-        fb,
-        statistics_channel.0,
-        DEFAULT_NETWORK_BUFFER_SIZE,
-        page_size::get(),
-        None,
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(expected, stream.get_output());
+async fn test_setting_pixel(#[case] input: &str, #[case] expected: &str) {
+    assert_returns(input.as_bytes(), expected).await;
 }
 
 #[rstest]
@@ -195,7 +108,7 @@ async fn test_safe(
         mpsc::Receiver<StatisticsEvent>,
     ),
 ) {
-    let mut stream = MockTcpStream::from_input(input);
+    let mut stream = MockTcpStream::from_string(input);
     handle_connection(
         &mut stream,
         ip,
@@ -270,7 +183,7 @@ async fn test_drawing_rect(
     }
 
     // Color the pixels
-    let mut stream = MockTcpStream::from_input(&fill_commands);
+    let mut stream = MockTcpStream::from_string(&fill_commands);
     handle_connection(
         &mut stream,
         ip,
@@ -285,7 +198,7 @@ async fn test_drawing_rect(
     assert_eq!("", stream.get_output());
 
     // Read the pixels again
-    let mut stream = MockTcpStream::from_input(&read_commands);
+    let mut stream = MockTcpStream::from_string(&read_commands);
     handle_connection(
         &mut stream,
         ip,
@@ -300,7 +213,7 @@ async fn test_drawing_rect(
     assert_eq!(fill_commands, stream.get_output());
 
     // We can also do coloring and reading in a single connection
-    let mut stream = MockTcpStream::from_input(&combined_commands);
+    let mut stream = MockTcpStream::from_string(&combined_commands);
     handle_connection(
         &mut stream,
         ip,
@@ -315,7 +228,7 @@ async fn test_drawing_rect(
     assert_eq!(combined_commands_expected, stream.get_output());
 
     // Check that nothing else was colored
-    let mut stream = MockTcpStream::from_input(&read_other_pixels_commands);
+    let mut stream = MockTcpStream::from_string(&read_other_pixels_commands);
     handle_connection(
         &mut stream,
         ip,
@@ -328,4 +241,103 @@ async fn test_drawing_rect(
     .await
     .unwrap();
     assert_eq!(read_other_pixels_commands_expected, stream.get_output());
+}
+
+#[cfg(feature = "binary-set-single-pixel")]
+#[rstest]
+// No newline in between needed
+#[case("PB\0\0\0\0\0\0\0\0PX 0 0\n", "PX 0 0 000000\n")]
+#[case("PB\0\0\0\01234PX 0 0\n", "PX 0 0 313233\n")]
+#[case("PB\0\0\0\0\0\0\0\0PB\0\0\0\01234PX 0 0\n", "PX 0 0 313233\n")]
+#[case(
+    "PB\0\0\0\0\0\0\0\0PX 0 0\nPB\0\0\0\01234PX 0 0\n",
+    "PX 0 0 000000\nPX 0 0 313233\n"
+)]
+#[case("PB \0*\0____PX 32 42\n", "PX 32 42 5f5f5f\n")]
+// Also test that there can be newlines in between
+#[case(
+    "PB\0\0\0\0\0\0\0\0\nPX 0 0\nPB\0\0\0\01234\n\n\nPX 0 0\n",
+    "PX 0 0 000000\nPX 0 0 313233\n"
+)]
+#[tokio::test]
+async fn test_binary_commands(
+    #[case] input: &str,
+    #[case] expected: &str,
+    ip: IpAddr,
+    fb: Arc<FrameBuffer>,
+    statistics_channel: (
+        mpsc::Sender<StatisticsEvent>,
+        mpsc::Receiver<StatisticsEvent>,
+    ),
+) {
+    let mut stream = MockTcpStream::from_string(input);
+    handle_connection(
+        &mut stream,
+        ip,
+        fb,
+        statistics_channel.0,
+        DEFAULT_NETWORK_BUFFER_SIZE,
+        page_size::get(),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(expected, stream.get_output());
+}
+
+#[cfg(feature = "binary-sync-pixels")]
+#[tokio::test]
+async fn test_binary_sync_pixels() {
+    // Test byte conversion works
+    assert_returns("PX 0 0 42\nPX 0 0\n".as_bytes(), "PX 0 0 424242\n").await;
+
+    // Don't set any pixels
+    let mut input = Vec::new();
+    input.extend("PXMULTI".as_bytes());
+    input.extend([
+        0, 0, /* startX */
+        0, 0, /* startY */
+        0, 0, 0, 0, /* length */
+    ]);
+    input.extend("PX 0 0\n".as_bytes());
+    assert_returns(&input, "PX 0 0 000000\n").await;
+
+    // Set first 10 pixels
+    let mut input = Vec::new();
+    input.extend("PXMULTI".as_bytes());
+    input.extend(0_u16.to_le_bytes()); // x
+    input.extend(0_u16.to_le_bytes()); // y
+    input.extend(10_u32.to_le_bytes()); // length
+    for pixel in 0..10_u32 {
+        // Some alpha stuff going on (which I don't fully understand)
+        input.extend((pixel << 16).to_le_bytes());
+    }
+
+    dbg!(&input);
+
+    input.extend(
+        "PX 0 0\nPX 1 0\nPX 2 0\nPX 3 0\nPX 4 0\nPX 5 0\nPX 6 0\nPX 7 0\nPX 8 0\nPX 9 0\n"
+            .as_bytes(),
+    );
+    assert_returns(&input, "PX 0 0 000000\nPX 1 0 000001\nPX 2 0 000002\nPX 3 0 000003\nPX 4 0 000004\nPX 5 0 000005\nPX 6 0 000006\nPX 7 0 000007\nPX 8 0 000008\nPX 9 0 000009\n").await;
+
+    // Set such a large number of pixels that it will wrap
+}
+
+async fn assert_returns(input: &[u8], expected: &str) {
+    let mut stream = MockTcpStream::from_bytes(input.to_owned());
+    handle_connection(
+        &mut stream,
+        ip(),
+        fb(),
+        statistics_channel().0,
+        DEFAULT_NETWORK_BUFFER_SIZE,
+        page_size::get(),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(expected, stream.get_output());
 }

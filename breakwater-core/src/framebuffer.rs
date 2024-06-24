@@ -58,6 +58,22 @@ impl FrameBuffer {
         }
     }
 
+    /// We can *not* take an `&[u32]` for the pixel here, as `std::slice::from_raw_parts` requires the data to be
+    /// aligned. As the data already is stored in a buffer we can not guarantee it's correctly aligned, so let's just
+    /// treat the pixels as raw bytes.
+    #[inline(always)]
+    pub fn set_multi(&self, start_x: usize, start_y: usize, pixels: &[u8]) {
+        let starting_index = start_x + start_y * self.width;
+        if starting_index + pixels.len() >= self.buffer.len() {
+            return;
+        }
+
+        let starting_ptr = unsafe { self.buffer.as_ptr().add(starting_index) };
+        let target_slice =
+            unsafe { slice::from_raw_parts_mut(starting_ptr as *mut u8, pixels.len()) };
+        target_slice.copy_from_slice(pixels);
+    }
+
     pub fn get_buffer(&self) -> &[u32] {
         &self.buffer
     }
@@ -65,5 +81,94 @@ impl FrameBuffer {
     pub fn as_bytes(&self) -> &[u8] {
         let len_in_bytes = self.buffer.len() * 4;
         unsafe { slice::from_raw_parts(self.buffer.as_ptr() as *const u8, len_in_bytes) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use rstest::{fixture, rstest};
+
+    #[fixture]
+    fn fb() -> FrameBuffer {
+        // We keep the framebuffer so small, so that we can easily test all pixels in a test run
+        FrameBuffer::new(640, 480)
+    }
+
+    #[rstest]
+    #[case(0, 0, 0)]
+    #[case(0, 0, 0xff0000)]
+    #[case(0, 0, 0x0000ff)]
+    #[case(0, 0, 0x12345678)]
+    pub fn test_roundtrip(fb: FrameBuffer, #[case] x: usize, #[case] y: usize, #[case] rgba: u32) {
+        fb.set(x, y, rgba);
+        assert_eq!(fb.get(x, y), Some(rgba));
+    }
+
+    #[rstest]
+    pub fn test_out_of_bounds(fb: FrameBuffer) {
+        assert_eq!(fb.get(usize::MAX, usize::MAX), None);
+        assert_eq!(fb.get(usize::MAX, usize::MAX), None);
+    }
+
+    #[rstest]
+    pub fn test_set_multi_from_beginning(fb: FrameBuffer) {
+        let pixels = (0..10_u32).collect::<Vec<_>>();
+        let pixel_bytes: Vec<u8> = pixels.iter().flat_map(|p| p.to_le_bytes()).collect();
+
+        fb.set_multi(0, 0, &pixel_bytes);
+        for x in 0..10 {
+            assert_eq!(fb.get(x as usize, 0), Some(x), "Checking pixel {x}");
+        }
+
+        // The next pixel must not have been colored
+        assert_eq!(fb.get(11, 0), Some(0));
+    }
+
+    #[rstest]
+    pub fn test_set_multi_in_the_middle(fb: FrameBuffer) {
+        let mut x = 10;
+        let mut y = 100;
+
+        // Let's color exactly 3 lines
+        let pixels = (0..3 * fb.width as u32).collect::<Vec<_>>();
+        let pixel_bytes: Vec<u8> = pixels.iter().flat_map(|p| p.to_le_bytes()).collect();
+        fb.set_multi(x, y, &pixel_bytes);
+
+        // Let's check everything has been colored
+        for rgba in 0..3 * fb.width as u32 {
+            assert_eq!(fb.get(x, y), Some(rgba));
+
+            x += 1;
+            if x >= fb.width {
+                x = 0;
+                y += 1;
+            }
+        }
+
+        // Everything afterwards must have not been touched (let's check the next 10 lines)
+        for _ in 0..10 * fb.width as u32 {
+            assert_eq!(fb.get(x, y), Some(0));
+
+            x += 1;
+            if x >= fb.width {
+                x = 0;
+                y += 1;
+            }
+        }
+    }
+
+    #[rstest]
+    pub fn test_set_multi_does_nothing_when_too_long(fb: FrameBuffer) {
+        let mut too_long = Vec::with_capacity(fb.width * fb.height * 4 /* pixels per byte */);
+        too_long.fill_with(|| 42_u8);
+        fb.set_multi(1, 0, &too_long);
+
+        for x in 0..fb.width {
+            for y in 0..fb.height {
+                assert_eq!(fb.get(x, y), Some(0));
+            }
+        }
     }
 }

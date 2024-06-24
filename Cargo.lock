@@ -265,6 +265,7 @@ name = "breakwater-core"
 version = "0.15.0"
 dependencies = [
  "const_format",
+ "rstest",
  "tokio",
 ]
 

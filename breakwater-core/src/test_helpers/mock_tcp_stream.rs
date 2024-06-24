@@ -13,9 +13,16 @@ pub struct MockTcpStream {
 }
 
 impl MockTcpStream {
-    pub fn from_input(input: &str) -> Self {
+    pub fn from_string(input: &str) -> Self {
         MockTcpStream {
             read_data: input.as_bytes().to_vec(),
+            write_data: Vec::new(),
+        }
+    }
+
+    pub fn from_bytes(input: Vec<u8>) -> Self {
+        MockTcpStream {
+            read_data: input,
             write_data: Vec::new(),
         }
     }
