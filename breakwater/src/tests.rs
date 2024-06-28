@@ -408,7 +408,7 @@ async fn test_binary_sync_pixels_exceeding_screen(fb: Arc<FrameBuffer>) {
 #[rstest]
 #[tokio::test]
 /// Try painting more pixels that fit in the buffer. This checks if the parse correctly keeps track of the command
-/// accross multiple parse calls as the pixel screen send is bigger than the buffer.
+/// across multiple parse calls as the pixel screen send is bigger than the buffer.
 async fn test_binary_sync_pixels_larger_than_buffer(fb: Arc<FrameBuffer>) {
     let fb = Arc::new(FrameBuffer::new(50, 30));
 
@@ -429,16 +429,19 @@ async fn test_binary_sync_pixels_larger_than_buffer(fb: Arc<FrameBuffer>) {
     input.extend(num_pixels.to_le_bytes()); // length
 
     for rgba in 0..num_pixels {
-        input.extend((rgba << 8).to_be_bytes());
+        // input.extend((rgba << 8).to_be_bytes());
+        input.extend((0xffffffff_u32 << 8).to_be_bytes());
     }
 
     let mut rgba = 0_u32;
     // Watch out, we first iterate over y, than x
     for y in 0..fb.get_height() {
         for x in 0..fb.get_width() {
+            // rgba = 0xdeadbeef_u32;
+            rgba = 0xffffffff;
             input.extend(format!("PX {x} {y}\n").as_bytes());
             expected += &format!("PX {x} {y} {rgba:06x}\n");
-            rgba += 1;
+            // rgba += 1;
         }
     }
 

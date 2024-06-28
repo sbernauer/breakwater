@@ -53,6 +53,7 @@ impl Parser for OriginalParser {
         let mut i = 0; // We can't use a for loop here because Rust don't lets use skip characters by incrementing i
         let loop_end = buffer.len().saturating_sub(PARSER_LOOKAHEAD); // Let's extract the .len() call and the subtraction into it's own variable so we only compute it once
 
+        dbg!(&self.remaining_pixel_sync);
         #[cfg(feature = "binary-sync-pixels")]
         if let Some(remaining) = &self.remaining_pixel_sync {
             if remaining.bytes_remaining <= buffer.len() {
@@ -260,8 +261,6 @@ impl Parser for OriginalParser {
                         bytes_remaining: len_in_bytes - pixel_bytes,
                     });
 
-                    dbg!(&self.remaining_pixel_sync);
-
                     continue;
                 }
 
@@ -273,7 +272,7 @@ impl Parser for OriginalParser {
                 //         )
                 //     });
 
-                // FIXME: Handle pixel dumps that wrap around the buffer sizes by storing information accross the parse invocation
+                // FIXME: Handle pixel dumps that wrap around the buffer sizes by storing information across the parse invocation
             }
             if current_command & 0x00ff_ffff_ffff_ffff == OFFSET_PATTERN {
                 i += 7;
@@ -320,7 +319,8 @@ impl Parser for OriginalParser {
             i += 1;
         }
 
-        last_byte_parsed.wrapping_sub(1)
+        last_byte_parsed
+        // last_byte_parsed.saturating_sub(1)
     }
 
     fn parser_lookahead(&self) -> usize {
