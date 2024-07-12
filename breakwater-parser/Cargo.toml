@@ -26,5 +26,4 @@ alpha = []
 binary-set-single-pixel = []
 binary-sync-pixels = []
 
-# TODO temp
-default = ["binary-set-single-pixel", "binary-sync-pixels"]
+default = ["binary-set-single-pixel"]

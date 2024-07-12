@@ -26,8 +26,8 @@ pub struct OriginalParser {
     remaining_pixel_sync: Option<RemainingPixelSync>,
 }
 
-#[derive(Debug)]
 #[cfg(feature = "binary-sync-pixels")]
+#[derive(Debug)]
 pub struct RemainingPixelSync {
     current_index: usize,
     bytes_remaining: usize,
