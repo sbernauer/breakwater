@@ -199,7 +199,6 @@ impl Parser for OriginalParser {
                         continue;
                     }
                 }
-                // In case the feature is disabled this if should be optimized away, as "cfg!" should be a constant expression.
             }
             #[cfg(feature = "binary-set-single-pixel")]
             if current_command & 0x0000_ffff == PB_PATTERN {
