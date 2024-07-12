@@ -378,8 +378,8 @@ async fn test_binary_sync_pixels_in_the_middle(fb: Arc<FrameBuffer>) {
         rgba += 1;
     }
 
-    input.extend(format!("PX 52 14\n").as_bytes());
-    expected += &format!("PX 52 14 000000\n");
+    input.extend("PX 52 14\n".as_bytes());
+    expected += "PX 52 14 000000\n";
 
     assert_returns(&input, &expected).await;
 }
@@ -410,16 +410,16 @@ async fn test_binary_sync_pixels_exceeding_screen(fb: Arc<FrameBuffer>) {
 /// Try painting more pixels that fit in the buffer. This checks if the parse correctly keeps track of the command
 /// across multiple parse calls as the pixel screen send is bigger than the buffer.
 async fn test_binary_sync_pixels_larger_than_buffer(fb: Arc<FrameBuffer>) {
-    let fb = Arc::new(FrameBuffer::new(50, 30));
+    // let fb = Arc::new(FrameBuffer::new(50, 30)); // For testing
 
     let num_pixels = (fb.get_width() * fb.get_height()) as u32;
     let pixel_bytes =  num_pixels * 4 /* bytes per pixel */;
-    // assert!(
-    //     pixel_bytes > DEFAULT_NETWORK_BUFFER_SIZE as u32 * 3,
-    //     "The number of bytes we send must be bigger than the network buffer size so that we test the wrapping. \
-    //     We actually pick a bit more, just to be safe and do a few cycles. Additionally, in tests the number of bytes \
-    //     read into the socket is actually around 2074 (and differs each run), so we should be really good here"
-    // );
+    assert!(
+        pixel_bytes > DEFAULT_NETWORK_BUFFER_SIZE as u32 * 3,
+        "The number of bytes we send must be bigger than the network buffer size so that we test the wrapping. \
+        We actually pick a bit more, just to be safe and do a few cycles. Additionally, in tests the number of bytes \
+        read into the socket is actually around 2074 (and differs each run), so we should be really good here"
+    );
 
     let mut input = Vec::new();
     let mut expected = String::new();
@@ -429,19 +429,18 @@ async fn test_binary_sync_pixels_larger_than_buffer(fb: Arc<FrameBuffer>) {
     input.extend(num_pixels.to_le_bytes()); // length
 
     for rgba in 0..num_pixels {
-        // input.extend((rgba << 8).to_be_bytes());
-        input.extend((0xffffffff_u32 << 8).to_be_bytes());
+        input.extend((rgba << 8).to_be_bytes());
+        // input.extend((0xdeadbeef_u32).to_be_bytes()); // For testing
     }
 
     let mut rgba = 0_u32;
     // Watch out, we first iterate over y, than x
     for y in 0..fb.get_height() {
         for x in 0..fb.get_width() {
-            // rgba = 0xdeadbeef_u32;
-            rgba = 0xffffffff;
+            // rgba = 0xdeadbe_u32; // For testing
             input.extend(format!("PX {x} {y}\n").as_bytes());
             expected += &format!("PX {x} {y} {rgba:06x}\n");
-            // rgba += 1;
+            rgba += 1;
         }
     }
 
