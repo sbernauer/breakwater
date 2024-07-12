@@ -1,3 +1,4 @@
+#[cfg(feature = "binary-sync-pixels")]
 use core::slice;
 use std::{
     simd::{num::SimdUint, u32x8, Simd},
