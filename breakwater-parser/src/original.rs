@@ -74,11 +74,6 @@ impl Parser for OriginalParser {
                 // We need to round down to the 4 bytes of a pixel alignment
                 let pixel_bytes = buffer.len() / 4 * 4;
 
-                println!(
-                    "Will read {pixel_bytes} off of {} remaining bytes",
-                    remaining.bytes_remaining
-                );
-
                 let mut index = remaining.current_index;
                 index += self
                     .fb
@@ -241,8 +236,6 @@ impl Parser for OriginalParser {
                 } else {
                     // We need to round down to the 4 bytes of a pixel alignment
                     let pixel_bytes: usize = bytes_left_in_buffer / 4 * 4;
-
-                    println!("Will read {pixel_bytes} off of {len_in_bytes} bytes");
 
                     // The client requested to write more bytes that are currently in the buffer, we need to remember
                     // what the client is doing.
