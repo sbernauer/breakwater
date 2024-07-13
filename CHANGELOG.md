@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Added support for binary sync protocol ([#34])
+- Added support for binary sync protocol behind the `binary-sync-pixels` feature ([#34])
 
 ### Changed
 
