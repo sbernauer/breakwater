@@ -4,9 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Added support for binary sync protocol ([#34])
+
 ### Changed
 
-- BREAKING: Feature `binary-commands` has been renamed to `binary-set-single-pixel`
+- BREAKING: Feature `binary-commands` has been renamed to `binary-set-single-pixel` ([#34])
+
+[#34]: https://github.com/sbernauer/breakwater/pull/34
 
 ## [0.15.0] - 2024-06-12
 
