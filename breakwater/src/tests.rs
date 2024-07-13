@@ -243,7 +243,7 @@ async fn test_drawing_rect(
     assert_eq!(read_other_pixels_commands_expected, stream.get_output());
 }
 
-#[cfg(feature = "binary-set-single-pixel")]
+#[cfg(feature = "binary-set-pixel")]
 #[rstest]
 // No newline in between needed
 #[case("PB\0\0\0\0\0\0\0\0PX 0 0\n", "PX 0 0 000000\n")]

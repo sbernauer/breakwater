@@ -196,7 +196,7 @@ impl Parser for OriginalParser {
                     }
                 }
             }
-            #[cfg(feature = "binary-set-single-pixel")]
+            #[cfg(feature = "binary-set-pixel")]
             if current_command & 0x0000_ffff == PB_PATTERN {
                 let command_bytes =
                     unsafe { (buffer.as_ptr().add(i + 2) as *const u64).read_unaligned() };

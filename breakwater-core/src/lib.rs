@@ -19,7 +19,7 @@ if cfg!(feature = "alpha") {
 } else {
     "PX x y rrggbbaa: Color the pixel (x,y) with the given hexadecimal color rrggbb. The alpha part is discarded for performance reasons, as breakwater was compiled without the alpha feature"
 },
-if cfg!(feature = "binary-set-single-pixel") {
+if cfg!(feature = "binary-set-pixel") {
     "PBxxyyrgba: Binary version of the PX command. x and y are little-endian 16 bit coordinates, r, g, b and a are a byte each. There is *no* newline after the command.\n"
 } else {
     ""

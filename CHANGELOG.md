@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- BREAKING: Feature `binary-commands` has been renamed to `binary-set-single-pixel` ([#34])
+- BREAKING: Feature `binary-commands` has been renamed to `binary-set-pixel` ([#34])
 
 [#34]: https://github.com/sbernauer/breakwater/pull/34
 
