@@ -239,8 +239,9 @@ impl Parser for OriginalParser {
 
                     // The client requested to write more bytes that are currently in the buffer, we need to remember
                     // what the client is doing.
-                    let current_index = start_x as usize + start_y as usize * self.fb.get_width();
-                    let current_index = self.fb.set_multi_from_start_index(current_index, unsafe {
+                    let mut current_index =
+                        start_x as usize + start_y as usize * self.fb.get_width();
+                    current_index += self.fb.set_multi_from_start_index(current_index, unsafe {
                         slice::from_raw_parts(buffer.as_ptr().add(i), pixel_bytes)
                     });
 
