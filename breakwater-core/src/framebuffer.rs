@@ -70,22 +70,27 @@ impl FrameBuffer {
 }
 
 impl breakwater_parser::FrameBuffer for FrameBuffer {
+    #[inline]
     fn get_width(&self) -> usize {
         self.get_width()
     }
 
+    #[inline]
     fn get_height(&self) -> usize {
         self.get_height()
     }
 
+    #[inline]
     fn get_unchecked(&self, x: usize, y: usize) -> u32 {
         self.get_unchecked(x, y)
     }
 
+    #[inline]
     fn set(&self, x: usize, y: usize, rgba: u32) {
         self.set(x, y, rgba)
     }
 
+    #[inline]
     fn get_buffer(&self) -> &[u32] {
         self.get_buffer()
     }
