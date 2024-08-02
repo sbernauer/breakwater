@@ -37,12 +37,12 @@ pub trait FrameBuffer {
     #[inline]
     fn get(&self, x: usize, y: usize) -> Option<u32> {
         if x < self.get_width() && y < self.get_height() {
-            Some(self.get_unchecked(x, y))
+            Some(unsafe { self.get_unchecked(x, y) })
         } else {
             None
         }
     }
-    fn get_unchecked(&self, x: usize, y: usize) -> u32;
+    unsafe fn get_unchecked(&self, x: usize, y: usize) -> u32;
 
     fn set(&self, x: usize, y: usize, rgba: u32);
 

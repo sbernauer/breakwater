@@ -81,7 +81,7 @@ impl breakwater_parser::FrameBuffer for FrameBuffer {
     }
 
     #[inline]
-    fn get_unchecked(&self, x: usize, y: usize) -> u32 {
+    unsafe fn get_unchecked(&self, x: usize, y: usize) -> u32 {
         self.get_unchecked(x, y)
     }
 
