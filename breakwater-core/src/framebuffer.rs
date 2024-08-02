@@ -89,9 +89,4 @@ impl breakwater_parser::FrameBuffer for FrameBuffer {
     fn set(&self, x: usize, y: usize, rgba: u32) {
         self.set(x, y, rgba)
     }
-
-    #[inline]
-    fn get_buffer(&self) -> &[u32] {
-        self.get_buffer()
-    }
 }

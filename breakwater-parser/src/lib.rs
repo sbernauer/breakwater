@@ -42,14 +42,9 @@ pub trait FrameBuffer {
             None
         }
     }
+    /// # Safety
+    /// make sure x and y are in bounds
     unsafe fn get_unchecked(&self, x: usize, y: usize) -> u32;
 
     fn set(&self, x: usize, y: usize, rgba: u32);
-
-    #[inline]
-    fn as_bytes(&self) -> &[u8] {
-        let len_in_bytes = self.get_buffer().len() * 4;
-        unsafe { std::slice::from_raw_parts(self.get_buffer().as_ptr() as *const u8, len_in_bytes) }
-    }
-    fn get_buffer(&self) -> &[u32];
 }
