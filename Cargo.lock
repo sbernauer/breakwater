@@ -264,6 +264,7 @@ dependencies = [
 name = "breakwater-core"
 version = "0.15.0"
 dependencies = [
+ "breakwater-parser",
  "const_format",
  "tokio",
 ]
@@ -272,7 +273,6 @@ dependencies = [
 name = "breakwater-parser"
 version = "0.15.0"
 dependencies = [
- "breakwater-core",
  "criterion",
  "enum_dispatch",
  "memchr",

@@ -8,6 +8,7 @@ edition.workspace = true
 repository.workspace = true
 
 [dependencies]
+breakwater-parser = { path = "../breakwater-parser"}
 const_format.workspace = true
 tokio.workspace = true
 

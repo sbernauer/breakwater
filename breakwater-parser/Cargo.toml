@@ -12,8 +12,6 @@ name = "parsing"
 harness = false
 
 [dependencies]
-breakwater-core.workspace = true
-
 enum_dispatch.workspace = true
 memchr.workspace = true
 

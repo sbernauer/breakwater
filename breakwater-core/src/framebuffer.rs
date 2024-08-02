@@ -1,5 +1,6 @@
 use std::slice;
 
+
 pub struct FrameBuffer {
     width: usize,
     height: usize,
@@ -65,5 +66,27 @@ impl FrameBuffer {
     pub fn as_bytes(&self) -> &[u8] {
         let len_in_bytes = self.buffer.len() * 4;
         unsafe { slice::from_raw_parts(self.buffer.as_ptr() as *const u8, len_in_bytes) }
+    }
+}
+
+impl breakwater_parser::FrameBuffer for FrameBuffer {
+    fn get_width(&self) -> usize {
+        self.get_width()
+    }
+
+    fn get_height(&self) -> usize {
+        self.get_height()
+    }
+
+    fn get_unchecked(&self, x: usize, y: usize) -> u32 {
+        self.get_unchecked(x, y)
+    }
+
+    fn set(&self, x: usize, y: usize, rgba: u32) {
+        self.set(x, y, rgba)
+    }
+
+    fn get_buffer(&self) -> &[u32] {
+        self.get_buffer()
     }
 }

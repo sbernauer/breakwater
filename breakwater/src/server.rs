@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::{cmp::min, net::IpAddr, sync::Arc, time::Duration};
 
 use breakwater_core::{framebuffer::FrameBuffer, CONNECTION_DENIED_TEXT};
+use breakwater_core::{ALT_HELP_TEXT, HELP_TEXT};
 use breakwater_parser::{original::OriginalParser, Parser};
 use log::{debug, info, warn};
 use memadvise::{Advice, MemAdviseError};
@@ -178,7 +179,7 @@ pub async fn handle_connection(
 
     // Not using `ParserImplementation` to avoid the dynamic dispatch.
     // let mut parser = ParserImplementation::Simple(SimpleParser::new(fb));
-    let mut parser = OriginalParser::new(fb);
+    let mut parser = OriginalParser::new(fb, HELP_TEXT, ALT_HELP_TEXT);
     let parser_lookahead = parser.parser_lookahead();
 
     // If we send e.g. an StatisticsEvent::BytesRead for every time we read something from the socket the statistics thread would go crazy.

@@ -3,9 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use breakwater_core::{framebuffer::FrameBuffer, ALT_HELP_TEXT, HELP_TEXT};
-
-use crate::Parser;
+use crate::{FrameBuffer, Parser};
 
 pub const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
 
@@ -15,23 +13,27 @@ pub(crate) const OFFSET_PATTERN: u64 = string_to_number(b"OFFSET \0\0");
 pub(crate) const SIZE_PATTERN: u64 = string_to_number(b"SIZE\0\0\0\0");
 pub(crate) const HELP_PATTERN: u64 = string_to_number(b"HELP\0\0\0\0");
 
-pub struct OriginalParser {
+pub struct OriginalParser<FB: FrameBuffer> {
     connection_x_offset: usize,
     connection_y_offset: usize,
-    fb: Arc<FrameBuffer>,
+    help_text: &'static [u8],
+    alt_help_text: &'static [u8],
+    fb: Arc<FB>,
 }
 
-impl OriginalParser {
-    pub fn new(fb: Arc<FrameBuffer>) -> Self {
+impl<FB: FrameBuffer> OriginalParser<FB> {
+    pub fn new(fb: Arc<FB>, help_text: &'static [u8], alt_help_text: &'static [u8]) -> Self {
         Self {
             connection_x_offset: 0,
             connection_y_offset: 0,
             fb,
+            help_text,
+            alt_help_text,
         }
     }
 }
 
-impl Parser for OriginalParser {
+impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
     fn parse(&mut self, buffer: &[u8], response: &mut Vec<u8>) -> usize {
         let mut last_byte_parsed = 0;
         let mut help_count = 0;
@@ -183,11 +185,11 @@ impl Parser for OriginalParser {
 
                 match help_count {
                     0..=2 => {
-                        response.extend_from_slice(HELP_TEXT);
+                        response.extend_from_slice(self.help_text);
                         help_count += 1;
                     }
                     3 => {
-                        response.extend_from_slice(ALT_HELP_TEXT);
+                        response.extend_from_slice(self.alt_help_text);
                         help_count += 1;
                     }
                     _ => {

@@ -19,10 +19,37 @@ pub trait Parser {
 }
 
 #[enum_dispatch]
-pub enum ParserImplementation {
-    Original(original::OriginalParser),
-    Refactored(refactored::RefactoredParser),
-    Naive(memchr::MemchrParser),
+pub enum ParserImplementation<FB: FrameBuffer> {
+    Original(original::OriginalParser<FB>),
+    Refactored(refactored::RefactoredParser<FB>),
+    Naive(memchr::MemchrParser<FB>),
     #[cfg(target_arch = "x86_64")]
-    Assembler(assembler::AssemblerParser),
+    Assembler(assembler::AssemblerParser<FB>),
+}
+
+pub trait FrameBuffer {
+    fn get_width(&self) -> usize;
+    fn get_height(&self) -> usize;
+    fn get_size(&self) -> usize {
+        self.get_width() * self.get_height()
+    }
+
+    #[inline]
+    fn get(&self, x: usize, y: usize) -> Option<u32> {
+        if x < self.get_width() && y < self.get_height() {
+            Some(self.get_unchecked(x, y))
+        } else {
+            None
+        }
+    }
+    fn get_unchecked(&self, x: usize, y: usize) -> u32;
+
+    fn set(&self, x: usize, y: usize, rgba: u32);
+
+    #[inline]
+    fn as_bytes(&self) -> &[u8] {
+        let len_in_bytes = self.get_buffer().len() * 4;
+        unsafe { std::slice::from_raw_parts(self.get_buffer().as_ptr() as *const u8, len_in_bytes) }
+    }
+    fn get_buffer(&self) -> &[u32];
 }
