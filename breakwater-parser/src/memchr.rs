@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::{FrameBuffer, Parser};
 
+#[allow(dead_code)]
 pub struct MemchrParser<FB: FrameBuffer> {
     help_text: &'static [u8],
     alt_help_text: &'static [u8],

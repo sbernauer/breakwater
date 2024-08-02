@@ -9,6 +9,7 @@ use crate::{
 
 const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
 
+#[allow(dead_code)]
 pub struct RefactoredParser <FB: FrameBuffer> {
     connection_x_offset: usize,
     connection_y_offset: usize,
