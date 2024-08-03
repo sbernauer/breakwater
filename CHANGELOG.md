@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Performance improvement due to addition of missing set of `last_byte_parsed` when sending binary pixel commands ([#36])
+- Minor performance improvement when parsing `HELP` and `SIZE` requests ([#36])
+
+[#36]: https://github.com/sbernauer/breakwater/pull/36
+
 ## [0.15.0] - 2024-06-12
 
 ### Added
