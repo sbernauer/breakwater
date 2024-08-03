@@ -96,7 +96,7 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
                             }
 
                             let alpha_comp = 0xff - alpha;
-                            let current = unsafe { self.fb.get_unchecked(x, y)} ;
+                            let current = unsafe { self.fb.get_unchecked(x, y) };
                             let r = (rgba >> 16) & 0xff;
                             let g = (rgba >> 8) & 0xff;
                             let b = rgba & 0xff;

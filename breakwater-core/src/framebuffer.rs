@@ -1,6 +1,5 @@
 use std::slice;
 
-
 pub struct FrameBuffer {
     width: usize,
     height: usize,

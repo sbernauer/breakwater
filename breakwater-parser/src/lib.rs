@@ -29,7 +29,9 @@ pub enum ParserImplementation<FB: FrameBuffer> {
 
 pub trait FrameBuffer {
     fn get_width(&self) -> usize;
+
     fn get_height(&self) -> usize;
+
     fn get_size(&self) -> usize {
         self.get_width() * self.get_height()
     }
@@ -42,6 +44,7 @@ pub trait FrameBuffer {
             None
         }
     }
+
     /// # Safety
     /// make sure x and y are in bounds
     unsafe fn get_unchecked(&self, x: usize, y: usize) -> u32;

@@ -4,13 +4,14 @@ use crate::{
     original::{
         parse_pixel_coordinates, simd_unhex, HELP_PATTERN, OFFSET_PATTERN, PB_PATTERN, PX_PATTERN,
         SIZE_PATTERN,
-    }, FrameBuffer, Parser
+    },
+    FrameBuffer, Parser,
 };
 
 const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
 
 #[allow(dead_code)]
-pub struct RefactoredParser <FB: FrameBuffer> {
+pub struct RefactoredParser<FB: FrameBuffer> {
     connection_x_offset: usize,
     connection_y_offset: usize,
     help_text: &'static [u8],
