@@ -5,28 +5,23 @@ use crate::{
         parse_pixel_coordinates, simd_unhex, HELP_PATTERN, OFFSET_PATTERN, PB_PATTERN, PX_PATTERN,
         SIZE_PATTERN,
     },
-    FrameBuffer, Parser,
+    FrameBuffer, Parser, HELP_TEXT,
 };
 
 const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
 
-#[allow(dead_code)]
 pub struct RefactoredParser<FB: FrameBuffer> {
     connection_x_offset: usize,
     connection_y_offset: usize,
-    help_text: &'static [u8],
-    alt_help_text: &'static [u8],
     fb: Arc<FB>,
 }
 
 impl<FB: FrameBuffer> RefactoredParser<FB> {
-    pub fn new(fb: Arc<FB>, help_text: &'static [u8], alt_help_text: &'static [u8]) -> Self {
+    pub fn new(fb: Arc<FB>) -> Self {
         Self {
             connection_x_offset: 0,
             connection_y_offset: 0,
             fb,
-            help_text,
-            alt_help_text,
         }
     }
 
@@ -125,7 +120,7 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
 
     #[inline(always)]
     fn handle_help(&self, response: &mut Vec<u8>) {
-        response.extend_from_slice(self.help_text);
+        response.extend_from_slice(HELP_TEXT);
     }
 
     #[inline(always)]

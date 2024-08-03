@@ -4,12 +4,14 @@ use crate::{FrameBuffer, Parser};
 
 const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
 
-#[derive(Default)]
-#[allow(dead_code)]
 pub struct AssemblerParser<FB: FrameBuffer> {
-    help_text: &'static [u8],
-    alt_help_text: &'static [u8],
-    fb: Arc<FB>,
+    _fb: Arc<FB>,
+}
+
+impl<FB: FrameBuffer> AssemblerParser<FB> {
+    pub fn new(_fb: Arc<FB>) -> Self {
+        Self { _fb }
+    }
 }
 
 impl<FB: FrameBuffer> Parser for AssemblerParser<FB> {

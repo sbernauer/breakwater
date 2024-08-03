@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- BREAKING: Remove the `breakwater-core` crate ([#35])
+- Add a `FrameBuffer` trait, rename the existing implementation one to `SimpleFrameBuffer` ([#35])
+
+[#35]: https://github.com/sbernauer/breakwater/pull/35
+
 ## [0.15.0] - 2024-06-12
 
 ### Added

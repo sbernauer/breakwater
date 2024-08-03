@@ -12,7 +12,7 @@ name = "parsing"
 harness = false
 
 [dependencies]
-enum_dispatch.workspace = true
+const_format.workspace = true
 memchr.workspace = true
 
 [dev-dependencies]

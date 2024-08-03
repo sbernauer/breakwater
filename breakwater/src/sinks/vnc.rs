@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use breakwater_core::framebuffer::FrameBuffer;
+use breakwater_parser::FrameBuffer;
 use core::slice;
 use number_prefix::NumberPrefix;
 use rusttype::{point, Font, Scale};
@@ -42,9 +42,10 @@ pub enum Error {
 }
 
 // Sorry! Help needed :)
-unsafe impl<'a> Send for VncServer<'a> {}
-pub struct VncServer<'a> {
-    fb: Arc<FrameBuffer>,
+unsafe impl<'a, FB: FrameBuffer> Send for VncServer<'a, FB> {}
+
+pub struct VncServer<'a, FB: FrameBuffer> {
+    fb: Arc<FB>,
     screen: RfbScreenInfoPtr,
     target_fps: u32,
 
@@ -56,10 +57,10 @@ pub struct VncServer<'a> {
     font: Font<'a>,
 }
 
-impl<'a> VncServer<'a> {
+impl<'a, FB: FrameBuffer> VncServer<'a, FB> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        fb: Arc<FrameBuffer>,
+        fb: Arc<FB>,
         port: u16,
         target_fps: u32,
         statistics_tx: Sender<StatisticsEvent>,
@@ -119,8 +120,11 @@ impl<'a> VncServer<'a> {
     pub fn run(&mut self) -> Result<(), Error> {
         let target_loop_duration = Duration::from_micros(1_000_000 / self.target_fps as u64);
 
-        let vnc_fb_slice: &mut [u32] = unsafe {
-            slice::from_raw_parts_mut((*self.screen).frameBuffer as *mut u32, self.fb.get_size())
+        let vnc_fb_slice: &mut [u8] = unsafe {
+            slice::from_raw_parts_mut(
+                (*self.screen).frameBuffer as *mut u8,
+                self.fb.get_size() * 4,
+            )
         };
         // A line less because the (height - STATS_SURFACE_HEIGHT) belongs to the stats and gets refreshed by them
         let height_up_to_stats_text = self.fb.get_height() - STATS_HEIGHT - 1;
@@ -132,8 +136,9 @@ impl<'a> VncServer<'a> {
             }
 
             let start = std::time::Instant::now();
-            vnc_fb_slice[0..fb_size_up_to_stats_text]
-                .copy_from_slice(&self.fb.get_buffer()[0..fb_size_up_to_stats_text]);
+
+            vnc_fb_slice[0..fb_size_up_to_stats_text * 4]
+                .copy_from_slice(&self.fb.as_bytes()[0..fb_size_up_to_stats_text * 4]);
 
             // Only refresh the drawing surface, not the stats surface
             rfb_mark_rect_as_modified(

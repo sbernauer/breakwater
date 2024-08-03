@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{FrameBuffer, Parser};
+use crate::{FrameBuffer, Parser, ALT_HELP_TEXT, HELP_TEXT};
 
 pub const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
 
@@ -16,19 +16,15 @@ pub(crate) const HELP_PATTERN: u64 = string_to_number(b"HELP\0\0\0\0");
 pub struct OriginalParser<FB: FrameBuffer> {
     connection_x_offset: usize,
     connection_y_offset: usize,
-    help_text: &'static [u8],
-    alt_help_text: &'static [u8],
     fb: Arc<FB>,
 }
 
 impl<FB: FrameBuffer> OriginalParser<FB> {
-    pub fn new(fb: Arc<FB>, help_text: &'static [u8], alt_help_text: &'static [u8]) -> Self {
+    pub fn new(fb: Arc<FB>) -> Self {
         Self {
             connection_x_offset: 0,
             connection_y_offset: 0,
             fb,
-            help_text,
-            alt_help_text,
         }
     }
 }
@@ -185,11 +181,11 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
 
                 match help_count {
                     0..=2 => {
-                        response.extend_from_slice(self.help_text);
+                        response.extend_from_slice(HELP_TEXT);
                         help_count += 1;
                     }
                     3 => {
-                        response.extend_from_slice(self.alt_help_text);
+                        response.extend_from_slice(ALT_HELP_TEXT);
                         help_count += 1;
                     }
                     _ => {

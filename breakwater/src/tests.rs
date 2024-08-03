@@ -5,12 +5,13 @@ use std::{
     sync::Arc,
 };
 
-use breakwater_core::{framebuffer::FrameBuffer, test_helpers::MockTcpStream, HELP_TEXT};
+use breakwater_parser::{FrameBuffer, SimpleFrameBuffer, HELP_TEXT};
 use rstest::{fixture, rstest};
 use tokio::sync::mpsc;
 
 use crate::{
     cli_args::DEFAULT_NETWORK_BUFFER_SIZE, server::handle_connection, statistics::StatisticsEvent,
+    test_helpers::mock_tcp_stream::MockTcpStream,
 };
 
 #[fixture]
@@ -19,9 +20,9 @@ fn ip() -> IpAddr {
 }
 
 #[fixture]
-fn fb() -> Arc<FrameBuffer> {
+fn fb() -> Arc<SimpleFrameBuffer> {
     // We keep the framebuffer so small, so that we can easily test all pixels in a test run
-    Arc::new(FrameBuffer::new(640, 480))
+    Arc::new(SimpleFrameBuffer::new(640, 480))
 }
 
 #[fixture]
@@ -46,11 +47,11 @@ fn statistics_channel() -> (
 #[case("HELP\n", std::str::from_utf8(HELP_TEXT).unwrap())]
 #[case("bla bla bla\nSIZE\nblub\nbla", "SIZE 640 480\n")]
 #[tokio::test]
-async fn test_correct_responses_to_general_commands(
+async fn test_correct_responses_to_general_commands<FB: FrameBuffer>(
     #[case] input: &str,
     #[case] expected: &str,
     ip: IpAddr,
-    fb: Arc<FrameBuffer>,
+    fb: Arc<FB>,
     statistics_channel: (
         mpsc::Sender<StatisticsEvent>,
         mpsc::Receiver<StatisticsEvent>,
@@ -113,11 +114,11 @@ async fn test_correct_responses_to_general_commands(
 )] // The get pixel result is also offseted
 #[case("OFFSET 0 0\nPX 0 42 abcdef\nPX 0 42\n", "PX 0 42 abcdef\n")]
 #[tokio::test]
-async fn test_setting_pixel(
+async fn test_setting_pixel<FB: FrameBuffer>(
     #[case] input: &str,
     #[case] expected: &str,
     ip: IpAddr,
-    fb: Arc<FrameBuffer>,
+    fb: Arc<FB>,
     statistics_channel: (
         mpsc::Sender<StatisticsEvent>,
         mpsc::Receiver<StatisticsEvent>,
@@ -156,11 +157,11 @@ async fn test_setting_pixel(
     "PX 0 0 000000\nPX 0 0 313233\n"
 )]
 #[tokio::test]
-async fn test_binary_commands(
+async fn test_binary_commands<FB: FrameBuffer>(
     #[case] input: &str,
     #[case] expected: &str,
     ip: IpAddr,
-    fb: Arc<FrameBuffer>,
+    fb: Arc<FB>,
     statistics_channel: (
         mpsc::Sender<StatisticsEvent>,
         mpsc::Receiver<StatisticsEvent>,
@@ -186,10 +187,10 @@ async fn test_binary_commands(
 #[case("PX 0 0 aaaaaa\n")]
 #[case("PX 0 0 aa\n")]
 #[tokio::test]
-async fn test_safe(
+async fn test_safe<FB: FrameBuffer>(
     #[case] input: &str,
     ip: IpAddr,
-    fb: Arc<FrameBuffer>,
+    fb: Arc<FB>,
     statistics_channel: (
         mpsc::Sender<StatisticsEvent>,
         mpsc::Receiver<StatisticsEvent>,
@@ -229,13 +230,13 @@ async fn test_safe(
 // Yes, this exceeds the framebuffer size
 #[case(10, 10, fb().get_width() - 5, fb().get_height() - 5)]
 #[tokio::test]
-async fn test_drawing_rect(
+async fn test_drawing_rect<FB: FrameBuffer>(
     #[case] width: usize,
     #[case] height: usize,
     #[case] offset_x: usize,
     #[case] offset_y: usize,
     ip: IpAddr,
-    fb: Arc<FrameBuffer>,
+    fb: Arc<FB>,
     statistics_channel: (
         mpsc::Sender<StatisticsEvent>,
         mpsc::Receiver<StatisticsEvent>,

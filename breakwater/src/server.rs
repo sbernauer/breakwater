@@ -3,9 +3,7 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::{cmp::min, net::IpAddr, sync::Arc, time::Duration};
 
-use breakwater_core::{framebuffer::FrameBuffer, CONNECTION_DENIED_TEXT};
-use breakwater_core::{ALT_HELP_TEXT, HELP_TEXT};
-use breakwater_parser::{original::OriginalParser, Parser};
+use breakwater_parser::{FrameBuffer, OriginalParser, Parser};
 use log::{debug, info, warn};
 use memadvise::{Advice, MemAdviseError};
 use snafu::{ResultExt, Snafu};
@@ -17,6 +15,8 @@ use tokio::{
 };
 
 use crate::statistics::StatisticsEvent;
+
+const CONNECTION_DENIED_TEXT: &[u8] = b"Connection denied as connection limit is reached";
 
 // Every client connection spawns a new thread, so we need to limit the number of stat events we send
 const STATISTICS_REPORT_INTERVAL: Duration = Duration::from_millis(250);
@@ -41,20 +41,20 @@ pub enum Error {
     },
 }
 
-pub struct Server {
+pub struct Server<FB: FrameBuffer> {
     // listen_address: String,
     listener: TcpListener,
-    fb: Arc<FrameBuffer>,
+    fb: Arc<FB>,
     statistics_tx: mpsc::Sender<StatisticsEvent>,
     network_buffer_size: usize,
     connections_per_ip: HashMap<IpAddr, u64>,
     max_connections_per_ip: Option<u64>,
 }
 
-impl Server {
+impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
     pub async fn new(
         listen_address: &str,
-        fb: Arc<FrameBuffer>,
+        fb: Arc<FB>,
         statistics_tx: mpsc::Sender<StatisticsEvent>,
         network_buffer_size: usize,
         max_connections_per_ip: Option<u64>,
@@ -142,10 +142,10 @@ impl Server {
     }
 }
 
-pub async fn handle_connection(
+pub async fn handle_connection<FB: FrameBuffer>(
     mut stream: impl AsyncReadExt + AsyncWriteExt + Send + Unpin,
     ip: IpAddr,
-    fb: Arc<FrameBuffer>,
+    fb: Arc<FB>,
     statistics_tx: mpsc::Sender<StatisticsEvent>,
     page_size: usize,
     network_buffer_size: usize,
@@ -179,7 +179,7 @@ pub async fn handle_connection(
 
     // Not using `ParserImplementation` to avoid the dynamic dispatch.
     // let mut parser = ParserImplementation::Simple(SimpleParser::new(fb));
-    let mut parser = OriginalParser::new(fb, HELP_TEXT, ALT_HELP_TEXT);
+    let mut parser = OriginalParser::new(fb);
     let parser_lookahead = parser.parser_lookahead();
 
     // If we send e.g. an StatisticsEvent::BytesRead for every time we read something from the socket the statistics thread would go crazy.

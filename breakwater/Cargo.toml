@@ -12,7 +12,6 @@ name = "breakwater"
 path = "src/main.rs"
 
 [dependencies]
-breakwater-core.workspace = true
 breakwater-parser.workspace = true
 
 chrono.workspace = true
@@ -40,5 +39,5 @@ rstest.workspace = true
 default = ["vnc", "binary-commands"]
 
 vnc = ["dep:vncserver"]
-alpha = ["breakwater-core/alpha", "breakwater-parser/alpha"]
-binary-commands = ["breakwater-core/binary-commands", "breakwater-parser/binary-commands"]
+alpha = ["breakwater-parser/alpha"]
+binary-commands = ["breakwater-parser/binary-commands"]
