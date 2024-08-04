@@ -46,30 +46,8 @@ fn statistics_channel() -> (
 #[case("HELP\n", std::str::from_utf8(HELP_TEXT).unwrap())]
 #[case("bla bla bla\nSIZE\nblub\nbla", "SIZE 640 480\n")]
 #[tokio::test]
-async fn test_correct_responses_to_general_commands(
-    #[case] input: &str,
-    #[case] expected: &str,
-    ip: IpAddr,
-    fb: Arc<FrameBuffer>,
-    statistics_channel: (
-        mpsc::Sender<StatisticsEvent>,
-        mpsc::Receiver<StatisticsEvent>,
-    ),
-) {
-    let mut stream = MockTcpStream::from_input(input);
-    handle_connection(
-        &mut stream,
-        ip,
-        fb,
-        statistics_channel.0,
-        page_size::get(),
-        DEFAULT_NETWORK_BUFFER_SIZE,
-        None,
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(expected, stream.get_output());
+async fn test_correct_responses_to_general_commands(#[case] input: &str, #[case] expected: &str) {
+    assert_returns(input.as_bytes(), expected).await;
 }
 
 #[rstest]
@@ -113,73 +91,8 @@ async fn test_correct_responses_to_general_commands(
 )] // The get pixel result is also offseted
 #[case("OFFSET 0 0\nPX 0 42 abcdef\nPX 0 42\n", "PX 0 42 abcdef\n")]
 #[tokio::test]
-async fn test_setting_pixel(
-    #[case] input: &str,
-    #[case] expected: &str,
-    ip: IpAddr,
-    fb: Arc<FrameBuffer>,
-    statistics_channel: (
-        mpsc::Sender<StatisticsEvent>,
-        mpsc::Receiver<StatisticsEvent>,
-    ),
-) {
-    let mut stream = MockTcpStream::from_input(input);
-    handle_connection(
-        &mut stream,
-        ip,
-        fb,
-        statistics_channel.0,
-        DEFAULT_NETWORK_BUFFER_SIZE,
-        page_size::get(),
-        None,
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(expected, stream.get_output());
-}
-
-#[cfg(feature = "binary-commands")]
-#[rstest]
-// No newline in between needed
-#[case("PB\0\0\0\0\0\0\0\0PX 0 0\n", "PX 0 0 000000\n")]
-#[case("PB\0\0\0\01234PX 0 0\n", "PX 0 0 313233\n")]
-#[case("PB\0\0\0\0\0\0\0\0PB\0\0\0\01234PX 0 0\n", "PX 0 0 313233\n")]
-#[case(
-    "PB\0\0\0\0\0\0\0\0PX 0 0\nPB\0\0\0\01234PX 0 0\n",
-    "PX 0 0 000000\nPX 0 0 313233\n"
-)]
-#[case("PB \0*\0____PX 32 42\n", "PX 32 42 5f5f5f\n")]
-// Also test that there can be newlines in between
-#[case(
-    "PB\0\0\0\0\0\0\0\0\nPX 0 0\nPB\0\0\0\01234\n\n\nPX 0 0\n",
-    "PX 0 0 000000\nPX 0 0 313233\n"
-)]
-#[tokio::test]
-async fn test_binary_commands(
-    #[case] input: &str,
-    #[case] expected: &str,
-    ip: IpAddr,
-    fb: Arc<FrameBuffer>,
-    statistics_channel: (
-        mpsc::Sender<StatisticsEvent>,
-        mpsc::Receiver<StatisticsEvent>,
-    ),
-) {
-    let mut stream = MockTcpStream::from_input(input);
-    handle_connection(
-        &mut stream,
-        ip,
-        fb,
-        statistics_channel.0,
-        DEFAULT_NETWORK_BUFFER_SIZE,
-        page_size::get(),
-        None,
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(expected, stream.get_output());
+async fn test_setting_pixel(#[case] input: &str, #[case] expected: &str) {
+    assert_returns(input.as_bytes(), expected).await;
 }
 
 #[rstest]
@@ -195,7 +108,7 @@ async fn test_safe(
         mpsc::Receiver<StatisticsEvent>,
     ),
 ) {
-    let mut stream = MockTcpStream::from_input(input);
+    let mut stream = MockTcpStream::from_string(input);
     handle_connection(
         &mut stream,
         ip,
@@ -270,7 +183,7 @@ async fn test_drawing_rect(
     }
 
     // Color the pixels
-    let mut stream = MockTcpStream::from_input(&fill_commands);
+    let mut stream = MockTcpStream::from_string(&fill_commands);
     handle_connection(
         &mut stream,
         ip,
@@ -285,7 +198,7 @@ async fn test_drawing_rect(
     assert_eq!("", stream.get_output());
 
     // Read the pixels again
-    let mut stream = MockTcpStream::from_input(&read_commands);
+    let mut stream = MockTcpStream::from_string(&read_commands);
     handle_connection(
         &mut stream,
         ip,
@@ -300,7 +213,7 @@ async fn test_drawing_rect(
     assert_eq!(fill_commands, stream.get_output());
 
     // We can also do coloring and reading in a single connection
-    let mut stream = MockTcpStream::from_input(&combined_commands);
+    let mut stream = MockTcpStream::from_string(&combined_commands);
     handle_connection(
         &mut stream,
         ip,
@@ -315,7 +228,7 @@ async fn test_drawing_rect(
     assert_eq!(combined_commands_expected, stream.get_output());
 
     // Check that nothing else was colored
-    let mut stream = MockTcpStream::from_input(&read_other_pixels_commands);
+    let mut stream = MockTcpStream::from_string(&read_other_pixels_commands);
     handle_connection(
         &mut stream,
         ip,
@@ -328,4 +241,238 @@ async fn test_drawing_rect(
     .await
     .unwrap();
     assert_eq!(read_other_pixels_commands_expected, stream.get_output());
+}
+
+#[cfg(feature = "binary-set-pixel")]
+#[rstest]
+// No newline in between needed
+#[case("PB\0\0\0\0\0\0\0\0PX 0 0\n", "PX 0 0 000000\n")]
+#[case("PB\0\0\0\01234PX 0 0\n", "PX 0 0 313233\n")]
+#[case("PB\0\0\0\0\0\0\0\0PB\0\0\0\01234PX 0 0\n", "PX 0 0 313233\n")]
+#[case(
+    "PB\0\0\0\0\0\0\0\0PX 0 0\nPB\0\0\0\01234PX 0 0\n",
+    "PX 0 0 000000\nPX 0 0 313233\n"
+)]
+#[case("PB \0*\0____PX 32 42\n", "PX 32 42 5f5f5f\n")]
+// Also test that there can be newlines in between
+#[case(
+    "PB\0\0\0\0\0\0\0\0\nPX 0 0\nPB\0\0\0\01234\n\n\nPX 0 0\n",
+    "PX 0 0 000000\nPX 0 0 313233\n"
+)]
+#[tokio::test]
+async fn test_binary_commands(
+    #[case] input: &str,
+    #[case] expected: &str,
+    ip: IpAddr,
+    fb: Arc<FrameBuffer>,
+    statistics_channel: (
+        mpsc::Sender<StatisticsEvent>,
+        mpsc::Receiver<StatisticsEvent>,
+    ),
+) {
+    let mut stream = MockTcpStream::from_string(input);
+    handle_connection(
+        &mut stream,
+        ip,
+        fb,
+        statistics_channel.0,
+        DEFAULT_NETWORK_BUFFER_SIZE,
+        page_size::get(),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(expected, stream.get_output());
+}
+
+#[cfg(feature = "binary-sync-pixels")]
+#[tokio::test]
+async fn test_binary_sync_pixels() {
+    // Test byte conversion works
+    assert_returns("PX 0 0 42\nPX 0 0\n".as_bytes(), "PX 0 0 424242\n").await;
+
+    // Don't set any pixels
+    let mut input = Vec::new();
+    input.extend("PXMULTI".as_bytes());
+    input.extend([
+        0, 0, /* startX */
+        0, 0, /* startY */
+        0, 0, 0, 0, /* length */
+    ]);
+    input.extend("PX 0 0\n".as_bytes());
+    assert_returns(&input, "PX 0 0 000000\n").await;
+
+    // Set first 10 pixels
+    let mut input = Vec::new();
+    input.extend("PXMULTI".as_bytes());
+    input.extend(0_u16.to_le_bytes()); // x
+    input.extend(0_u16.to_le_bytes()); // y
+    input.extend(10_u32.to_le_bytes()); // length
+    for pixel in 0..10_u32 {
+        // Some alpha stuff going on (which I don't fully understand)
+        input.extend((pixel << 8).to_be_bytes());
+    }
+    input.extend(
+        "PX 0 0\nPX 1 0\nPX 2 0\nPX 3 0\nPX 4 0\nPX 5 0\nPX 6 0\nPX 7 0\nPX 8 0\nPX 9 0\n"
+            .as_bytes(),
+    );
+    assert_returns(&input, "PX 0 0 000000\nPX 1 0 000001\nPX 2 0 000002\nPX 3 0 000003\nPX 4 0 000004\nPX 5 0 000005\nPX 6 0 000006\nPX 7 0 000007\nPX 8 0 000008\nPX 9 0 000009\n").await;
+}
+
+#[cfg(feature = "binary-sync-pixels")]
+#[rstest]
+#[tokio::test]
+/// Try painting the very last pixel of the screen. There is only space for a single pixel left.
+async fn test_binary_sync_pixels_last_pixel(fb: Arc<FrameBuffer>) {
+    let mut input = Vec::new();
+    let x = fb.get_width() as u16 - 1;
+    let y = fb.get_height() as u16 - 1;
+    input.extend("PXMULTI".as_bytes());
+    input.extend(x.to_le_bytes()); // x
+    input.extend(y.to_le_bytes()); // y
+    input.extend(1_u32.to_le_bytes()); // length
+    input.extend(0x12345678_u32.to_be_bytes());
+
+    input.extend(format!("PX 0 0\nPX {} {y}\nPX {x} {y}\n", x - 1).as_bytes());
+    assert_returns(
+        &input,
+        &format!(
+            "PX 0 0 000000\nPX {} {y} 000000\nPX {x} {y} 123456\n",
+            x - 1
+        ),
+    )
+    .await;
+}
+
+#[cfg(feature = "binary-sync-pixels")]
+#[rstest]
+#[tokio::test]
+/// Try painting some pixels in the middle of the screen
+async fn test_binary_sync_pixels_in_the_middle(fb: Arc<FrameBuffer>) {
+    let mut input = Vec::new();
+    let mut expected = String::new();
+
+    let x = 42_u16;
+    let y = 13_u16;
+    let num_pixels = fb.get_width() as u32 + 10;
+    input.extend("PXMULTI".as_bytes());
+    input.extend(x.to_le_bytes()); // x
+    input.extend(y.to_le_bytes()); // y
+    input.extend(num_pixels.to_le_bytes()); // length
+
+    for rgba in 0..num_pixels {
+        input.extend((rgba << 8).to_be_bytes());
+    }
+
+    let mut rgba = 0_u32;
+    for x in 42..fb.get_width() {
+        input.extend(format!("PX {x} 13\n").as_bytes());
+        expected += &format!("PX {x} 13 {rgba:06x}\n");
+        rgba += 1;
+    }
+
+    for x in 0..52 {
+        input.extend(format!("PX {x} 14\n").as_bytes());
+        expected += &format!("PX {x} 14 {rgba:06x}\n");
+        rgba += 1;
+    }
+
+    input.extend("PX 52 14\n".as_bytes());
+    expected += "PX 52 14 000000\n";
+
+    assert_returns(&input, &expected).await;
+}
+
+#[cfg(feature = "binary-sync-pixels")]
+#[rstest]
+#[tokio::test]
+/// Try painting too much pixels, so it overflows the framebuffer.
+async fn test_binary_sync_pixels_exceeding_screen(fb: Arc<FrameBuffer>) {
+    let mut input = Vec::new();
+    let x = fb.get_width() as u16 - 1;
+    let y = fb.get_height() as u16 - 1;
+    input.extend("PXMULTI".as_bytes());
+    input.extend(x.to_le_bytes()); // x
+    input.extend(y.to_le_bytes()); // y
+    input.extend(2_u32.to_le_bytes()); // length
+    input.extend(0x12345678_u32.to_be_bytes());
+    input.extend(0x87654321_u32.to_be_bytes());
+
+    input.extend(format!("PX {x} {y}\n").as_bytes());
+    // As we exceeded the screen nothing should have been set
+    assert_returns(&input, &format!("PX {x} {y} 000000\n")).await;
+}
+
+#[cfg(feature = "binary-sync-pixels")]
+#[rstest]
+#[tokio::test]
+/// Try painting more pixels that fit in the buffer. This checks if the parse correctly keeps track of the command
+/// across multiple parse calls as the pixel screen send is bigger than the buffer.
+async fn test_binary_sync_pixels_larger_than_buffer(fb: Arc<FrameBuffer>) {
+    // let fb = Arc::new(FrameBuffer::new(50, 30)); // For testing
+
+    let num_pixels = (fb.get_width() * fb.get_height()) as u32;
+    let pixel_bytes =  num_pixels * 4 /* bytes per pixel */;
+    assert!(
+        pixel_bytes > DEFAULT_NETWORK_BUFFER_SIZE as u32 * 3,
+        "The number of bytes we send must be bigger than the network buffer size so that we test the wrapping. \
+        We actually pick a bit more, just to be safe and do a few cycles. Additionally, in tests the number of bytes \
+        read into the socket is actually around 2074 (and differs each run), so we should be really good here"
+    );
+
+    let mut input = Vec::new();
+    let mut expected = String::new();
+    input.extend("PXMULTI".as_bytes());
+    input.extend(0_u16.to_le_bytes()); // x
+    input.extend(0_u16.to_le_bytes()); // y
+    input.extend(num_pixels.to_le_bytes()); // length
+
+    for rgba in 0..num_pixels {
+        input.extend((rgba << 8).to_be_bytes());
+        // input.extend((0xdeadbeef_u32).to_be_bytes()); // For testing
+    }
+
+    let mut rgba = 0_u32;
+    // Watch out, we first iterate over y, than x
+    for y in 0..fb.get_height() {
+        for x in 0..fb.get_width() {
+            // rgba = 0xdeadbe_u32; // For testing
+            input.extend(format!("PX {x} {y}\n").as_bytes());
+            expected += &format!("PX {x} {y} {rgba:06x}\n");
+            rgba += 1;
+        }
+    }
+
+    let mut stream = MockTcpStream::from_bytes(input.to_owned());
+    handle_connection(
+        &mut stream,
+        ip(),
+        fb,
+        statistics_channel().0,
+        DEFAULT_NETWORK_BUFFER_SIZE,
+        page_size::get(),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(expected, stream.get_output());
+}
+
+async fn assert_returns(input: &[u8], expected: &str) {
+    let mut stream = MockTcpStream::from_bytes(input.to_owned());
+    handle_connection(
+        &mut stream,
+        ip(),
+        fb(),
+        statistics_channel().0,
+        DEFAULT_NETWORK_BUFFER_SIZE,
+        page_size::get(),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(expected, stream.get_output());
 }

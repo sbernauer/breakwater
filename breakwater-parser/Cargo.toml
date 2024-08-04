@@ -23,4 +23,7 @@ pixelbomber.workspace = true
 
 [features]
 alpha = []
-binary-commands = []
+binary-set-pixel = []
+binary-sync-pixels = []
+
+default = ["binary-set-pixel"]

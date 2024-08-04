@@ -37,8 +37,10 @@ vncserver = { workspace = true, optional = true }
 rstest.workspace = true
 
 [features]
-default = ["vnc", "binary-commands"]
+# We don't enable binary-sync-pixels by default to make it a bit harder for clients ;)
+default = ["vnc", "binary-set-pixel"]
 
 vnc = ["dep:vncserver"]
 alpha = ["breakwater-core/alpha", "breakwater-parser/alpha"]
-binary-commands = ["breakwater-core/binary-commands", "breakwater-parser/binary-commands"]
+binary-set-pixel = ["breakwater-core/binary-set-pixel", "breakwater-parser/binary-set-pixel"]
+binary-sync-pixels = ["breakwater-core/binary-sync-pixels", "breakwater-parser/binary-sync-pixels"]
