@@ -207,7 +207,8 @@ impl Parser for OriginalParser {
 
                 // TODO: Support alpha channel (behind alpha feature flag)
                 self.fb.set(x as usize, y as usize, rgba & 0x00ff_ffff);
-
+                //                 P   B   XX  YY  RGBA
+                last_byte_parsed = i + 1 + 2 + 2 + 4;
                 i += 10;
                 continue;
             }
@@ -271,7 +272,7 @@ impl Parser for OriginalParser {
             }
             if current_command & 0xffff_ffff == SIZE_PATTERN {
                 i += 4;
-                last_byte_parsed = i - 1;
+                last_byte_parsed = i + 1;
 
                 response.extend_from_slice(
                     format!("SIZE {} {}\n", self.fb.get_width(), self.fb.get_height()).as_bytes(),
@@ -280,7 +281,7 @@ impl Parser for OriginalParser {
             }
             if current_command & 0xffff_ffff == HELP_PATTERN {
                 i += 4;
-                last_byte_parsed = i - 1;
+                last_byte_parsed = i + 1;
 
                 match help_count {
                     0..=2 => {
