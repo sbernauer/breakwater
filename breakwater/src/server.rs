@@ -249,6 +249,15 @@ pub async fn handle_connection<FB: FrameBuffer>(
             // This happens, because last_byte_parsed is an index starting at 0, so index 6 is from an array of length 7
             leftover_bytes_in_buffer = data_end.saturating_sub(last_byte_parsed).saturating_sub(1);
 
+            // dbg!(
+            //     buffer.len(),
+            //     last_byte_parsed,
+            //     leftover_bytes_in_buffer,
+            //     &buffer[..25],
+            //     &buffer[last_byte_parsed.saturating_sub(5)..last_byte_parsed],
+            //     &buffer[buffer.len().saturating_sub(5)..]
+            // );
+
             // There is no need to leave anything longer than a command can take
             // This prevents malicious clients from sending gibberish and the buffer not getting drained
             leftover_bytes_in_buffer = min(leftover_bytes_in_buffer, parser_lookahead);

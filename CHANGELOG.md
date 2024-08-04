@@ -4,12 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Added support for binary sync protocol behind the `binary-sync-pixels` feature ([#34])
+
 ### Changed
 
+- BREAKING: Feature `binary-commands` has been renamed to `binary-set-pixel` ([#34])
 - BREAKING: Remove the `breakwater-core` crate ([#35])
 - Add a `FrameBuffer` trait, rename the existing implementation one to `SimpleFrameBuffer` ([#35])
 
+### Fixed
+
+- Performance improvement due to addition of missing set of `last_byte_parsed` when sending binary pixel commands ([#36])
+- Minor performance improvement when parsing `HELP` and `SIZE` requests ([#36])
+
+[#34]: https://github.com/sbernauer/breakwater/pull/34
 [#35]: https://github.com/sbernauer/breakwater/pull/35
+[#36]: https://github.com/sbernauer/breakwater/pull/36
 
 ## [0.15.0] - 2024-06-12
 

@@ -20,6 +20,8 @@ Commands must be sent newline-separated, for more details see [Pixelflut](https:
 * `PX x y`: Get the color value of the pixel (x,y), e.g. `PX 10 10`
 * `PBxxyyrgba`: Binary version of the `PX` command. `x` and `y` are little-endian 16 bit coordinates, `r`, `g`, `b` and `a` are a byte each. There is **no** newline after the command.
 Tipp: For most use-cases this is the most efficient format with 10 bytes per pixel ;)
+* `PXMULTI<startX:16><startY:16><len:32><rgba 1 of (startX, startY)><rgba 2 of (startX + 1, startY)><rgba 3 of (startX + 1, startY)>...<rgba len>`: EXPERIMENTAL binary syncing of whole pixel areas. Please note that for performance reasons this will be copied 1:1 to the servers framebuffer. The server will just take the following <len> bytes and memcpy it into the framebuffer, so the alpha channel doesn't matter and you might mess up the screen. This is intended for export-use, especially when syncing or combining multiple Pixelflut screens across multiple servers.
+Note: This command needs to be enabled using the `binary-sync-pixels` feature
 * `SIZE`: Get the size of the drawing surface, e.g. `SIZE 1920 1080`
 * `OFFSET x y`: Apply offset (x,y) to all further pixel draws on this connection. This can e.g. be used to pre-calculate an image/animation and simply use the OFFSET command to move it around the screen without the need to re-calculate it, e.g. `OFFSET 100 100`
 
@@ -100,6 +102,8 @@ As of writing the following features are supported
 
 * `vnc` (enabled by default): Starts a VNC server, where users can connect to. Needs `libvncserver-dev` to be installed. Please note that the VNC server offers basically no latency, but consumes quite some CPU.
 * `alpha` (disabled by default): Respect alpha values during `PX` commands. Disabled by default as this can cause performance degradation.
+* `binary-set-pixel` (enabled by default): Allows use of the `PB` command.
+* `binary-sync-pixels`(disabled by default): Allows use of the `PXMULTI` command.
 
 To e.g. turn the VNC server off, build with
 

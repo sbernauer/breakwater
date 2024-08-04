@@ -1,3 +1,5 @@
+#[cfg(feature = "binary-sync-pixels")]
+use core::slice;
 use std::{
     simd::{num::SimdUint, u32x8, Simd},
     sync::Arc,
@@ -12,11 +14,22 @@ pub(crate) const PB_PATTERN: u64 = string_to_number(b"PB\0\0\0\0\0\0");
 pub(crate) const OFFSET_PATTERN: u64 = string_to_number(b"OFFSET \0\0");
 pub(crate) const SIZE_PATTERN: u64 = string_to_number(b"SIZE\0\0\0\0");
 pub(crate) const HELP_PATTERN: u64 = string_to_number(b"HELP\0\0\0\0");
+#[cfg(feature = "binary-sync-pixels")]
+pub(crate) const PXMULTI_PATTERN: u64 = string_to_number(b"PXMULTI\0");
 
 pub struct OriginalParser<FB: FrameBuffer> {
     connection_x_offset: usize,
     connection_y_offset: usize,
     fb: Arc<FB>,
+    #[cfg(feature = "binary-sync-pixels")]
+    remaining_pixel_sync: Option<RemainingPixelSync>,
+}
+
+#[cfg(feature = "binary-sync-pixels")]
+#[derive(Debug)]
+pub struct RemainingPixelSync {
+    current_index: usize,
+    bytes_remaining: usize,
 }
 
 impl<FB: FrameBuffer> OriginalParser<FB> {
@@ -25,6 +38,8 @@ impl<FB: FrameBuffer> OriginalParser<FB> {
             connection_x_offset: 0,
             connection_y_offset: 0,
             fb,
+            #[cfg(feature = "binary-sync-pixels")]
+            remaining_pixel_sync: None,
         }
     }
 }
@@ -36,6 +51,45 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
 
         let mut i = 0; // We can't use a for loop here because Rust don't lets use skip characters by incrementing i
         let loop_end = buffer.len().saturating_sub(PARSER_LOOKAHEAD); // Let's extract the .len() call and the subtraction into it's own variable so we only compute it once
+
+        #[cfg(feature = "binary-sync-pixels")]
+        if let Some(remaining) = &self.remaining_pixel_sync {
+            let buffer = &buffer[0..loop_end];
+
+            if remaining.bytes_remaining <= buffer.len() {
+                // Easy going here
+                self.fb
+                    .set_multi_from_start_index(remaining.current_index, unsafe {
+                        slice::from_raw_parts(buffer.as_ptr(), remaining.bytes_remaining)
+                    });
+                i += remaining.bytes_remaining;
+                last_byte_parsed = i;
+                self.remaining_pixel_sync = None;
+            } else {
+                // The client requested to write more bytes that are currently in the buffer, we need to remember
+                // what the client is doing.
+
+                // We need to round down to the 4 bytes of a pixel alignment
+                let pixel_bytes = buffer.len() / 4 * 4;
+
+                let mut index = remaining.current_index;
+                index += self
+                    .fb
+                    .set_multi_from_start_index(remaining.current_index, unsafe {
+                        slice::from_raw_parts(buffer.as_ptr(), pixel_bytes)
+                    });
+
+                self.remaining_pixel_sync = Some(RemainingPixelSync {
+                    current_index: index,
+                    bytes_remaining: remaining.bytes_remaining.saturating_sub(pixel_bytes),
+                });
+
+                // Nothing to do left, we can early return
+                // I have absolutely no idea why we need to subtract 1 here, but it is what it is. At least we have
+                // tests for this madness :)
+                return i + pixel_bytes.saturating_sub(1);
+            }
+        }
 
         while i < loop_end {
             let current_command =
@@ -139,10 +193,9 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
                         continue;
                     }
                 }
-            // In case the feature is disabled this if should be optimized away, as "cfg!" should be a constant expression.
-            } else if cfg!(feature = "binary-commands")
-                && current_command & 0x0000_ffff == PB_PATTERN
-            {
+            }
+            #[cfg(feature = "binary-set-pixel")]
+            if current_command & 0x0000_ffff == PB_PATTERN {
                 let command_bytes =
                     unsafe { (buffer.as_ptr().add(i + 2) as *const u64).read_unaligned() };
 
@@ -152,10 +205,57 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
 
                 // TODO: Support alpha channel (behind alpha feature flag)
                 self.fb.set(x as usize, y as usize, rgba & 0x00ff_ffff);
-
+                //                 P   B   XX  YY  RGBA
+                last_byte_parsed = i + 1 + 2 + 2 + 4;
                 i += 10;
                 continue;
-            } else if current_command & 0x00ff_ffff_ffff_ffff == OFFSET_PATTERN {
+            }
+            #[cfg(feature = "binary-sync-pixels")]
+            if current_command & 0x00ff_ffff_ffff_ffff == PXMULTI_PATTERN {
+                i += "PXMULTI".len();
+                let header = unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };
+                i += 8;
+
+                let start_x = u16::from_le((header) as u16);
+                let start_y = u16::from_le((header >> 16) as u16);
+                let len = u32::from_le((header >> 32) as u32);
+                let len_in_bytes = len as usize * 4;
+                let bytes_left_in_buffer = loop_end.saturating_sub(i);
+
+                if len_in_bytes <= bytes_left_in_buffer {
+                    // Easy going here
+                    self.fb
+                        .set_multi(start_x as usize, start_y as usize, unsafe {
+                            slice::from_raw_parts(buffer.as_ptr().add(i), len_in_bytes)
+                        });
+
+                    i += len_in_bytes;
+                    last_byte_parsed = i;
+                    continue;
+                } else {
+                    // We need to round down to the 4 bytes of a pixel alignment
+                    let pixel_bytes: usize = bytes_left_in_buffer / 4 * 4;
+
+                    // The client requested to write more bytes that are currently in the buffer, we need to remember
+                    // what the client is doing.
+                    let mut current_index =
+                        start_x as usize + start_y as usize * self.fb.get_width();
+                    current_index += self.fb.set_multi_from_start_index(current_index, unsafe {
+                        slice::from_raw_parts(buffer.as_ptr().add(i), pixel_bytes)
+                    });
+
+                    self.remaining_pixel_sync = Some(RemainingPixelSync {
+                        current_index,
+                        bytes_remaining: len_in_bytes - pixel_bytes,
+                    });
+
+                    // Nothing to do left, we can early return
+                    // I have absolutely no idea why we need to subtract 1 here, but it is what it is. At least we have
+                    // tests for this madness :)
+                    return i + pixel_bytes.saturating_sub(1);
+                }
+            }
+            if current_command & 0x00ff_ffff_ffff_ffff == OFFSET_PATTERN {
                 i += 7;
 
                 let (x, y, present) = parse_pixel_coordinates(buffer.as_ptr(), &mut i);
@@ -167,17 +267,19 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
                     self.connection_y_offset = y;
                     continue;
                 }
-            } else if current_command & 0xffff_ffff == SIZE_PATTERN {
+            }
+            if current_command & 0xffff_ffff == SIZE_PATTERN {
                 i += 4;
-                last_byte_parsed = i - 1;
+                last_byte_parsed = i + 1;
 
                 response.extend_from_slice(
                     format!("SIZE {} {}\n", self.fb.get_width(), self.fb.get_height()).as_bytes(),
                 );
                 continue;
-            } else if current_command & 0xffff_ffff == HELP_PATTERN {
+            }
+            if current_command & 0xffff_ffff == HELP_PATTERN {
                 i += 4;
-                last_byte_parsed = i - 1;
+                last_byte_parsed = i + 1;
 
                 match help_count {
                     0..=2 => {
@@ -198,7 +300,8 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
             i += 1;
         }
 
-        last_byte_parsed.wrapping_sub(1)
+        last_byte_parsed
+        // last_byte_parsed.saturating_sub(1)
     }
 
     fn parser_lookahead(&self) -> usize {

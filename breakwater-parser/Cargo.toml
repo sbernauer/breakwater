@@ -18,7 +18,11 @@ memchr.workspace = true
 [dev-dependencies]
 criterion.workspace = true
 pixelbomber.workspace = true
+rstest.workspace = true
 
 [features]
 alpha = []
-binary-commands = []
+binary-set-pixel = []
+binary-sync-pixels = []
+
+default = ["binary-set-pixel"]
