@@ -3,6 +3,7 @@
 
 use const_format::formatcp;
 
+#[cfg(target_arch = "x86_64")]
 mod assembler;
 mod framebuffer;
 mod memchr;
