@@ -4,13 +4,14 @@ use breakwater_parser::SimpleFrameBuffer;
 use clap::Parser;
 use log::{info, trace};
 use prometheus_exporter::PrometheusExporter;
-use sinks::ffmpeg::FfmpegSink;
+use sinks::{ffmpeg::FfmpegSink, native_display};
 use snafu::{ResultExt, Snafu};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 use crate::{
     cli_args::CliArgs,
     server::Server,
+    sinks::native_display::DisplaySink,
     statistics::{Statistics, StatisticsEvent, StatisticsInformationEvent, StatisticsSaveMode},
 };
 
@@ -77,6 +78,10 @@ pub enum Error {
     #[cfg(feature = "vnc")]
     #[snafu(display("Failed to get cross-platform ThreadPriority. Please report this error message together with your operating system: {message}"))]
     GetThreadPriority { message: String },
+
+    #[cfg(feature = "native-display")]
+    #[snafu(display("Failed to run native display"))]
+    RunNativeDisplay { source: native_display::Error },
 }
 
 #[tokio::main]
@@ -184,9 +189,26 @@ async fn main() -> Result<(), Error> {
     }
     .context(SpawnVncServerThreadSnafu)?;
 
-    tokio::signal::ctrl_c()
-        .await
-        .context(WaitForCtrlCSignalSnafu)?;
+    #[cfg(feature = "native-display")]
+    {
+        let (event_loop, mut display_sink) =
+            DisplaySink::new(fb.clone()).context(RunNativeDisplaySnafu)?;
+        let event_loop_proxy = event_loop.create_proxy();
+        tokio::spawn(async move {
+            tokio::signal::ctrl_c().await.unwrap();
+            event_loop_proxy.send_event(()).unwrap();
+            Result::<(), ()>::Ok(())
+        });
+        display_sink
+            .run(event_loop)
+            .context(RunNativeDisplaySnafu)?;
+    }
+    #[cfg(not(feature = "native-display"))]
+    {
+        tokio::signal::ctrl_c()
+            .await
+            .context(WaitForCtrlCSignalSnafu)?;
+    }
 
     prometheus_exporter_thread.abort();
     server_listener_thread.abort();

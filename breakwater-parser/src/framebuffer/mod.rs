@@ -44,4 +44,6 @@ pub trait FrameBuffer {
     fn set_multi_from_start_index(&self, starting_index: usize, pixels: &[u8]) -> usize;
 
     fn as_bytes(&self) -> &[u8];
+
+    fn as_pixels(&self) -> &[u32];
 }

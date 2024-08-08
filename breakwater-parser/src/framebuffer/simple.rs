@@ -79,6 +79,10 @@ impl FrameBuffer for SimpleFrameBuffer {
         let ptr = self.buffer.as_ptr() as *const u8;
         unsafe { std::slice::from_raw_parts(ptr, len) }
     }
+
+    fn as_pixels(&self) -> &[u32] {
+        &self.buffer
+    }
 }
 
 #[cfg(test)]
