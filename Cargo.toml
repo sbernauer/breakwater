@@ -1,5 +1,5 @@
 [workspace]
-members = ["breakwater-core", "breakwater-parser", "breakwater"]
+members = ["breakwater-parser", "breakwater"]
 resolver = "2"
 
 [workspace.package]
@@ -14,7 +14,6 @@ chrono = "0.4"
 clap = { version = "4.5", features = ["derive"] }
 const_format = "0.2"
 criterion = {version = "0.5", features = ["async_tokio"]}
-enum_dispatch = "0.3"
 env_logger = "0.11"
 log = "0.4"
 memadvise = "0.1"

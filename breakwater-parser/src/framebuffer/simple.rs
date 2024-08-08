@@ -1,50 +1,43 @@
-use std::slice;
+use core::slice;
 
-pub struct FrameBuffer {
+use super::FrameBuffer;
+
+pub struct SimpleFrameBuffer {
     width: usize,
     height: usize,
     buffer: Vec<u32>,
 }
 
-impl FrameBuffer {
+impl SimpleFrameBuffer {
     pub fn new(width: usize, height: usize) -> Self {
         let mut buffer = Vec::with_capacity(width * height);
         buffer.resize_with(width * height, || 0);
-        FrameBuffer {
+        Self {
             width,
             height,
             buffer,
         }
     }
+}
 
-    pub fn get_width(&self) -> usize {
+impl FrameBuffer for SimpleFrameBuffer {
+    #[inline(always)]
+    fn get_width(&self) -> usize {
         self.width
     }
 
-    pub fn get_height(&self) -> usize {
+    #[inline(always)]
+    fn get_height(&self) -> usize {
         self.height
     }
 
-    pub fn get_size(&self) -> usize {
-        self.width * self.height
+    #[inline(always)]
+    unsafe fn get_unchecked(&self, x: usize, y: usize) -> u32 {
+        *self.buffer.get_unchecked(x + y * self.width)
     }
 
     #[inline(always)]
-    pub fn get(&self, x: usize, y: usize) -> Option<u32> {
-        if x < self.width && y < self.height {
-            Some(*unsafe { self.buffer.get_unchecked(x + y * self.width) })
-        } else {
-            None
-        }
-    }
-
-    #[inline(always)]
-    pub fn get_unchecked(&self, x: usize, y: usize) -> u32 {
-        *unsafe { self.buffer.get_unchecked(x + y * self.width) }
-    }
-
-    #[inline(always)]
-    pub fn set(&self, x: usize, y: usize, rgba: u32) {
+    fn set(&self, x: usize, y: usize, rgba: u32) {
         // https://github.com/sbernauer/breakwater/pull/11
         // If we make the FrameBuffer large enough (e.g. 10_000 x 10_000) we don't need to check the bounds here
         // (x and y are max 4 digit numbers). Flamegraph has shown 5.21% of runtime in this bound check. On the other
@@ -58,25 +51,8 @@ impl FrameBuffer {
         }
     }
 
-    /// We can *not* take an `&[u32]` for the pixel here, as `std::slice::from_raw_parts` requires the data to be
-    /// aligned. As the data already is stored in a buffer we can not guarantee it's correctly aligned, so let's just
-    /// treat the pixels as raw bytes.
-    ///
-    /// Returns the coordinates where we landed after filling
     #[inline(always)]
-    pub fn set_multi(&self, start_x: usize, start_y: usize, pixels: &[u8]) -> (usize, usize) {
-        let starting_index = start_x + start_y * self.width;
-        let pixels_copied = self.set_multi_from_start_index(starting_index, pixels);
-
-        let new_x = (start_x + pixels_copied) % self.width;
-        let new_y = start_y + (pixels_copied / self.width);
-
-        (new_x, new_y)
-    }
-
-    /// Returns the number of pixels copied
-    #[inline(always)]
-    pub fn set_multi_from_start_index(&self, starting_index: usize, pixels: &[u8]) -> usize {
+    fn set_multi_from_start_index(&self, starting_index: usize, pixels: &[u8]) -> usize {
         let num_pixels = pixels.len() / 4;
 
         if starting_index + num_pixels > self.buffer.len() {
@@ -98,13 +74,16 @@ impl FrameBuffer {
         num_pixels
     }
 
-    pub fn get_buffer(&self) -> &[u32] {
-        &self.buffer
+    #[inline(always)]
+    fn as_bytes(&self) -> &[u8] {
+        let len = 4 * self.buffer.len();
+        let ptr = self.buffer.as_ptr() as *const u8;
+        unsafe { std::slice::from_raw_parts(ptr, len) }
     }
 
-    pub fn as_bytes(&self) -> &[u8] {
-        let len_in_bytes = self.buffer.len() * 4;
-        unsafe { slice::from_raw_parts(self.buffer.as_ptr() as *const u8, len_in_bytes) }
+    #[inline(always)]
+    fn as_pixels(&self) -> &[u32] {
+        &self.buffer
     }
 }
 
@@ -115,9 +94,9 @@ mod tests {
     use rstest::{fixture, rstest};
 
     #[fixture]
-    fn fb() -> FrameBuffer {
+    fn fb() -> SimpleFrameBuffer {
         // We keep the framebuffer so small, so that we can easily test all pixels in a test run
-        FrameBuffer::new(640, 480)
+        SimpleFrameBuffer::new(640, 480)
     }
 
     #[rstest]
@@ -125,19 +104,24 @@ mod tests {
     #[case(0, 0, 0xff0000)]
     #[case(0, 0, 0x0000ff)]
     #[case(0, 0, 0x12345678)]
-    pub fn test_roundtrip(fb: FrameBuffer, #[case] x: usize, #[case] y: usize, #[case] rgba: u32) {
+    pub fn test_roundtrip(
+        fb: SimpleFrameBuffer,
+        #[case] x: usize,
+        #[case] y: usize,
+        #[case] rgba: u32,
+    ) {
         fb.set(x, y, rgba);
         assert_eq!(fb.get(x, y), Some(rgba));
     }
 
     #[rstest]
-    pub fn test_out_of_bounds(fb: FrameBuffer) {
+    pub fn test_out_of_bounds(fb: SimpleFrameBuffer) {
         assert_eq!(fb.get(usize::MAX, usize::MAX), None);
         assert_eq!(fb.get(usize::MAX, usize::MAX), None);
     }
 
     #[rstest]
-    pub fn test_set_multi_from_beginning(fb: FrameBuffer) {
+    pub fn test_set_multi_from_beginning(fb: SimpleFrameBuffer) {
         let pixels = (0..10_u32).collect::<Vec<_>>();
         let pixel_bytes: Vec<u8> = pixels.iter().flat_map(|p| p.to_le_bytes()).collect();
 
@@ -155,7 +139,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_set_multi_in_the_middle(fb: FrameBuffer) {
+    pub fn test_set_multi_in_the_middle(fb: SimpleFrameBuffer) {
         let mut x = 10;
         let mut y = 100;
 
@@ -191,7 +175,7 @@ mod tests {
     }
 
     #[rstest]
-    pub fn test_set_multi_does_nothing_when_too_long(fb: FrameBuffer) {
+    pub fn test_set_multi_does_nothing_when_too_long(fb: SimpleFrameBuffer) {
         let mut too_long = Vec::with_capacity(fb.width * fb.height * 4 /* pixels per byte */);
         too_long.fill_with(|| 42_u8);
         let (current_x, current_y) = fb.set_multi(1, 0, &too_long);

@@ -1,20 +1,18 @@
 use std::sync::Arc;
 
-use breakwater_core::framebuffer::FrameBuffer;
+use crate::{FrameBuffer, Parser};
 
-use crate::Parser;
-
-pub struct MemchrParser {
-    fb: Arc<FrameBuffer>,
+pub struct MemchrParser<FB: FrameBuffer> {
+    fb: Arc<FB>,
 }
 
-impl MemchrParser {
-    pub fn new(fb: Arc<FrameBuffer>) -> Self {
+impl<FB: FrameBuffer> MemchrParser<FB> {
+    pub fn new(fb: Arc<FB>) -> Self {
         Self { fb }
     }
 }
 
-impl Parser for MemchrParser {
+impl<FB: FrameBuffer> Parser for MemchrParser<FB> {
     fn parse(&mut self, buffer: &[u8], _response: &mut Vec<u8>) -> usize {
         let mut last_char_after_newline = 0;
         for newline in memchr::memchr_iter(b'\n', buffer) {

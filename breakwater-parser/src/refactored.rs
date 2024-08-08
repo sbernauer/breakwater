@@ -1,25 +1,23 @@
 use std::sync::Arc;
 
-use breakwater_core::{framebuffer::FrameBuffer, HELP_TEXT};
-
 use crate::{
     original::{
         parse_pixel_coordinates, simd_unhex, HELP_PATTERN, OFFSET_PATTERN, PB_PATTERN, PX_PATTERN,
         SIZE_PATTERN,
     },
-    Parser,
+    FrameBuffer, Parser, HELP_TEXT,
 };
 
 const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
 
-pub struct RefactoredParser {
+pub struct RefactoredParser<FB: FrameBuffer> {
     connection_x_offset: usize,
     connection_y_offset: usize,
-    fb: Arc<FrameBuffer>,
+    fb: Arc<FB>,
 }
 
-impl RefactoredParser {
-    pub fn new(fb: Arc<FrameBuffer>) -> Self {
+impl<FB: FrameBuffer> RefactoredParser<FB> {
+    pub fn new(fb: Arc<FB>) -> Self {
         Self {
             connection_x_offset: 0,
             connection_y_offset: 0,
@@ -152,7 +150,7 @@ impl RefactoredParser {
         }
 
         let alpha_comp = 0xff - alpha;
-        let current = self.fb.get_unchecked(x, y);
+        let current = unsafe { self.fb.get_unchecked(x, y) };
         let r = (rgba >> 16) & 0xff;
         let g = (rgba >> 8) & 0xff;
         let b = rgba & 0xff;
@@ -192,7 +190,7 @@ impl RefactoredParser {
     }
 }
 
-impl Parser for RefactoredParser {
+impl<FB: FrameBuffer> Parser for RefactoredParser<FB> {
     fn parse(&mut self, buffer: &[u8], response: &mut Vec<u8>) -> usize {
         let mut last_byte_parsed = 0;
 

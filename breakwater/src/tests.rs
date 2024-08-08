@@ -5,12 +5,13 @@ use std::{
     sync::Arc,
 };
 
-use breakwater_core::{framebuffer::FrameBuffer, test_helpers::MockTcpStream, HELP_TEXT};
+use breakwater_parser::{FrameBuffer, SimpleFrameBuffer, HELP_TEXT};
 use rstest::{fixture, rstest};
 use tokio::sync::mpsc;
 
 use crate::{
     cli_args::DEFAULT_NETWORK_BUFFER_SIZE, server::handle_connection, statistics::StatisticsEvent,
+    test_helpers::mock_tcp_stream::MockTcpStream,
 };
 
 #[fixture]
@@ -19,9 +20,9 @@ fn ip() -> IpAddr {
 }
 
 #[fixture]
-fn fb() -> Arc<FrameBuffer> {
+fn fb() -> Arc<SimpleFrameBuffer> {
     // We keep the framebuffer so small, so that we can easily test all pixels in a test run
-    Arc::new(FrameBuffer::new(640, 480))
+    Arc::new(SimpleFrameBuffer::new(640, 480))
 }
 
 #[fixture]
@@ -99,10 +100,10 @@ async fn test_setting_pixel(#[case] input: &str, #[case] expected: &str) {
 #[case("PX 0 0 aaaaaa\n")]
 #[case("PX 0 0 aa\n")]
 #[tokio::test]
-async fn test_safe(
+async fn test_safe<FB: FrameBuffer>(
     #[case] input: &str,
     ip: IpAddr,
-    fb: Arc<FrameBuffer>,
+    fb: Arc<FB>,
     statistics_channel: (
         mpsc::Sender<StatisticsEvent>,
         mpsc::Receiver<StatisticsEvent>,
@@ -142,13 +143,13 @@ async fn test_safe(
 // Yes, this exceeds the framebuffer size
 #[case(10, 10, fb().get_width() - 5, fb().get_height() - 5)]
 #[tokio::test]
-async fn test_drawing_rect(
+async fn test_drawing_rect<FB: FrameBuffer>(
     #[case] width: usize,
     #[case] height: usize,
     #[case] offset_x: usize,
     #[case] offset_y: usize,
     ip: IpAddr,
-    fb: Arc<FrameBuffer>,
+    fb: Arc<FB>,
     statistics_channel: (
         mpsc::Sender<StatisticsEvent>,
         mpsc::Receiver<StatisticsEvent>,
@@ -260,11 +261,11 @@ async fn test_drawing_rect(
     "PX 0 0 000000\nPX 0 0 313233\n"
 )]
 #[tokio::test]
-async fn test_binary_commands(
+async fn test_binary_set_pixel<FB: FrameBuffer>(
     #[case] input: &str,
     #[case] expected: &str,
     ip: IpAddr,
-    fb: Arc<FrameBuffer>,
+    fb: Arc<FB>,
     statistics_channel: (
         mpsc::Sender<StatisticsEvent>,
         mpsc::Receiver<StatisticsEvent>,
@@ -324,7 +325,7 @@ async fn test_binary_sync_pixels() {
 #[rstest]
 #[tokio::test]
 /// Try painting the very last pixel of the screen. There is only space for a single pixel left.
-async fn test_binary_sync_pixels_last_pixel(fb: Arc<FrameBuffer>) {
+async fn test_binary_sync_pixels_last_pixel<FB: FrameBuffer>(fb: Arc<FB>) {
     let mut input = Vec::new();
     let x = fb.get_width() as u16 - 1;
     let y = fb.get_height() as u16 - 1;
@@ -349,7 +350,7 @@ async fn test_binary_sync_pixels_last_pixel(fb: Arc<FrameBuffer>) {
 #[rstest]
 #[tokio::test]
 /// Try painting some pixels in the middle of the screen
-async fn test_binary_sync_pixels_in_the_middle(fb: Arc<FrameBuffer>) {
+async fn test_binary_sync_pixels_in_the_middle<FB: FrameBuffer>(fb: Arc<FB>) {
     let mut input = Vec::new();
     let mut expected = String::new();
 
@@ -388,7 +389,7 @@ async fn test_binary_sync_pixels_in_the_middle(fb: Arc<FrameBuffer>) {
 #[rstest]
 #[tokio::test]
 /// Try painting too much pixels, so it overflows the framebuffer.
-async fn test_binary_sync_pixels_exceeding_screen(fb: Arc<FrameBuffer>) {
+async fn test_binary_sync_pixels_exceeding_screen<FB: FrameBuffer>(fb: Arc<FB>) {
     let mut input = Vec::new();
     let x = fb.get_width() as u16 - 1;
     let y = fb.get_height() as u16 - 1;
@@ -409,7 +410,7 @@ async fn test_binary_sync_pixels_exceeding_screen(fb: Arc<FrameBuffer>) {
 #[tokio::test]
 /// Try painting more pixels that fit in the buffer. This checks if the parse correctly keeps track of the command
 /// across multiple parse calls as the pixel screen send is bigger than the buffer.
-async fn test_binary_sync_pixels_larger_than_buffer(fb: Arc<FrameBuffer>) {
+async fn test_binary_sync_pixels_larger_than_buffer<FB: FrameBuffer>(fb: Arc<FB>) {
     // let fb = Arc::new(FrameBuffer::new(50, 30)); // For testing
 
     let num_pixels = (fb.get_width() * fb.get_height()) as u32;

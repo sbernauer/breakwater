@@ -12,14 +12,13 @@ name = "parsing"
 harness = false
 
 [dependencies]
-breakwater-core.workspace = true
-
-enum_dispatch.workspace = true
+const_format.workspace = true
 memchr.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
 pixelbomber.workspace = true
+rstest.workspace = true
 
 [features]
 alpha = []

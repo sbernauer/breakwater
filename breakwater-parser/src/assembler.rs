@@ -1,13 +1,20 @@
-use std::arch::asm;
+use std::{arch::asm, sync::Arc};
 
-use crate::Parser;
+use crate::{FrameBuffer, Parser};
 
 const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
 
-#[derive(Default)]
-pub struct AssemblerParser {}
+pub struct AssemblerParser<FB: FrameBuffer> {
+    _fb: Arc<FB>,
+}
 
-impl Parser for AssemblerParser {
+impl<FB: FrameBuffer> AssemblerParser<FB> {
+    pub fn new(_fb: Arc<FB>) -> Self {
+        Self { _fb }
+    }
+}
+
+impl<FB: FrameBuffer> Parser for AssemblerParser<FB> {
     fn parse(&mut self, buffer: &[u8], _response: &mut Vec<u8>) -> usize {
         let mut last_byte_parsed = 0;
 

@@ -1,6 +1,6 @@
 use std::{process::Stdio, sync::Arc, time::Duration};
 
-use breakwater_core::framebuffer::FrameBuffer;
+use breakwater_parser::FrameBuffer;
 use chrono::Local;
 use log::debug;
 use snafu::{ResultExt, Snafu};
@@ -25,15 +25,15 @@ pub enum Error {
     WriteDataToFfmeg { source: std::io::Error },
 }
 
-pub struct FfmpegSink {
-    fb: Arc<FrameBuffer>,
+pub struct FfmpegSink<FB: FrameBuffer> {
+    fb: Arc<FB>,
     rtmp_address: Option<String>,
     video_save_folder: Option<String>,
     fps: u32,
 }
 
-impl FfmpegSink {
-    pub fn new(args: &CliArgs, fb: Arc<FrameBuffer>) -> Option<Self> {
+impl<FB: FrameBuffer> FfmpegSink<FB> {
+    pub fn new(args: &CliArgs, fb: Arc<FB>) -> Option<Self> {
         if args.rtmp_address.is_some() || args.video_save_folder.is_some() {
             Some(FfmpegSink {
                 fb,

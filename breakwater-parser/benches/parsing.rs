@@ -1,11 +1,9 @@
 use std::{sync::Arc, time::Duration};
 
-use breakwater_core::framebuffer::FrameBuffer;
 #[cfg(target_arch = "x86_64")]
-use breakwater_parser::assembler::AssemblerParser;
+use breakwater_parser::AssemblerParser;
 use breakwater_parser::{
-    memchr::MemchrParser, original::OriginalParser, refactored::RefactoredParser, Parser,
-    ParserImplementation,
+    MemchrParser, OriginalParser, Parser, RefactoredParser, SimpleFrameBuffer,
 };
 use criterion::{criterion_group, criterion_main, Criterion};
 use pixelbomber::image_handler::{self, ImageConfigBuilder};
@@ -99,7 +97,10 @@ fn invoke_benchmark(
 
     let mut c_group = c.benchmark_group(bench_name);
 
-    let fb = Arc::new(FrameBuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT));
+    let fb = Arc::new(SimpleFrameBuffer::new(
+        FRAMEBUFFER_WIDTH,
+        FRAMEBUFFER_HEIGHT,
+    ));
 
     let parser_names = vec!["original", "refactored" /*"memchr"*/];
 
@@ -108,19 +109,13 @@ fn invoke_benchmark(
 
     for parse_name in parser_names {
         c_group.bench_with_input(parse_name, &commands, |b, input| {
-            b.iter(|| {
-                let mut parser = match parse_name {
-                    "original" => ParserImplementation::Original(OriginalParser::new(fb.clone())),
-                    "refactored" => {
-                        ParserImplementation::Refactored(RefactoredParser::new(fb.clone()))
-                    }
-                    "memchr" => ParserImplementation::Naive(MemchrParser::new(fb.clone())),
-                    #[cfg(target_arch = "x86_64")]
-                    "assembler" => ParserImplementation::Assembler(AssemblerParser::default()),
-                    _ => panic!("Parser implementation {parse_name} not known"),
-                };
-
-                parser.parse(input, &mut Vec::new());
+            b.iter(|| match parse_name {
+                "original" => OriginalParser::new(fb.clone()).parse(input, &mut Vec::new()),
+                "refactored" => RefactoredParser::new(fb.clone()).parse(input, &mut Vec::new()),
+                "memchr" => MemchrParser::new(fb.clone()).parse(input, &mut Vec::new()),
+                #[cfg(target_arch = "x86_64")]
+                "assembler" => AssemblerParser::new(fb.clone()).parse(input, &mut Vec::new()),
+                _ => panic!("Parser implementation {parse_name} not known"),
             });
         });
     }

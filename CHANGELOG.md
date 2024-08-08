@@ -11,6 +11,8 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - BREAKING: Feature `binary-commands` has been renamed to `binary-set-pixel` ([#34])
+- BREAKING: Remove the `breakwater-core` crate ([#37])
+- Add a `FrameBuffer` trait, rename the existing implementation one to `SimpleFrameBuffer` ([#37])
 
 ### Fixed
 
@@ -19,6 +21,7 @@ All notable changes to this project will be documented in this file.
 
 [#34]: https://github.com/sbernauer/breakwater/pull/34
 [#36]: https://github.com/sbernauer/breakwater/pull/36
+[#37]: https://github.com/sbernauer/breakwater/pull/37
 
 ## [0.15.0] - 2024-06-12
 

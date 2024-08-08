@@ -5,9 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use breakwater_core::{framebuffer::FrameBuffer, ALT_HELP_TEXT, HELP_TEXT};
-
-use crate::Parser;
+use crate::{FrameBuffer, Parser, ALT_HELP_TEXT, HELP_TEXT};
 
 pub const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
 
@@ -19,10 +17,10 @@ pub(crate) const HELP_PATTERN: u64 = string_to_number(b"HELP\0\0\0\0");
 #[cfg(feature = "binary-sync-pixels")]
 pub(crate) const PXMULTI_PATTERN: u64 = string_to_number(b"PXMULTI\0");
 
-pub struct OriginalParser {
+pub struct OriginalParser<FB: FrameBuffer> {
     connection_x_offset: usize,
     connection_y_offset: usize,
-    fb: Arc<FrameBuffer>,
+    fb: Arc<FB>,
     #[cfg(feature = "binary-sync-pixels")]
     remaining_pixel_sync: Option<RemainingPixelSync>,
 }
@@ -34,8 +32,8 @@ pub struct RemainingPixelSync {
     bytes_remaining: usize,
 }
 
-impl OriginalParser {
-    pub fn new(fb: Arc<FrameBuffer>) -> Self {
+impl<FB: FrameBuffer> OriginalParser<FB> {
+    pub fn new(fb: Arc<FB>) -> Self {
         Self {
             connection_x_offset: 0,
             connection_y_offset: 0,
@@ -46,7 +44,7 @@ impl OriginalParser {
     }
 }
 
-impl Parser for OriginalParser {
+impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
     fn parse(&mut self, buffer: &[u8], response: &mut Vec<u8>) -> usize {
         let mut last_byte_parsed = 0;
         let mut help_count = 0;
@@ -148,7 +146,7 @@ impl Parser for OriginalParser {
                             }
 
                             let alpha_comp = 0xff - alpha;
-                            let current = self.fb.get_unchecked(x, y);
+                            let current = unsafe { self.fb.get_unchecked(x, y) };
                             let r = (rgba >> 16) & 0xff;
                             let g = (rgba >> 8) & 0xff;
                             let b = rgba & 0xff;

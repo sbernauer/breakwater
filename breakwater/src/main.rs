@@ -1,6 +1,6 @@
 use std::{env, num::TryFromIntError, sync::Arc};
 
-use breakwater_core::framebuffer::FrameBuffer;
+use breakwater_parser::SimpleFrameBuffer;
 use clap::Parser;
 use log::{info, trace};
 use prometheus_exporter::PrometheusExporter;
@@ -26,6 +26,8 @@ mod prometheus_exporter;
 mod server;
 mod sinks;
 mod statistics;
+#[cfg(test)]
+mod test_helpers;
 
 #[cfg(test)]
 mod tests;
@@ -87,7 +89,8 @@ async fn main() -> Result<(), Error> {
 
     let args = CliArgs::parse();
 
-    let fb = Arc::new(FrameBuffer::new(args.width, args.height));
+    // Not using dynamic dispatch here for performance reasons
+    let fb = Arc::new(SimpleFrameBuffer::new(args.width, args.height));
 
     // If we make the channel to big, stats will start to lag behind
     // TODO: Check performance impact in real-world scenario. Maybe the statistics thread blocks the other threads
