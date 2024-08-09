@@ -1,21 +1,26 @@
+use core::slice;
 use std::{sync::Arc, time::Duration};
 
+use async_trait::async_trait;
 use breakwater_parser::FrameBuffer;
-use core::slice;
 use number_prefix::NumberPrefix;
 use rusttype::{point, Font, Scale};
 use snafu::{OptionExt, ResultExt, Snafu};
-use tokio::sync::{
-    broadcast,
-    mpsc::{self, Sender},
-    oneshot,
+use tokio::{
+    sync::{broadcast, mpsc},
+    time,
 };
 use vncserver::{
     rfb_framebuffer_malloc, rfb_get_screen, rfb_init_server, rfb_mark_rect_as_modified,
     rfb_run_event_loop, RfbScreenInfoPtr,
 };
 
-use crate::statistics::{StatisticsEvent, StatisticsInformationEvent};
+use crate::{
+    cli_args::CliArgs,
+    statistics::{StatisticsEvent, StatisticsInformationEvent},
+};
+
+use super::DisplaySink;
 
 const STATS_HEIGHT: usize = 35;
 
@@ -42,34 +47,30 @@ pub enum Error {
 }
 
 // Sorry! Help needed :)
-unsafe impl<'a, FB: FrameBuffer> Send for VncServer<'a, FB> {}
+unsafe impl<'a, FB: FrameBuffer> Send for VncSink<'a, FB> {}
 
-pub struct VncServer<'a, FB: FrameBuffer> {
+pub struct VncSink<'a, FB: FrameBuffer> {
     fb: Arc<FB>,
+    statistics_tx: mpsc::Sender<StatisticsEvent>,
+    statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
+    terminate_signal_rx: broadcast::Receiver<()>,
+
     screen: RfbScreenInfoPtr,
     target_fps: u32,
-
-    statistics_tx: Sender<StatisticsEvent>,
-    statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
-    terminate_signal_tx: oneshot::Receiver<()>,
-
     text: String,
     font: Font<'a>,
 }
 
-impl<'a, FB: FrameBuffer> VncServer<'a, FB> {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
+#[async_trait]
+impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
+    async fn new(
         fb: Arc<FB>,
-        port: u16,
-        target_fps: u32,
-        statistics_tx: Sender<StatisticsEvent>,
+        cli_args: &CliArgs,
+        statistics_tx: mpsc::Sender<StatisticsEvent>,
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
-        terminate_signal_tx: oneshot::Receiver<()>,
-        text: String,
-        font: String,
-    ) -> Result<Self, Error> {
-        let font = match font.as_str() {
+        terminate_signal_rx: broadcast::Receiver<()>,
+    ) -> Result<Option<Self>, super::Error> {
+        let font = match cli_args.font.as_str() {
             // We ship our own copy of Arial.ttf, so that users don't need to download and provide it
             "Arial.ttf" => {
                 let font_bytes = include_bytes!("../../../Arial.ttf");
@@ -78,12 +79,12 @@ impl<'a, FB: FrameBuffer> VncServer<'a, FB> {
                 })?
             }
             _ => {
-                let font_bytes = std::fs::read(&font).context(ReadFontFileSnafu {
-                    font_file: font.to_string(),
+                let font_bytes = std::fs::read(&cli_args.font).context(ReadFontFileSnafu {
+                    font_file: cli_args.font.clone(),
                 })?;
 
                 Font::try_from_vec(font_bytes).context(ConstructFontFromFontFileSnafu {
-                    font_file: font.to_string(),
+                    font_file: cli_args.font.clone(),
                 })?
             }
         };
@@ -97,29 +98,28 @@ impl<'a, FB: FrameBuffer> VncServer<'a, FB> {
             (*screen).serverFormat.depth = 24;
         }
         unsafe {
-            (*screen).port = port as i32;
-            (*screen).ipv6port = port as i32;
+            (*screen).port = cli_args.vnc_port as i32;
+            (*screen).ipv6port = cli_args.vnc_port as i32;
         }
 
         rfb_framebuffer_malloc(screen, (fb.get_size() * 4/* bytes per pixel */) as u64);
         rfb_init_server(screen);
         rfb_run_event_loop(screen, 1, 1);
 
-        Ok(VncServer {
+        // FIXME: Only return Some in case VNC is enabled
+        Ok(Some(Self {
             fb,
-            screen,
-            target_fps,
             statistics_tx,
             statistics_information_rx,
-            terminate_signal_tx,
-            text,
+            terminate_signal_rx,
+            screen,
+            target_fps: cli_args.fps,
+            text: cli_args.text.clone(),
             font,
-        })
+        }))
     }
 
-    pub fn run(&mut self) -> Result<(), Error> {
-        let target_loop_duration = Duration::from_micros(1_000_000 / self.target_fps as u64);
-
+    async fn run(&mut self) -> Result<(), super::Error> {
         let vnc_fb_slice: &mut [u32] = unsafe {
             slice::from_raw_parts_mut((*self.screen).frameBuffer as *mut u32, self.fb.get_size())
         };
@@ -128,12 +128,15 @@ impl<'a, FB: FrameBuffer> VncServer<'a, FB> {
         let height_up_to_stats_text = self.fb.get_height() - STATS_HEIGHT - 1;
         let fb_size_up_to_stats_text = self.fb.get_width() * height_up_to_stats_text;
 
+        let mut interval =
+            time::interval(Duration::from_micros(1_000_000 / self.target_fps as u64));
         loop {
-            if self.terminate_signal_tx.try_recv().is_ok() {
+            if self.terminate_signal_rx.try_recv().is_ok() {
                 return Ok(());
             }
 
-            let start = std::time::Instant::now();
+            // I don't think we need to use spawn_blocking or something like that, as this operation should hopefully be
+            // a quick memcp. But I'm no expert on this.
             vnc_fb_slice[0..fb_size_up_to_stats_text]
                 .copy_from_slice(&self.fb.as_pixels()[0..fb_size_up_to_stats_text]);
 
@@ -146,7 +149,8 @@ impl<'a, FB: FrameBuffer> VncServer<'a, FB> {
                 height_up_to_stats_text as i32,
             );
             self.statistics_tx
-                .blocking_send(StatisticsEvent::FrameRendered)
+                .send(StatisticsEvent::VncFrameRendered)
+                .await
                 .context(WriteToStatisticsChannelSnafu)?;
 
             if !self.statistics_information_rx.is_empty() {
@@ -157,10 +161,12 @@ impl<'a, FB: FrameBuffer> VncServer<'a, FB> {
                 self.display_stats(statistics_information_event);
             }
 
-            std::thread::sleep(target_loop_duration.saturating_sub(start.elapsed()));
+            interval.tick().await;
         }
     }
+}
 
+impl<FB: FrameBuffer> VncSink<'_, FB> {
     fn display_stats(&mut self, stats: StatisticsInformationEvent) {
         self.draw_rect(
             0,
