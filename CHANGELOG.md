@@ -7,12 +7,15 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Added support for binary sync protocol behind the `binary-sync-pixels` feature ([#34])
+- Added support for native display output ([#38])
 
 ### Changed
 
 - BREAKING: Feature `binary-commands` has been renamed to `binary-set-pixel` ([#34])
 - BREAKING: Remove the `breakwater-core` crate ([#37])
 - Add a `FrameBuffer` trait, rename the existing implementation one to `SimpleFrameBuffer` ([#37])
+- Add a `DisplaySink`´trait, so that new sinks can be added more easily ([#38])
+- BREAKING: No display sink is now started by default. To start the VNC server add the `--vnc` CLI argument ([#38])
 
 ### Fixed
 
@@ -22,6 +25,7 @@ All notable changes to this project will be documented in this file.
 [#34]: https://github.com/sbernauer/breakwater/pull/34
 [#36]: https://github.com/sbernauer/breakwater/pull/36
 [#37]: https://github.com/sbernauer/breakwater/pull/37
+[#38]: https://github.com/sbernauer/breakwater/pull/38
 
 ## [0.15.0] - 2024-06-12
 
