@@ -139,7 +139,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
             }
 
             // I don't think we need to use spawn_blocking or something like that, as this operation should hopefully be
-            // a quick memcp. But I'm no expert on this.
+            // a quick memcpy. But I'm no expert on this.
             vnc_fb_slice[0..fb_size_up_to_stats_text]
                 .copy_from_slice(&self.fb.as_pixels()[0..fb_size_up_to_stats_text]);
 
