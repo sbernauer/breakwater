@@ -10,7 +10,6 @@ use crate::{
 };
 
 pub mod ffmpeg;
-
 #[cfg(feature = "native-display")]
 pub mod native_display;
 #[cfg(feature = "vnc")]
@@ -32,7 +31,7 @@ pub enum Error {
 }
 
 // The stabilization of async functions in traits in Rust 1.75 did not include support for using traits containing async
-//functions as dyn Trait, so we still need to use async_trait here.
+// functions as dyn Trait, so we still need to use async_trait here.
 #[async_trait]
 pub trait DisplaySink<FB> {
     /// This function can return [`None`] in case this sink is not configured (by looking at the `cli_args`).

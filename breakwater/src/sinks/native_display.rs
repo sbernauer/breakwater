@@ -2,6 +2,7 @@ use std::{num::NonZero, sync::Arc};
 
 use async_trait::async_trait;
 use breakwater_parser::FrameBuffer;
+use log::debug;
 use snafu::{ResultExt, Snafu};
 use softbuffer::{Context, Surface};
 use tokio::{
@@ -132,13 +133,14 @@ impl<FB: FrameBuffer> ApplicationHandler for NativeDisplaySink<FB> {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
+        if self.terminate_signal_rx.try_recv().is_ok() {
+            event_loop.exit();
+            return;
+        }
+
         let Some(surface) = self.surface.as_mut() else {
             return;
         };
-
-        if self.terminate_signal_rx.try_recv().is_ok() {
-            event_loop.exit();
-        }
 
         match event {
             WindowEvent::Resized(_size) => {
@@ -147,12 +149,12 @@ impl<FB: FrameBuffer> ApplicationHandler for NativeDisplaySink<FB> {
                         NonZero::new(self.fb.get_width() as u32).unwrap(),
                         NonZero::new(self.fb.get_height() as u32).unwrap(),
                     )
-                    .unwrap();
+                    .expect("Failed to resize surface");
                 surface.window().request_redraw();
             }
             WindowEvent::RedrawRequested => {
                 let window = surface.window().clone();
-                let mut buffer = surface.buffer_mut().unwrap();
+                let mut buffer = surface.buffer_mut().expect("Failed to get mutable buffer");
 
                 buffer.copy_from_slice(
                     &self
@@ -163,14 +165,14 @@ impl<FB: FrameBuffer> ApplicationHandler for NativeDisplaySink<FB> {
                         .collect::<Vec<_>>(),
                 );
                 window.pre_present_notify();
-                buffer.present().unwrap();
+                buffer.present().expect("Failed to present buffer");
                 window.request_redraw();
             }
             WindowEvent::CursorMoved { .. }
             | WindowEvent::CursorEntered { .. }
             | WindowEvent::CursorLeft { .. } => (),
             _ => {
-                log::debug!("Window={:?}", event);
+                debug!("Received window event: {event:?}");
             }
         };
     }
