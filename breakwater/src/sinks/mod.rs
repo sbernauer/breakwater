@@ -14,6 +14,7 @@ pub mod native_display;
 #[cfg(feature = "vnc")]
 pub mod vnc;
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[cfg(feature = "native-display")]

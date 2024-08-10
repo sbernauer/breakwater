@@ -10,11 +10,11 @@ use tokio::{
 };
 use winit::{
     application::ApplicationHandler,
-    error::EventLoopError,
+    error::{EventLoopError, OsError},
     event::WindowEvent,
     event_loop::{self, EventLoop},
     platform::wayland::EventLoopBuilderExtWayland,
-    raw_window_handle::{DisplayHandle, HasDisplayHandle},
+    raw_window_handle::{DisplayHandle, HandleError, HasDisplayHandle},
     window::{Window, WindowAttributes, WindowId},
 };
 
@@ -26,6 +26,12 @@ use crate::{
 
 #[derive(Debug, Snafu)]
 pub enum Error {
+    #[snafu(display("Failed to create window"))]
+    CreateWindow { source: OsError },
+
+    #[snafu(display("Failed to get display handle"))]
+    GetDisplayHandle { source: HandleError },
+
     #[snafu(display("Failed to join native display thread"))]
     JoinNativeDisplayThread { source: JoinError },
 
@@ -37,7 +43,7 @@ pub enum Error {
 }
 
 // Sorry! Help needed :)
-unsafe impl<'a, FB: FrameBuffer> Send for NativeDisplaySink<FB> {}
+unsafe impl<FB: FrameBuffer> Send for NativeDisplaySink<FB> {}
 
 pub struct NativeDisplaySink<FB: FrameBuffer> {
     fb: Arc<FB>,
@@ -99,12 +105,24 @@ impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for NativeDisplayS
 
 impl<FB: FrameBuffer> ApplicationHandler for NativeDisplaySink<FB> {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        let window = Arc::new(event_loop.create_window(self.window_attributes()).unwrap());
+        let window = Arc::new(
+            event_loop
+                .create_window(self.window_attributes())
+                .context(CreateWindowSnafu)
+                .unwrap(),
+        );
         self.surface = {
-            let context =
-                Context::new(unsafe { std::mem::transmute(event_loop.display_handle().unwrap()) })
-                    .unwrap();
-            Some(Surface::new(&context, window).unwrap())
+            let context = Context::new(unsafe {
+                // Fiddling around with lifetimes
+                std::mem::transmute::<DisplayHandle, DisplayHandle>(
+                    event_loop
+                        .display_handle()
+                        .context(GetDisplayHandleSnafu)
+                        .unwrap(),
+                )
+            })
+            .expect("Failed to create window context");
+            Some(Surface::new(&context, window).expect("Failed to create surface"))
         };
     }
 
