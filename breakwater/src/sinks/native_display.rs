@@ -55,7 +55,10 @@ impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for NativeDisplayS
         _statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
     ) -> Result<Option<Self>, super::Error> {
-        // FIXME: Check if we should start based on cli_args
+        if !cli_args.native_display {
+            return Ok(None);
+        }
+
         Ok(Some(Self {
             fb,
             terminate_signal_rx,

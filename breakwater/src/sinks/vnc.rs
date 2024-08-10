@@ -69,6 +69,10 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
     ) -> Result<Option<Self>, super::Error> {
+        if !cli_args.vnc {
+            return Ok(None);
+        }
+
         let font = match cli_args.font.as_str() {
             // We ship our own copy of Arial.ttf, so that users don't need to download and provide it
             "Arial.ttf" => {

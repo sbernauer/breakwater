@@ -30,7 +30,6 @@ pub struct CliArgs {
     pub network_buffer_size: i64,
 
     /// Text to display on the screen.
-    /// The text will be followed by "on <listen_address>".
     #[clap(short, long, default_value = "Pixelflut server (breakwater)")]
     pub text: String,
 
@@ -66,12 +65,21 @@ pub struct CliArgs {
     #[clap(long)]
     pub video_save_folder: Option<String>,
 
+    /// Allow only a certain number of connections per ip address
+    #[clap(short, long)]
+    pub connections_per_ip: Option<u64>,
+
+    /// Enabled a VNC server
+    #[clap(long)]
+    pub vnc: bool,
+
     /// Port of the VNC server.
     #[cfg(feature = "vnc")]
     #[clap(short, long, default_value_t = 5900)]
     pub vnc_port: u16,
 
-    /// Allow only a certain number of connections per ip address
-    #[clap(short, long)]
-    pub connections_per_ip: Option<u64>,
+    /// Enable native display output. This requires some form of graphical system (so will probably not work on your
+    /// server).
+    #[clap(long)]
+    pub native_display: bool,
 }
