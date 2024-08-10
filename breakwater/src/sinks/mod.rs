@@ -10,11 +10,16 @@ use crate::{
 };
 
 pub mod ffmpeg;
+pub mod native_display;
 #[cfg(feature = "vnc")]
 pub mod vnc;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
+    #[cfg(feature = "native-display")]
+    #[snafu(display("Native display error"), context(false))]
+    NativeDisplayError { source: native_display::Error },
+
     #[cfg(feature = "vnc")]
     #[snafu(display("VNC error"), context(false))]
     VncError { source: vnc::Error },

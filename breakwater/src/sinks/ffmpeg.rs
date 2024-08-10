@@ -12,9 +12,7 @@ use tokio::{
     time,
 };
 
-use crate::statistics::StatisticsInformationEvent;
-
-use super::DisplaySink;
+use crate::{sinks::DisplaySink, statistics::StatisticsInformationEvent};
 
 #[derive(Debug, Snafu)]
 pub enum Error {

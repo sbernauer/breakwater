@@ -17,10 +17,9 @@ use vncserver::{
 
 use crate::{
     cli_args::CliArgs,
+    sinks::DisplaySink,
     statistics::{StatisticsEvent, StatisticsInformationEvent},
 };
-
-use super::DisplaySink;
 
 const STATS_HEIGHT: usize = 35;
 

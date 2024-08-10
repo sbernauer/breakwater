@@ -18,6 +18,9 @@ use crate::{
     statistics::{Statistics, StatisticsEvent, StatisticsInformationEvent, StatisticsSaveMode},
 };
 
+#[cfg(feature = "native-display")]
+use crate::sinks::native_display::NativeDisplaySink;
+
 #[cfg(feature = "vnc")]
 use crate::sinks::vnc::VncSink;
 
@@ -127,6 +130,22 @@ async fn main() -> Result<(), Error> {
     let prometheus_exporter_thread = tokio::spawn(async move { prometheus_exporter.run().await });
 
     let mut display_sinks = Vec::<Box<dyn DisplaySink<SimpleFrameBuffer> + Send>>::new();
+
+    #[cfg(feature = "native-display")]
+    {
+        if let Some(native_display_sink) = NativeDisplaySink::new(
+            fb.clone(),
+            &args,
+            statistics_tx.clone(),
+            statistics_information_rx.resubscribe(),
+            terminate_signal_rx.resubscribe(),
+        )
+        .await
+        .context(CreateSinkSnafu)?
+        {
+            display_sinks.push(Box::new(native_display_sink));
+        }
+    }
 
     #[cfg(feature = "vnc")]
     {

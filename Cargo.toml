@@ -29,9 +29,11 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 simple_moving_average = "1.0"
 snafu = "0.8"
+softbuffer = "0.4"
 tokio = { version = "1.38", features = ["fs", "rt-multi-thread", "net", "io-util", "macros", "process", "signal", "sync", "time"] }
 trait-variant = "0.1"
 vncserver = "0.2"
+winit = "0.30"
 
 # Uses the given path when used locally, and uses the specified version from crates.io when published.
 breakwater-core = { path = "breakwater-core", version = "0.15.0" }

@@ -29,18 +29,20 @@ serde_json.workspace = true
 serde.workspace = true
 simple_moving_average.workspace = true
 snafu.workspace = true
+softbuffer = { workspace = true, optional = true }
 tokio.workspace = true
 vncserver = { workspace = true, optional = true }
+winit = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest.workspace = true
 
 [features]
 # We don't enable binary-sync-pixels by default to make it a bit harder for clients ;)
-default = ["vnc", "binary-set-pixel"]
+default = ["vnc", "native-display", "binary-set-pixel"]
 
 vnc = ["dep:vncserver"]
 alpha = ["breakwater-parser/alpha"]
+native-display = ["dep:softbuffer", "dep:winit"]
 binary-set-pixel = ["breakwater-parser/binary-set-pixel"]
 binary-sync-pixels = ["breakwater-parser/binary-sync-pixels"]
-
