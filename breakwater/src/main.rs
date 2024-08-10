@@ -2,24 +2,27 @@ use std::{env, num::TryFromIntError, sync::Arc};
 
 use breakwater_parser::SimpleFrameBuffer;
 use clap::Parser;
-use log::{info, trace};
+use log::info;
 use prometheus_exporter::PrometheusExporter;
 use sinks::ffmpeg::FfmpegSink;
 use snafu::{ResultExt, Snafu};
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::{
+    sync::{broadcast, mpsc},
+    task::JoinError,
+};
 
 use crate::{
     cli_args::CliArgs,
     server::Server,
+    sinks::DisplaySink,
     statistics::{Statistics, StatisticsEvent, StatisticsInformationEvent, StatisticsSaveMode},
 };
 
+#[cfg(feature = "native-display")]
+use crate::sinks::native_display::NativeDisplaySink;
+
 #[cfg(feature = "vnc")]
-use {
-    crate::sinks::vnc::{self, VncServer},
-    log::warn,
-    thread_priority::{ThreadBuilderExt, ThreadPriority},
-};
+use crate::sinks::vnc::VncSink;
 
 mod cli_args;
 mod prometheus_exporter;
@@ -49,34 +52,22 @@ pub enum Error {
         network_buffer_size: i64,
     },
 
-    #[snafu(display("ffmpeg dump thread error"))]
-    FfmpegDumpThread { source: sinks::ffmpeg::Error },
+    #[snafu(display("Failed to send termination signal"))]
+    SendTerminationSignal {
+        source: broadcast::error::SendError<()>,
+    },
 
-    #[snafu(display("Failed to send ffmpg dump thread termination signal"))]
-    SendFfmpegDumpTerminationSignal {},
+    #[snafu(display("Failed to create sink"))]
+    CreateSink { source: sinks::Error },
 
-    #[snafu(display("Failed to join ffmpg dump thread"))]
-    JoinFfmpegDumpThread { source: tokio::task::JoinError },
+    #[snafu(display("Failed to run sink"))]
+    RunSink { source: sinks::Error },
 
-    #[cfg(feature = "vnc")]
-    #[snafu(display("Failed to spawn VNC server thread"))]
-    SpawnVncServerThread { source: std::io::Error },
+    #[snafu(display("Failed to join sink thread"))]
+    JoinSinkThread { source: JoinError },
 
-    #[cfg(feature = "vnc")]
-    #[snafu(display("Failed to send VNC server shutdown signal"))]
-    SendVncServerShutdownSignal {},
-
-    #[cfg(feature = "vnc")]
-    #[snafu(display("Failed to stop VNC server thread"))]
-    StopVncServerThread {},
-
-    #[cfg(feature = "vnc")]
-    #[snafu(display("Failed to start VNC server"))]
-    StartVncServer { source: vnc::Error },
-
-    #[cfg(feature = "vnc")]
-    #[snafu(display("Failed to get cross-platform ThreadPriority. Please report this error message together with your operating system: {message}"))]
-    GetThreadPriority { message: String },
+    #[snafu(display("Failed to stop sink"))]
+    StopSink { source: sinks::Error },
 }
 
 #[tokio::main]
@@ -95,14 +86,9 @@ async fn main() -> Result<(), Error> {
     // If we make the channel to big, stats will start to lag behind
     // TODO: Check performance impact in real-world scenario. Maybe the statistics thread blocks the other threads
     let (statistics_tx, statistics_rx) = mpsc::channel::<StatisticsEvent>(100);
-    let (statistics_information_tx, statistics_information_rx_for_prometheus_exporter) =
+    let (statistics_information_tx, statistics_information_rx) =
         broadcast::channel::<StatisticsInformationEvent>(2);
-    let (ffmpeg_terminate_signal_tx, ffmpeg_terminate_signal_rx) = oneshot::channel();
-
-    #[cfg(feature = "vnc")]
-    let (vnc_terminate_signal_tx, vnc_terminate_signal_rx) = oneshot::channel();
-    #[cfg(feature = "vnc")]
-    let statistics_information_rx_for_vnc_server = statistics_information_tx.subscribe();
+    let (terminate_signal_tx, terminate_signal_rx) = broadcast::channel::<()>(1);
 
     let statistics_save_mode = if args.disable_statistics_save_file {
         StatisticsSaveMode::Disabled
@@ -120,7 +106,7 @@ async fn main() -> Result<(), Error> {
 
     let mut server = Server::new(
         &args.listen_address,
-        Arc::clone(&fb),
+        fb.clone(),
         statistics_tx.clone(),
         args.network_buffer_size
             .try_into()
@@ -132,9 +118,10 @@ async fn main() -> Result<(), Error> {
     )
     .await
     .context(StartPixelflutServerSnafu)?;
+
     let mut prometheus_exporter = PrometheusExporter::new(
         &args.prometheus_listen_address,
-        statistics_information_rx_for_prometheus_exporter,
+        statistics_information_rx.resubscribe(),
     )
     .context(StartPrometheusExporterSnafu)?;
 
@@ -142,86 +129,86 @@ async fn main() -> Result<(), Error> {
     let statistics_thread = tokio::spawn(async move { statistics.start().await });
     let prometheus_exporter_thread = tokio::spawn(async move { prometheus_exporter.run().await });
 
-    let ffmpeg_sink = FfmpegSink::new(&args, Arc::clone(&fb));
-    let ffmpeg_thread = ffmpeg_sink.map(|sink| {
-        tokio::spawn(async move {
-            sink.run(ffmpeg_terminate_signal_rx)
-                .await
-                .context(FfmpegDumpThreadSnafu)
-                .unwrap();
-            Ok::<(), Error>(())
-        })
-    });
+    let mut display_sinks = Vec::<Box<dyn DisplaySink<SimpleFrameBuffer> + Send>>::new();
+
+    #[cfg(feature = "native-display")]
+    {
+        if let Some(native_display_sink) = NativeDisplaySink::new(
+            fb.clone(),
+            &args,
+            statistics_tx.clone(),
+            statistics_information_rx.resubscribe(),
+            terminate_signal_rx.resubscribe(),
+        )
+        .await
+        .context(CreateSinkSnafu)?
+        {
+            display_sinks.push(Box::new(native_display_sink));
+        }
+    }
 
     #[cfg(feature = "vnc")]
-    let vnc_server_thread = {
-        let fb_for_vnc_server = Arc::clone(&fb);
-        let mut vnc_server = VncServer::new(
-            fb_for_vnc_server,
-            args.vnc_port,
-            args.fps,
-            statistics_tx,
-            statistics_information_rx_for_vnc_server,
-            vnc_terminate_signal_rx,
-            args.text,
-            args.font,
+    {
+        if let Some(vnc_sink) = VncSink::new(
+            fb.clone(),
+            &args,
+            statistics_tx.clone(),
+            statistics_information_rx.resubscribe(),
+            terminate_signal_rx.resubscribe(),
         )
-        .context(StartVncServerSnafu)?;
-
-        // TODO Use tokio::spawn instead of std::thread::spawn
-        // I was not able to get to work with async closure
-        // We than also need to think about setting a priority
-        std::thread::Builder::new()
-            .name("breakwater vnc server thread".to_owned())
-            .spawn_with_priority(
-                ThreadPriority::Crossplatform(70.try_into().map_err(|err: &str| {
-                    Error::GetThreadPriority {
-                        message: err.to_string(),
-                    }
-                })?),
-                move |_| vnc_server.run().context(StartVncServerSnafu),
-            )
+        .await
+        .context(CreateSinkSnafu)?
+        {
+            display_sinks.push(Box::new(vnc_sink));
+        }
     }
-    .context(SpawnVncServerThreadSnafu)?;
+
+    let mut ffmpeg_thread_present = false;
+    if let Some(ffmpeg_sink) = FfmpegSink::new(
+        fb,
+        &args,
+        statistics_tx.clone(),
+        statistics_information_rx,
+        terminate_signal_rx,
+    )
+    .await
+    .context(CreateSinkSnafu)?
+    {
+        display_sinks.push(Box::new(ffmpeg_sink));
+        ffmpeg_thread_present = true;
+    }
+
+    let mut sink_threads = Vec::new();
+    for mut sink in display_sinks {
+        sink_threads.push(tokio::spawn(async move {
+            sink.run().await?;
+            Ok::<(), sinks::Error>(())
+        }));
+    }
 
     tokio::signal::ctrl_c()
         .await
         .context(WaitForCtrlCSignalSnafu)?;
 
+    terminate_signal_tx
+        .send(())
+        .context(SendTerminationSignalSnafu)?;
+
     prometheus_exporter_thread.abort();
     server_listener_thread.abort();
 
-    let ffmpeg_thread_present = ffmpeg_thread.is_some();
-    if let Some(ffmpeg_thread) = ffmpeg_thread {
-        ffmpeg_terminate_signal_tx
-            .send(())
-            .map_err(|_| Error::SendFfmpegDumpTerminationSignal {})?;
-
-        trace!("Waiting for thread dumping data into ffmpeg to terminate");
-        ffmpeg_thread.await.context(JoinFfmpegDumpThreadSnafu)??;
-        trace!("thread dumping data into ffmpeg terminated");
-    }
-
-    #[cfg(feature = "vnc")]
-    {
-        trace!("Sending termination signal to vnc thread");
-        if let Err(err) = vnc_terminate_signal_tx.send(()) {
-            warn!(
-                "Failed to send termination signal to vnc thread, it seems to already have terminated: {err:?}",
-            )
-        }
-        trace!("Joining vnc thread");
-        vnc_server_thread
-            .join()
-            .map_err(|_| Error::StopVncServerThread {})??;
-        trace!("Vnc thread terminated");
+    for sink_thread in sink_threads {
+        sink_thread
+            .await
+            .context(JoinSinkThreadSnafu)?
+            .context(StopSinkSnafu)?;
     }
 
     // We need to stop this thread as the last, as others always try to send statistics to it
     statistics_thread.abort();
 
     if ffmpeg_thread_present {
-        info!("Successfully shut down (there might still be a ffmped process running - it's complicated)");
+        info!("Successfully shut down (there might still be a ffmpeg process running - it's complicated)");
     } else {
         info!("Successfully shut down");
     }

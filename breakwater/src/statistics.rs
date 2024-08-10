@@ -45,7 +45,7 @@ pub enum StatisticsEvent {
     ConnectionClosed { ip: IpAddr },
     ConnectionDenied { ip: IpAddr },
     BytesRead { ip: IpAddr, bytes: u64 },
-    FrameRendered,
+    VncFrameRendered,
 }
 
 pub enum StatisticsSaveMode {
@@ -163,7 +163,7 @@ impl Statistics {
                 StatisticsEvent::BytesRead { ip, bytes } => {
                     *self.bytes_for_ip.entry(ip).or_insert(0) += bytes;
                 }
-                StatisticsEvent::FrameRendered => self.frame += 1,
+                StatisticsEvent::VncFrameRendered => self.frame += 1,
             }
 
             // As there is an event for every frame we are guaranteed to land here every second

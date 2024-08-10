@@ -6,10 +6,11 @@ It claims to be the fastest Pixelflut server in existence - at least at the time
 
 # Features
 1. Accepts Pixelflut commands
-2. Can provide a VNC server so that everybody can watch
-3. As an alternative it can stream to a RTMP sink, so that you can e.g. directly live-stream into Twitch or YouTube
-4. Exposes Prometheus metrics
-5. IPv6 and legacy IP support
+2. It can start a native display window in your graphical environment
+3. Simultaneously it can provide a VNC server so that everybody can watch
+4. As an alternative it can stream to a RTMP sink, so that you can e.g. directly live-stream into Twitch or YouTube
+5. Exposes Prometheus metrics
+6. IPv6 and legacy IP support
 
 # Available Pixelflut commands
 Commands must be sent newline-separated, for more details see [Pixelflut](https://wiki.cccgoe.de/wiki/Pixelflut)
@@ -26,13 +27,15 @@ Note: This command needs to be enabled using the `binary-sync-pixels` feature
 * `OFFSET x y`: Apply offset (x,y) to all further pixel draws on this connection. This can e.g. be used to pre-calculate an image/animation and simply use the OFFSET command to move it around the screen without the need to re-calculate it, e.g. `OFFSET 100 100`
 
 # Usage
+
 The easiest way is to continue with the provided [Ready to use Docker setup](#run-in-docker-container) below.
 
 If you prefer the manual way (the best performance - as e.g. can use native SIMD instructions) you need to have [Rust installed](https://www.rust-lang.org/tools/install).
 You may need to install some additional packages with `sudo apt install pkg-config libvncserver-dev`
 Then you can directly run the server with
+
 ```bash
-cargo run --release
+cargo run --release -- --vnc
 ```
 The default settings should provide you with a ready-to-use server.
 
@@ -67,7 +70,7 @@ Options:
       --network-buffer-size <NETWORK_BUFFER_SIZE>
           The size in bytes of the network buffer used for each open TCP connection. Please use at least 64 KB (64_000 bytes) [default: 262144]
   -t, --text <TEXT>
-          Text to display on the screen. The text will be followed by "on <listen_address>" [default: "Pixelflut server (breakwater)"]
+          Text to display on the screen [default: "Pixelflut server (breakwater)"]
       --font <FONT>
           The font used to render the text on the screen. Should be a ttf file. If you use the default value a copy that ships with breakwater will be used - no need to download and provide the font [default: Arial.ttf]
   -p, --prometheus-listen-address <PROMETHEUS_LISTEN_ADDRESS>
@@ -82,10 +85,14 @@ Options:
           Enable rtmp streaming to configured address, e.g. `rtmp://127.0.0.1:1935/live/test`
       --video-save-folder <VIDEO_SAVE_FOLDER>
           Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4
-  -v, --vnc-port <VNC_PORT>
-          Port of the VNC server [default: 5900]
   -c, --connections-per-ip <CONNECTIONS_PER_IP>
           Allow only a certain number of connections per ip address
+      --vnc
+          Enabled a VNC server
+  -v, --vnc-port <VNC_PORT>
+          Port of the VNC server [default: 5900]
+      --native-display
+          Enable native display output. This requires some form of graphical system (so will probably not work on your server)
   -h, --help
           Print help
   -V, --version
@@ -96,10 +103,12 @@ Options:
 You can also build the binary with `cargo build --release`. The binary will be placed at `target/release/breakwater`.
 
 ## Compile time features
-Breakwater also has some compile-time features for performance reasons.
-You can get the list of available features by looking at the [Cargo.toml](Cargo.toml).
-As of writing the following features are supported
 
+Breakwater also has some compile-time features for dependency or performance reasons.
+You can get the list of available features by looking at the [Cargo.toml](Cargo.toml).
+As of writing the following features are supported:
+
+* `native-display` (enabled by default): Starts a graphical window on your local system. Please note that this requires a graphical environment.
 * `vnc` (enabled by default): Starts a VNC server, where users can connect to. Needs `libvncserver-dev` to be installed. Please note that the VNC server offers basically no latency, but consumes quite some CPU.
 * `alpha` (disabled by default): Respect alpha values during `PX` commands. Disabled by default as this can cause performance degradation.
 * `binary-set-pixel` (enabled by default): Allows use of the `PB` command.

@@ -1,5 +1,6 @@
 use std::{process::Stdio, sync::Arc, time::Duration};
 
+use async_trait::async_trait;
 use breakwater_parser::FrameBuffer;
 use chrono::Local;
 use log::debug;
@@ -7,11 +8,11 @@ use snafu::{ResultExt, Snafu};
 use tokio::{
     io::AsyncWriteExt,
     process::Command,
-    sync::oneshot::Receiver,
-    time::{self},
+    sync::{broadcast, mpsc},
+    time,
 };
 
-use crate::cli_args::CliArgs;
+use crate::{sinks::DisplaySink, statistics::StatisticsInformationEvent};
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -22,31 +23,41 @@ pub enum Error {
     },
 
     #[snafu(display("Failed to write new data to ffmpeg via stdout"))]
-    WriteDataToFfmeg { source: std::io::Error },
+    WriteDataToFfmpeg { source: std::io::Error },
 }
 
 pub struct FfmpegSink<FB: FrameBuffer> {
     fb: Arc<FB>,
+    terminate_signal_rx: broadcast::Receiver<()>,
+
     rtmp_address: Option<String>,
     video_save_folder: Option<String>,
     fps: u32,
 }
 
-impl<FB: FrameBuffer> FfmpegSink<FB> {
-    pub fn new(args: &CliArgs, fb: Arc<FB>) -> Option<Self> {
-        if args.rtmp_address.is_some() || args.video_save_folder.is_some() {
-            Some(FfmpegSink {
+#[async_trait]
+impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
+    async fn new(
+        fb: Arc<FB>,
+        cli_args: &crate::cli_args::CliArgs,
+        _statistics_tx: mpsc::Sender<crate::statistics::StatisticsEvent>,
+        _statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
+        terminate_signal_rx: broadcast::Receiver<()>,
+    ) -> Result<Option<Self>, super::Error> {
+        if cli_args.rtmp_address.is_some() || cli_args.video_save_folder.is_some() {
+            Ok(Some(Self {
                 fb,
-                rtmp_address: args.rtmp_address.clone(),
-                video_save_folder: args.video_save_folder.clone(),
-                fps: args.fps,
-            })
+                terminate_signal_rx,
+                rtmp_address: cli_args.rtmp_address.clone(),
+                video_save_folder: cli_args.video_save_folder.clone(),
+                fps: cli_args.fps,
+            }))
         } else {
-            None
+            Ok(None)
         }
     }
 
-    pub async fn run(&self, mut terminate_signal_rx: Receiver<()>) -> Result<(), Error> {
+    async fn run(&mut self) -> Result<(), super::Error> {
         let mut ffmpeg_args: Vec<String> = self
             .ffmpeg_input_args()
             .into_iter()
@@ -119,7 +130,7 @@ impl<FB: FrameBuffer> FfmpegSink<FB> {
 
         let mut interval = time::interval(Duration::from_micros(1_000_000 / 30));
         loop {
-            if terminate_signal_rx.try_recv().is_ok() {
+            if self.terminate_signal_rx.try_recv().is_ok() {
                 // Normally we would send SIGINT to ffmpeg and let the process shutdown gracefully and afterwards call
                 // `command.wait().await`. Hopever using the `nix` crate to send a `SIGINT` resulted in ffmpeg
                 // [2024-05-14T21:35:25Z TRACE breakwater::sinks::ffmpeg] Sending SIGINT to ffmpeg process with pid 58786
@@ -157,11 +168,13 @@ impl<FB: FrameBuffer> FfmpegSink<FB> {
             stdin
                 .write_all(bytes)
                 .await
-                .context(WriteDataToFfmegSnafu)?;
+                .context(WriteDataToFfmpegSnafu)?;
             interval.tick().await;
         }
     }
+}
 
+impl<FB: FrameBuffer> FfmpegSink<FB> {
     fn ffmpeg_input_args(&self) -> Vec<(String, String)> {
         let video_size = format!("{}x{}", self.fb.get_width(), self.fb.get_height());
         [
