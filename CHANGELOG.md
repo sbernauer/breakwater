@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.16.0] - 2024-08-19
+
 ### Added
 
 - Added support for binary sync protocol behind the `binary-sync-pixels` feature ([#34])
