@@ -17,7 +17,9 @@ RUN rustup toolchain install nightly
 
 # We don't want to e.g. set "-C target-cpu=native", so that the binary should run everywhere
 # Also we can always build with vnc server support as the docker image contains all needed dependencies in any case
-RUN RUSTFLAGS='' cargo build --release --features vnc
+# While the "native-display" feature compiles successfully, we'd rather not offer the CLI option, as it might cause
+# users to think it should work (which it doesn't). So let's not enable that feature
+RUN RUSTFLAGS='' cargo build --release --no-default-features --features vnc,binary-set-pixel
 
 FROM debian:bookworm-slim as final
 RUN apt-get update && \
