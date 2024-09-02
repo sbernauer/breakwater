@@ -1,7 +1,6 @@
 FROM rust:1.78.0-bookworm as builder
 
 WORKDIR /breakwater
-COPY breakwater-core/ breakwater-core/
 COPY breakwater-parser/ breakwater-parser/
 COPY breakwater/ breakwater/
 COPY Cargo.toml .
