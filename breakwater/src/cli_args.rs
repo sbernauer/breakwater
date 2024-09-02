@@ -70,6 +70,7 @@ pub struct CliArgs {
     pub connections_per_ip: Option<u64>,
 
     /// Enabled a VNC server
+    #[cfg(feature = "vnc")]
     #[clap(long)]
     pub vnc: bool,
 
@@ -80,6 +81,7 @@ pub struct CliArgs {
 
     /// Enable native display output. This requires some form of graphical system (so will probably not work on your
     /// server).
+    #[cfg(feature = "native-display")]
     #[clap(long)]
     pub native_display: bool,
 }
