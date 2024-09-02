@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.16.1] - 2024-09-02
+
 ### Fixed
 
 - Fixed problem with docker build, which resulted in 0.16.0 to be missing on Docker Hub ([#40])
