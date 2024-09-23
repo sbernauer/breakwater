@@ -1,2 +1,4 @@
 [build]
 rustflags = ["-C", "target-cpu=native"]
+# For NixOS users hitting https://github.com/NixOS/nixpkgs/issues/312661:
+# rustflags = ["-C", "target-cpu=native", "-Z", "linker-features=-lld"]
