@@ -2,7 +2,7 @@ use std::{num::NonZero, sync::Arc};
 
 use async_trait::async_trait;
 use breakwater_parser::FrameBuffer;
-use log::debug;
+use log::{debug, warn};
 use snafu::{ResultExt, Snafu};
 use softbuffer::{Context, Surface};
 use tokio::{
@@ -155,6 +155,16 @@ impl<FB: FrameBuffer> ApplicationHandler for NativeDisplaySink<FB> {
             WindowEvent::RedrawRequested => {
                 let window = surface.window().clone();
                 let mut buffer = surface.buffer_mut().expect("Failed to get mutable buffer");
+
+                let fbsize = self.fb.as_pixels().len();
+                if buffer.len() != fbsize {
+                    warn!(
+                        "window buffer has size {}, but fb has size {}! Skipping redraw.",
+                        buffer.len(),
+                        fbsize
+                    );
+                    return;
+                }
 
                 buffer.copy_from_slice(
                     &self
