@@ -192,7 +192,7 @@ impl<FB: FrameBuffer> NativeDisplaySink<FB> {
     fn window_attributes(&self) -> WindowAttributes {
         Window::default_attributes()
             .with_title("Pixelflut server (breakwater)")
-            .with_inner_size(winit::dpi::LogicalSize::new(
+            .with_inner_size(winit::dpi::PhysicalSize::new(
                 self.fb.get_width() as u32,
                 self.fb.get_height() as u32,
             ))
