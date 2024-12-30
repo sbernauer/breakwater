@@ -46,7 +46,7 @@ pub enum Error {
 }
 
 // Sorry! Help needed :)
-unsafe impl<'a, FB: FrameBuffer> Send for VncSink<'a, FB> {}
+unsafe impl<FB: FrameBuffer> Send for VncSink<'_, FB> {}
 
 pub struct VncSink<'a, FB: FrameBuffer> {
     fb: Arc<FB>,

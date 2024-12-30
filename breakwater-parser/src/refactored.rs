@@ -159,7 +159,7 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
         let g: u32 = (((current >> 16) & 0xff) * alpha_comp + g * alpha) / 0xff;
         let b: u32 = (((current >> 8) & 0xff) * alpha_comp + b * alpha) / 0xff;
 
-        self.fb.set(x, y, r << 16 | g << 8 | b);
+        self.fb.set(x, y, (r << 16) | (g << 8) | b);
     }
 
     #[inline(always)]
@@ -168,7 +168,7 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
         // Or - as an alternative - still do the SIMD part but only load two bytes.
         let base: u32 = simd_unhex(unsafe { buffer.as_ptr().add(idx - 3) }) & 0xff;
 
-        let rgba: u32 = base << 16 | base << 8 | base;
+        let rgba: u32 = (base << 16) | (base << 8) | base;
 
         self.fb.set(x, y, rgba);
     }

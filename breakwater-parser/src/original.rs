@@ -155,7 +155,7 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
                             let g: u32 = (((current >> 16) & 0xff) * alpha_comp + g * alpha) / 0xff;
                             let b: u32 = (((current >> 8) & 0xff) * alpha_comp + b * alpha) / 0xff;
 
-                            self.fb.set(x, y, r << 16 | g << 8 | b);
+                            self.fb.set(x, y, (r << 16) | (g << 8) | b);
                             continue;
                         }
 
@@ -166,7 +166,7 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
 
                             let base = simd_unhex(unsafe { buffer.as_ptr().add(i - 3) }) & 0xff;
 
-                            let rgba: u32 = base << 16 | base << 8 | base;
+                            let rgba: u32 = (base << 16) | (base << 8) | base;
 
                             self.fb.set(x, y, rgba);
 
@@ -310,13 +310,13 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
 }
 
 const fn string_to_number(input: &[u8]) -> u64 {
-    (input[7] as u64) << 56
-        | (input[6] as u64) << 48
-        | (input[5] as u64) << 40
-        | (input[4] as u64) << 32
-        | (input[3] as u64) << 24
-        | (input[2] as u64) << 16
-        | (input[1] as u64) << 8
+    ((input[7] as u64) << 56)
+        | ((input[6] as u64) << 48)
+        | ((input[5] as u64) << 40)
+        | ((input[4] as u64) << 32)
+        | ((input[3] as u64) << 24)
+        | ((input[2] as u64) << 16)
+        | ((input[1] as u64) << 8)
         | (input[0] as u64)
 }
 

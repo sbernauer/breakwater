@@ -189,15 +189,12 @@ pub async fn handle_connection<FB: FrameBuffer>(
 
     loop {
         // Fill the buffer up with new data from the socket
-        // If there are any bytes left over from the previous loop iteration leave them as is and but the new data behind
-        let bytes_read = match stream
+        // If there are any bytes left over from the previous loop iteration leave them as is and put the new data behind
+        let Ok(bytes_read) = stream
             .read(&mut buffer[leftover_bytes_in_buffer..network_buffer_size - parser_lookahead])
             .await
-        {
-            Ok(bytes_read) => bytes_read,
-            Err(_) => {
-                break;
-            }
+        else {
+            break;
         };
 
         statistics_bytes_read += bytes_read as u64;
