@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.16.2] - 2024-12-30
+
+### Fixed
+
+- Ignore spurious zero-sized window buffers in native display sink ([#42])
+- Use physical size for winit window in native display sink ([#42])
+
+[#42]: https://github.com/sbernauer/breakwater/pull/42
+
 ## [0.16.1] - 2024-09-02
 
 ### Fixed
