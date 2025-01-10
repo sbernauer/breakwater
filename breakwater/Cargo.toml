@@ -33,16 +33,23 @@ softbuffer = { workspace = true, optional = true }
 tokio.workspace = true
 vncserver = { workspace = true, optional = true }
 winit = { workspace = true, optional = true }
+eframe = { workspace = true, optional = true }
+egui = { workspace = true, optional = true }
+breakwater-egui-overlay = { workspace = true, optional = true}
+bytemuck = { version = "1.21", optional = true }
+local-ip-address = "0.6.3"
+libloading = { version = "0.8", optional = true }
 
 [dev-dependencies]
 rstest.workspace = true
 
 [features]
 # We don't enable binary-sync-pixels by default to make it a bit harder for clients ;)
-default = ["vnc", "native-display", "binary-set-pixel"]
+default = ["vnc", "egui"]
 
 vnc = ["dep:vncserver"]
 alpha = ["breakwater-parser/alpha"]
+egui = ["dep:eframe", "dep:egui", "dep:breakwater-egui-overlay", "dep:bytemuck", "dep:libloading"]
 native-display = ["dep:softbuffer", "dep:winit"]
 binary-set-pixel = ["breakwater-parser/binary-set-pixel"]
 binary-sync-pixels = ["breakwater-parser/binary-sync-pixels"]

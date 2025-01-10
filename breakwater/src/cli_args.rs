@@ -81,7 +81,25 @@ pub struct CliArgs {
 
     /// Enable native display output. This requires some form of graphical system (so will probably not work on your
     /// server).
-    #[cfg(feature = "native-display")]
+    #[cfg(any(feature = "native-display", feature = "egui"))]
     #[clap(long)]
     pub native_display: bool,
+
+    /// Specify a view port to display the canvas or a certain part of it. Format: <offset_x>x<offset_y>,<width>x<height>.
+    /// Might be specified multiple times for more than one viewport. Useful for multi-projector setups.
+    /// Defaults to display the entire canvas.
+    /// Implies --native-display.
+    #[cfg(feature = "egui")]
+    #[clap(long)]
+    pub viewport: Vec<crate::sinks::egui::ViewportConfig>,
+
+    /// Specify one or more pixelflut endpoints to display.
+    #[cfg(feature = "egui")]
+    #[clap(long)]
+    pub advertised_endpoints: Vec<String>,
+
+    /// Provide a path to a dylib containing a custom egui overlay.
+    #[cfg(feature = "egui")]
+    #[clap(long)]
+    pub ui: Option<std::path::PathBuf>,
 }

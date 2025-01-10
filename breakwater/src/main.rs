@@ -3,8 +3,6 @@ use std::{env, num::TryFromIntError, sync::Arc};
 use breakwater_parser::SimpleFrameBuffer;
 use clap::Parser;
 use log::info;
-use prometheus_exporter::PrometheusExporter;
-use sinks::ffmpeg::FfmpegSink;
 use snafu::{ResultExt, Snafu};
 use tokio::{
     sync::{broadcast, mpsc},
@@ -13,16 +11,11 @@ use tokio::{
 
 use crate::{
     cli_args::CliArgs,
+    prometheus_exporter::PrometheusExporter,
     server::Server,
-    sinks::DisplaySink,
+    sinks::{ffmpeg::FfmpegSink, DisplaySink},
     statistics::{Statistics, StatisticsEvent, StatisticsInformationEvent, StatisticsSaveMode},
 };
-
-#[cfg(feature = "native-display")]
-use crate::sinks::native_display::NativeDisplaySink;
-
-#[cfg(feature = "vnc")]
-use crate::sinks::vnc::VncSink;
 
 mod cli_args;
 mod connection_buffer;
@@ -132,8 +125,10 @@ async fn main() -> Result<(), Error> {
 
     let mut display_sinks = Vec::<Box<dyn DisplaySink<SimpleFrameBuffer> + Send>>::new();
 
-    #[cfg(feature = "native-display")]
+    #[cfg(all(feature = "native-display", not(feature = "egui")))]
     {
+        use crate::sinks::native_display::NativeDisplaySink;
+
         if let Some(native_display_sink) = NativeDisplaySink::new(
             fb.clone(),
             &args,
@@ -150,6 +145,8 @@ async fn main() -> Result<(), Error> {
 
     #[cfg(feature = "vnc")]
     {
+        use crate::sinks::vnc::VncSink;
+
         if let Some(vnc_sink) = VncSink::new(
             fb.clone(),
             &args,
@@ -166,11 +163,11 @@ async fn main() -> Result<(), Error> {
 
     let mut ffmpeg_thread_present = false;
     if let Some(ffmpeg_sink) = FfmpegSink::new(
-        fb,
+        fb.clone(),
         &args,
         statistics_tx.clone(),
-        statistics_information_rx,
-        terminate_signal_rx,
+        statistics_information_rx.resubscribe(),
+        terminate_signal_rx.resubscribe(),
     )
     .await
     .context(CreateSinkSnafu)?
@@ -187,13 +184,33 @@ async fn main() -> Result<(), Error> {
         }));
     }
 
-    tokio::signal::ctrl_c()
-        .await
-        .context(WaitForCtrlCSignalSnafu)?;
+    #[cfg(feature = "egui")]
+    {
+        use sinks::egui::EguiSink;
 
-    terminate_signal_tx
-        .send(())
-        .context(SendTerminationSignalSnafu)?;
+        if let Some(mut egui_sink) = EguiSink::new(
+            fb.clone(),
+            &args,
+            statistics_tx.clone(),
+            statistics_information_rx.resubscribe(),
+            terminate_signal_rx.resubscribe(),
+        )
+        .await
+        .context(CreateSinkSnafu)?
+        {
+            tokio::spawn(handle_ctrl_c(terminate_signal_tx));
+
+            // Some plattforms require opening windows from the main thread.
+            // The tokio::main macro uses Runtime::block_on(future) which runs the future on
+            // the current thread, which should be the main thread right now.
+            egui_sink.run().await.context(RunSinkSnafu)?;
+        } else {
+            handle_ctrl_c(terminate_signal_tx).await?;
+        }
+    }
+
+    #[cfg(not(feature = "egui"))]
+    handle_ctrl_c(terminate_signal_tx).await?;
 
     prometheus_exporter_thread.abort();
     server_listener_thread.abort();
@@ -213,6 +230,18 @@ async fn main() -> Result<(), Error> {
     } else {
         info!("Successfully shut down");
     }
+
+    Ok(())
+}
+
+async fn handle_ctrl_c(terminate_signal_tx: broadcast::Sender<()>) -> Result<(), Error> {
+    tokio::signal::ctrl_c()
+        .await
+        .context(WaitForCtrlCSignalSnafu)?;
+
+    terminate_signal_tx
+        .send(())
+        .context(SendTerminationSignalSnafu)?;
 
     Ok(())
 }
