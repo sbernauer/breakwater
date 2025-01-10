@@ -21,6 +21,15 @@ const CONNECTION_DENIED_TEXT: &[u8] = b"Connection denied as connection limit is
 // Every client connection spawns a new thread, so we need to limit the number of stat events we send
 const STATISTICS_REPORT_INTERVAL: Duration = Duration::from_millis(250);
 
+#[derive(Debug)]
+pub struct BufferAllocationError;
+impl std::fmt::Display for BufferAllocationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+impl snafu::Error for BufferAllocationError {}
+
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("Failed to bind to listen address {listen_address:?}"))]
@@ -39,6 +48,9 @@ pub enum Error {
     WriteToStatisticsChannel {
         source: mpsc::error::SendError<StatisticsEvent>,
     },
+
+    #[snafu(display("Failed to allocate network buffer"))]
+    BufferAllocation { source: BufferAllocationError },
 }
 
 pub struct Server<FB: FrameBuffer> {
@@ -142,6 +154,47 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
     }
 }
 
+struct ConnectionBuffer {
+    ptr: *mut u8,
+    layout: alloc::Layout,
+}
+unsafe impl Send for ConnectionBuffer {}
+
+impl ConnectionBuffer {
+    fn new(layout: alloc::Layout) -> Result<Self, BufferAllocationError> {
+        let ptr = unsafe { alloc::alloc(layout) };
+
+        if ptr.is_null() {
+            return Err(BufferAllocationError);
+        }
+
+        if let Err(err) = memadvise::advise(ptr as _, layout.size(), Advice::Sequential) {
+            // [`MemAdviseError`] does not implement Debug...
+            let err = match err {
+                MemAdviseError::NullAddress => "NullAddress",
+                MemAdviseError::InvalidLength => "InvalidLength",
+                MemAdviseError::UnalignedAddress => "UnalignedAddress",
+                MemAdviseError::InvalidRange => "InvalidRange",
+            };
+            warn!("Failed to memadvise sequential read access for buffer to kernel. This should not effect any client connections, but might having some minor performance degration: {err}");
+        }
+
+        Ok(Self { ptr, layout })
+    }
+
+    fn as_slice_mut(&mut self) -> &mut [u8] {
+        unsafe { std::slice::from_raw_parts_mut(self.ptr, self.layout.size()) }
+    }
+}
+
+impl Drop for ConnectionBuffer {
+    fn drop(&mut self) {
+        unsafe {
+            alloc::dealloc(self.ptr, self.layout);
+        }
+    }
+}
+
 pub async fn handle_connection<FB: FrameBuffer>(
     mut stream: impl AsyncReadExt + AsyncWriteExt + Send + Unpin,
     ip: IpAddr,
@@ -158,21 +211,11 @@ pub async fn handle_connection<FB: FrameBuffer>(
         .await
         .context(WriteToStatisticsChannelSnafu)?;
 
-    let layout = alloc::Layout::from_size_align(network_buffer_size, page_size).unwrap();
-    let ptr = unsafe { alloc::alloc(layout) };
-    let buffer = unsafe { std::slice::from_raw_parts_mut(ptr, network_buffer_size) };
+    let layout = alloc::Layout::from_size_align(network_buffer_size, page_size)
+        .expect("invalid network buffer size for page size");
+    let mut recv_buf = ConnectionBuffer::new(layout).context(BufferAllocationSnafu)?;
+    let buffer = recv_buf.as_slice_mut();
     let mut response_buf = Vec::new();
-
-    if let Err(err) = memadvise::advise(buffer.as_ptr() as _, buffer.len(), Advice::Sequential) {
-        // [`MemAdviseError`] does not implement Debug...
-        let err = match err {
-            MemAdviseError::NullAddress => "NullAddress",
-            MemAdviseError::InvalidLength => "InvalidLength",
-            MemAdviseError::UnalignedAddress => "UnalignedAddress",
-            MemAdviseError::InvalidRange => "InvalidRange",
-        };
-        warn!("Failed to memadvise sequential read access for buffer to kernel. This should not effect any client connections, but might having some minor performance degration: {err}");
-    }
 
     // Number bytes left over **on the first bytes of the buffer** from the previous loop iteration
     let mut leftover_bytes_in_buffer = 0;

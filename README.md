@@ -178,15 +178,6 @@ I never used this for a longer time period, so happy about feedback!
 
 # Known issues
 
-## Failed to memadvise sequential read access for buffer to kernel
-
-During high traffic at GPN22 a few warnings where raised as breakwater was not able to memadvise the created buffer to the kernel.
-
-This *should* not happen, as we allocate the memory area directly before but who knows.
-The memadvise is only on a best-effort base, client connections while still be served even if the call fails.
-The worst thing that should happen is a minimal performance degradation.
-Have a look at [the issue report](https://github.com/sbernauer/breakwater/issues/28) for details.
-
 # Performance
 
 ## Laptop
