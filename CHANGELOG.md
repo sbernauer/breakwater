@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.16.3] - 2025-01-11
+
 ### Fixed
 
 - Receive buffers for pixelflut connections that were leaked before will now be properly deallocated ([#46])
