@@ -6,8 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Receive buffers for pixelflut connections that were leaked before will now be properly deallocated.
-- Errors while allocating receive buffers for pixelflut connections are now handled properly.
+- Receive buffers for pixelflut connections that were leaked before will now be properly deallocated ([#46])
+- Errors while allocating receive buffers for pixelflut connections are now handled properly ([#46])
+
+[#46]: https://github.com/sbernauer/breakwater/pull/46
 
 ## [0.16.2] - 2024-12-30
 
