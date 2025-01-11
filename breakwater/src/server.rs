@@ -1,11 +1,10 @@
-use std::alloc;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::{cmp::min, net::IpAddr, sync::Arc, time::Duration};
 
 use breakwater_parser::{FrameBuffer, OriginalParser, Parser};
-use log::{debug, info, warn};
-use memadvise::{Advice, MemAdviseError};
+use log::{debug, info};
+use memadvise::Advice;
 use snafu::{ResultExt, Snafu};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -14,21 +13,15 @@ use tokio::{
     time::Instant,
 };
 
-use crate::statistics::StatisticsEvent;
+use crate::{
+    connection_buffer::{self, ConnectionBuffer},
+    statistics::StatisticsEvent,
+};
 
 const CONNECTION_DENIED_TEXT: &[u8] = b"Connection denied as connection limit is reached";
 
 // Every client connection spawns a new thread, so we need to limit the number of stat events we send
 const STATISTICS_REPORT_INTERVAL: Duration = Duration::from_millis(250);
-
-#[derive(Debug)]
-pub struct BufferAllocationError;
-impl std::fmt::Display for BufferAllocationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:?}")
-    }
-}
-impl snafu::Error for BufferAllocationError {}
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -49,8 +42,8 @@ pub enum Error {
         source: mpsc::error::SendError<StatisticsEvent>,
     },
 
-    #[snafu(display("Failed to allocate network buffer"))]
-    BufferAllocation { source: BufferAllocationError },
+    #[snafu(display("Failed to allocate network connection buffer"))]
+    BufferAllocation { source: connection_buffer::Error },
 }
 
 pub struct Server<FB: FrameBuffer> {
@@ -90,9 +83,6 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
         let (connection_dropped_tx, mut connection_dropped_rx) =
             mpsc::unbounded_channel::<IpAddr>();
         let connection_dropped_tx = self.max_connections_per_ip.map(|_| connection_dropped_tx);
-
-        let page_size = page_size::get();
-        debug!("System has a page size of {page_size} bytes");
 
         loop {
             let (mut socket, socket_addr) = self
@@ -144,7 +134,6 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
                     ip,
                     fb_for_thread,
                     statistics_tx_for_thread,
-                    page_size,
                     network_buffer_size,
                     connection_dropped_tx_clone,
                 )
@@ -154,53 +143,11 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
     }
 }
 
-struct ConnectionBuffer {
-    ptr: *mut u8,
-    layout: alloc::Layout,
-}
-unsafe impl Send for ConnectionBuffer {}
-
-impl ConnectionBuffer {
-    fn new(layout: alloc::Layout) -> Result<Self, BufferAllocationError> {
-        let ptr = unsafe { alloc::alloc(layout) };
-
-        if ptr.is_null() {
-            return Err(BufferAllocationError);
-        }
-
-        if let Err(err) = memadvise::advise(ptr as _, layout.size(), Advice::Sequential) {
-            // [`MemAdviseError`] does not implement Debug...
-            let err = match err {
-                MemAdviseError::NullAddress => "NullAddress",
-                MemAdviseError::InvalidLength => "InvalidLength",
-                MemAdviseError::UnalignedAddress => "UnalignedAddress",
-                MemAdviseError::InvalidRange => "InvalidRange",
-            };
-            warn!("Failed to memadvise sequential read access for buffer to kernel. This should not effect any client connections, but might having some minor performance degration: {err}");
-        }
-
-        Ok(Self { ptr, layout })
-    }
-
-    fn as_slice_mut(&mut self) -> &mut [u8] {
-        unsafe { std::slice::from_raw_parts_mut(self.ptr, self.layout.size()) }
-    }
-}
-
-impl Drop for ConnectionBuffer {
-    fn drop(&mut self) {
-        unsafe {
-            alloc::dealloc(self.ptr, self.layout);
-        }
-    }
-}
-
 pub async fn handle_connection<FB: FrameBuffer>(
     mut stream: impl AsyncReadExt + AsyncWriteExt + Send + Unpin,
     ip: IpAddr,
     fb: Arc<FB>,
     statistics_tx: mpsc::Sender<StatisticsEvent>,
-    page_size: usize,
     network_buffer_size: usize,
     connection_dropped_tx: Option<mpsc::UnboundedSender<IpAddr>>,
 ) -> Result<(), Error> {
@@ -211,9 +158,7 @@ pub async fn handle_connection<FB: FrameBuffer>(
         .await
         .context(WriteToStatisticsChannelSnafu)?;
 
-    let layout = alloc::Layout::from_size_align(network_buffer_size, page_size)
-        .expect("invalid network buffer size for page size");
-    let mut recv_buf = ConnectionBuffer::new(layout).context(BufferAllocationSnafu)?;
+    let mut recv_buf = ConnectionBuffer::new(network_buffer_size).context(BufferAllocationSnafu)?;
     let buffer = recv_buf.as_slice_mut();
     let mut response_buf = Vec::new();
 

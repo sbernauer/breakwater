@@ -116,7 +116,6 @@ async fn test_safe<FB: FrameBuffer>(
         fb.clone(),
         statistics_channel.0,
         DEFAULT_NETWORK_BUFFER_SIZE,
-        page_size::get(),
         None,
     )
     .await
@@ -191,7 +190,6 @@ async fn test_drawing_rect<FB: FrameBuffer>(
         Arc::clone(&fb),
         statistics_channel.0.clone(),
         DEFAULT_NETWORK_BUFFER_SIZE,
-        page_size::get(),
         None,
     )
     .await
@@ -206,7 +204,6 @@ async fn test_drawing_rect<FB: FrameBuffer>(
         Arc::clone(&fb),
         statistics_channel.0.clone(),
         DEFAULT_NETWORK_BUFFER_SIZE,
-        page_size::get(),
         None,
     )
     .await
@@ -221,7 +218,6 @@ async fn test_drawing_rect<FB: FrameBuffer>(
         Arc::clone(&fb),
         statistics_channel.0.clone(),
         DEFAULT_NETWORK_BUFFER_SIZE,
-        page_size::get(),
         None,
     )
     .await
@@ -236,7 +232,6 @@ async fn test_drawing_rect<FB: FrameBuffer>(
         Arc::clone(&fb),
         statistics_channel.0.clone(),
         DEFAULT_NETWORK_BUFFER_SIZE,
-        page_size::get(),
         None,
     )
     .await
@@ -278,7 +273,6 @@ async fn test_binary_set_pixel<FB: FrameBuffer>(
         fb,
         statistics_channel.0,
         DEFAULT_NETWORK_BUFFER_SIZE,
-        page_size::get(),
         None,
     )
     .await
@@ -452,7 +446,6 @@ async fn test_binary_sync_pixels_larger_than_buffer<FB: FrameBuffer>(fb: Arc<FB>
         fb,
         statistics_channel().0,
         DEFAULT_NETWORK_BUFFER_SIZE,
-        page_size::get(),
         None,
     )
     .await
@@ -469,7 +462,6 @@ async fn assert_returns(input: &[u8], expected: &str) {
         fb(),
         statistics_channel().0,
         DEFAULT_NETWORK_BUFFER_SIZE,
-        page_size::get(),
         None,
     )
     .await

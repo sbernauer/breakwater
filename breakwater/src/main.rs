@@ -25,6 +25,7 @@ use crate::sinks::native_display::NativeDisplaySink;
 use crate::sinks::vnc::VncSink;
 
 mod cli_args;
+mod connection_buffer;
 mod prometheus_exporter;
 mod server;
 mod sinks;
