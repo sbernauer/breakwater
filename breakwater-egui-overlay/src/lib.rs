@@ -3,11 +3,13 @@ pub use egui;
 
 use egui::Margin;
 
+/// rustc version that compiled this crate
 const RUSTC_VERSION: *const std::ffi::c_char = concat!(
     include_str!(concat!(env!("OUT_DIR"), "/RUSTC_VERSION.txt")),
     "\0"
 )
 .as_ptr() as _;
+
 const BREAKWATER_VERSION: *const std::ffi::c_char =
     concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr() as _;
 
@@ -77,7 +79,7 @@ pub struct DynamicOverlay {
     pub drop: *const Drop,
 }
 
-// 38c3 colors
+/// 38c3 colors
 #[allow(dead_code)]
 mod colors {
     use egui::Color32;

@@ -88,6 +88,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> EguiView<FB> {
     }
 }
 
+/// calculates vertices that the canvas keeps its aspect ratio, but is resized to fit onto the given viewport
 fn calc_new_vertices(
     canvas_view_port: &ViewportConfig,
     [pixel_width, pixel_height]: [i32; 2],

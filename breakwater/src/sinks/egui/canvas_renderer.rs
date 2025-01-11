@@ -15,6 +15,7 @@ pub struct Vertex {
     pub tex_coords: [f32; 2],
 }
 
+/// Handles opengl related stuff to instruct a gpu to draw the framebuffer into a an egui widget.
 #[derive(Debug)]
 pub struct CanvasRenderer<FB: FrameBuffer> {
     framebuffer: Arc<FB>,
@@ -55,6 +56,11 @@ impl<FB: FrameBuffer> CanvasRenderer<FB> {
         view_port_index: usize,
         new_vertices: Option<[Vertex; 4]>,
     ) {
+        // This function gets called once per frame for every viewport.
+        // We only want to upload the framebuffer to the gpu once per frame,
+        // so we do it on the first viewport only.
+        // This saves bandwidth to the gpu and ensures a consistent pixelflut canvas across
+        // all viewports.
         if view_port_index == 0 {
             unsafe {
                 gl.bind_texture(glow::TEXTURE_2D, Some(self.canvas_texture));
@@ -166,7 +172,6 @@ unsafe fn init_canvas_texture(gl: &glow::Context, width: i32, height: i32) -> gl
         None,
     );
 
-    // Set texture parameters
     gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::REPEAT as i32);
     gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::REPEAT as i32);
     gl.tex_parameter_i32(

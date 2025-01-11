@@ -28,9 +28,12 @@ pub enum Error {
     DynamicOverlay { source: dynamic_overlay::Error },
 }
 
+/// Describes the part of the framebuffer that the corresponding viewport will display.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub struct ViewportConfig {
+    /// x offset
     pub x: usize,
+    /// y offset
     pub y: usize,
     pub width: usize,
     pub height: usize,
@@ -96,9 +99,13 @@ impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
     where
         Self: Sized,
     {
-        let viewports = match (cli_args.viewport.as_slice(), cli_args.native_display) {
-            (vp, _) if !vp.is_empty() => Vec::from(vp),
-            ([], true) => vec![ViewportConfig {
+        let viewports = match (
+            cli_args.viewport.as_slice(),
+            cli_args.native_display,
+            cli_args.ui.as_ref(),
+        ) {
+            (vp, _, _) if !vp.is_empty() => Vec::from(vp),
+            ([], _, Some(_)) | ([], true, _) => vec![ViewportConfig {
                 x: 0,
                 y: 0,
                 width: fb.get_width(),
@@ -142,6 +149,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
         }))
     }
 
+    /// This should only run on the main thread
     async fn run(&mut self) -> Result<(), super::Error> {
         // block_in_place below should only be used in a MultiThread runtime
         assert_eq!(

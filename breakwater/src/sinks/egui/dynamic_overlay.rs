@@ -24,7 +24,12 @@ pub enum UiOverlay {
     },
 }
 
+/// Safety:
+/// UiOverlay never leaves the main thread but tokio does not know that :-)
 unsafe impl Send for UiOverlay {}
+
+/// Safety:
+/// UiOverlay never leaves the main thread but tokio does not know that :-)
 unsafe impl Sync for UiOverlay {}
 
 impl Default for UiOverlay {
@@ -87,6 +92,7 @@ impl Drop for UiOverlay {
     }
 }
 
+/// loads a dynamic library for a custom overlay and checks its version
 pub fn load_and_check(dylib_path: impl AsRef<Path>) -> Result<UiOverlay, Error> {
     unsafe {
         let dylib =

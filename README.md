@@ -56,6 +56,8 @@ cargo run --release -- --help
 cargo run --release -- --help
     Finished release [optimized] target(s) in 0.04s
      Running `target/release/breakwater --help`
+Pixelflut server
+
 Usage: breakwater [OPTIONS]
 
 Options:
@@ -93,6 +95,12 @@ Options:
           Port of the VNC server [default: 5900]
       --native-display
           Enable native display output. This requires some form of graphical system (so will probably not work on your server)
+      --viewport <VIEWPORT>
+          Specify a view port to display the canvas or a certain part of it. Format: <offset_x>x<offset_y>,<width>x<height>. Might be specified multiple times for more than one viewport. Useful for multi-projector setups. Defaults to display the entire canvas. Implies --native-display
+      --advertised-endpoints <ADVERTISED_ENDPOINTS>
+          Specify one or more pixelflut endpoints to display
+      --ui <UI>
+          Provide a path to a dylib containing a custom egui overlay
   -h, --help
           Print help
   -V, --version
@@ -119,6 +127,10 @@ To e.g. turn the VNC server off, build with
 ```bash
 cargo run --release --no-default-features # --features alpha,vnc to explicitly enable
 ```
+
+## Custom overlay for the egui native display
+
+See this [guide](docs/custom-overlay.md).
 
 ## Usage of SIMD and nightly Rust
 [Fabian Wunsch](https://github.com/fabi321) has introduced initial support for SIMD when parsing the hexadecimal color values in [#5](https://github.com/sbernauer/breakwater/pull/5). Thanks!

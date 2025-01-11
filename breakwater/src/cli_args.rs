@@ -99,6 +99,7 @@ pub struct CliArgs {
     pub advertised_endpoints: Vec<String>,
 
     /// Provide a path to a dylib containing a custom egui overlay.
+    /// Implies --native-display.
     #[cfg(feature = "egui")]
     #[clap(long)]
     pub ui: Option<std::path::PathBuf>,
