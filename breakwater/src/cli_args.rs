@@ -85,7 +85,7 @@ pub struct CliArgs {
     #[clap(long)]
     pub native_display: bool,
 
-    /// Specify a view port to display the canvas or a certain part of it. Format: <offset_x>x<offset_y>,<width>x<height>.
+    /// Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`.
     /// Might be specified multiple times for more than one viewport. Useful for multi-projector setups.
     /// Defaults to display the entire canvas.
     /// Implies --native-display.
