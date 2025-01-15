@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Ensures statistic information updates are send periodically ([#49])
+
+[#49]: https://github.com/sbernauer/breakwater/pull/49
+
 ## [0.16.3] - 2025-01-11
 
 ### Fixed
