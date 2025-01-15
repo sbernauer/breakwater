@@ -6,9 +6,12 @@ use std::{
     collections::{hash_map::Entry, HashMap},
     fs::File,
     net::IpAddr,
-    time::{Duration, Instant},
+    time::Duration,
 };
-use tokio::sync::{broadcast, mpsc};
+use tokio::{
+    sync::{broadcast, mpsc},
+    time::interval,
+};
 
 pub const STATS_REPORT_INTERVAL: Duration = Duration::from_millis(1000);
 pub const STATS_SLIDING_WINDOW_SIZE: usize = 5;
@@ -137,62 +140,77 @@ impl Statistics {
         statistics
     }
 
-    pub async fn start(&mut self) -> Result<(), Error> {
-        let mut last_stat_report = Instant::now();
-        let mut last_save_file_written = Instant::now();
+    pub async fn run(&mut self) -> Result<(), Error> {
         let mut statistics_information_event = StatisticsInformationEvent::default();
 
-        while let Some(statistics_update) = self.statistics_rx.recv().await {
-            self.statistic_events += 1;
-            match statistics_update {
-                StatisticsEvent::ConnectionCreated { ip } => {
-                    *self.connections_for_ip.entry(ip).or_insert(0) += 1;
-                }
-                StatisticsEvent::ConnectionClosed { ip } => {
-                    if let Entry::Occupied(mut o) = self.connections_for_ip.entry(ip) {
-                        let connections = o.get_mut();
-                        *connections -= 1;
-                        if *connections == 0 {
-                            o.remove_entry();
-                        }
-                    }
-                }
-                StatisticsEvent::ConnectionDenied { ip } => {
-                    *self.denied_connections_for_ip.entry(ip).or_insert(0) += 1;
-                }
-                StatisticsEvent::BytesRead { ip, bytes } => {
-                    *self.bytes_for_ip.entry(ip).or_insert(0) += bytes;
-                }
-                StatisticsEvent::VncFrameRendered => self.frame += 1,
-            }
+        let mut stat_report = interval(STATS_REPORT_INTERVAL);
+        let (mut stats_save, save_file) = match &self.statistics_save_mode {
+            StatisticsSaveMode::Disabled => (interval(Duration::MAX), None),
+            StatisticsSaveMode::Enabled {
+                save_file,
+                interval_s,
+            } => (
+                interval(Duration::from_secs(*interval_s)),
+                Some(save_file.clone()),
+            ),
+        };
 
-            // As there is an event for every frame we are guaranteed to land here every second
-            let last_stat_report_elapsed = last_stat_report.elapsed();
-            if last_stat_report_elapsed > STATS_REPORT_INTERVAL {
-                last_stat_report = Instant::now();
-                statistics_information_event = self.calculate_statistics_information_event(
-                    &statistics_information_event,
-                    last_stat_report_elapsed,
-                );
-                self.statistics_information_tx
-                    .send(statistics_information_event.clone())
-                    .map_err(Box::new)
-                    .context(WriteToStatisticsInformationChannelSnafu)?;
-
-                if let StatisticsSaveMode::Enabled {
-                    save_file,
-                    interval_s,
-                } = &self.statistics_save_mode
-                {
-                    if last_save_file_written.elapsed() > Duration::from_secs(*interval_s) {
-                        last_save_file_written = Instant::now();
+        loop {
+            tokio::select! {
+                // Cancellation safety: mpsc::Receiver::recv is cancellation safe
+                maybe_event = self.statistics_rx.recv() => {
+                    let Some(event) = maybe_event else {
+                        // `self.statistics_rx` is closed, program is terminating
+                        return Ok(());
+                    };
+                    self.process_statistics_event(event);
+                },
+                // Cancellation safety: This method is cancellation safe. If tick is used as the branch in a tokio::select!
+                // and another branch completes first, then no tick has been consumed.
+                _ = stat_report.tick() => {
+                    statistics_information_event = self.calculate_statistics_information_event(
+                        &statistics_information_event,
+                        STATS_REPORT_INTERVAL,
+                    );
+                    self.statistics_information_tx
+                        .send(statistics_information_event.clone())
+                        .map_err(Box::new)
+                        .context(WriteToStatisticsInformationChannelSnafu)?;
+                },
+                // Cancellation safety: This method is cancellation safe. If tick is used as the branch in a tokio::select!
+                // and another branch completes first, then no tick has been consumed.
+                _ = stats_save.tick() => {
+                    if let Some(save_file) = &save_file {
                         statistics_information_event.save_to_file(save_file)?;
                     }
+                },
+            };
+        }
+    }
+
+    fn process_statistics_event(&mut self, event: StatisticsEvent) {
+        self.statistic_events += 1;
+        match event {
+            StatisticsEvent::ConnectionCreated { ip } => {
+                *self.connections_for_ip.entry(ip).or_insert(0) += 1;
+            }
+            StatisticsEvent::ConnectionClosed { ip } => {
+                if let Entry::Occupied(mut o) = self.connections_for_ip.entry(ip) {
+                    let connections = o.get_mut();
+                    *connections -= 1;
+                    if *connections == 0 {
+                        o.remove_entry();
+                    }
                 }
             }
+            StatisticsEvent::ConnectionDenied { ip } => {
+                *self.denied_connections_for_ip.entry(ip).or_insert(0) += 1;
+            }
+            StatisticsEvent::BytesRead { ip, bytes } => {
+                *self.bytes_for_ip.entry(ip).or_insert(0) += bytes;
+            }
+            StatisticsEvent::VncFrameRendered => self.frame += 1,
         }
-
-        Ok(())
     }
 
     fn calculate_statistics_information_event(
