@@ -143,7 +143,7 @@ impl Statistics {
     pub async fn run(&mut self) -> Result<(), Error> {
         let mut statistics_information_event = StatisticsInformationEvent::default();
 
-        let mut stat_report = interval(STATS_REPORT_INTERVAL);
+        let mut stats_report = interval(STATS_REPORT_INTERVAL);
         let (mut stats_save, save_file) = match &self.statistics_save_mode {
             StatisticsSaveMode::Disabled => (interval(Duration::MAX), None),
             StatisticsSaveMode::Enabled {
@@ -167,7 +167,7 @@ impl Statistics {
                 },
                 // Cancellation safety: This method is cancellation safe. If tick is used as the branch in a tokio::select!
                 // and another branch completes first, then no tick has been consumed.
-                _ = stat_report.tick() => {
+                _ = stats_report.tick() => {
                     statistics_information_event = self.calculate_statistics_information_event(
                         &statistics_information_event,
                         STATS_REPORT_INTERVAL,
