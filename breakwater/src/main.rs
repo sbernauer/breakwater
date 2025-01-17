@@ -200,7 +200,7 @@ async fn main() -> Result<(), Error> {
         {
             tokio::spawn(handle_ctrl_c(terminate_signal_tx));
 
-            // Some plattforms require opening windows from the main thread.
+            // Some platforms require opening windows from the main thread.
             // The tokio::main macro uses Runtime::block_on(future) which runs the future on
             // the current thread, which should be the main thread right now.
             egui_sink.run().await.context(RunSinkSnafu)?;
