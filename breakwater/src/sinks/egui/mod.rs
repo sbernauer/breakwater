@@ -185,7 +185,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> EguiSink<FB> {
         let ui_overlay = self.ui_overlay.clone();
 
         eframe::run_native(
-            "Breakwater | Pixelflut Server",
+            "Viewport 0 | Breakwater",
             options,
             Box::new(|cc| {
                 let frontend = view::EguiView::new(
