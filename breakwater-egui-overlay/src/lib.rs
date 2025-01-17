@@ -4,6 +4,10 @@ pub use egui;
 use egui::Margin;
 
 /// rustc version that compiled this crate
+//
+// Currently it's not supported to read the rust version from a cargo env,
+// so we need to gather it ourselves.
+// See https://github.com/rust-lang/cargo/issues/4408 for details
 const RUSTC_VERSION: *const std::ffi::c_char = concat!(
     include_str!(concat!(env!("OUT_DIR"), "/RUSTC_VERSION.txt")),
     "\0"
