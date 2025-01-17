@@ -7,5 +7,5 @@ edition.workspace = true
 repository.workspace = true
 
 [dependencies]
-egui = { workspace = true, features = [] }
 eframe = { workspace = true, features = [] }
+egui = { workspace = true, features = [] }

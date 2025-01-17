@@ -13,12 +13,18 @@ path = "src/main.rs"
 
 [dependencies]
 breakwater-parser.workspace = true
+breakwater-egui-overlay = { workspace = true, optional = true }
 
 async-trait.workspace = true
+bytemuck = { workspace = true, optional = true }
 chrono.workspace = true
 clap.workspace = true
 const_format.workspace = true
+eframe = { workspace = true, optional = true }
+egui = { workspace = true, optional = true }
 env_logger.workspace = true
+libloading = { workspace = true, optional = true }
+local-ip-address.workspace = true
 log.workspace = true
 memadvise.workspace = true
 number_prefix.workspace = true
@@ -33,23 +39,17 @@ softbuffer = { workspace = true, optional = true }
 tokio.workspace = true
 vncserver = { workspace = true, optional = true }
 winit = { workspace = true, optional = true }
-eframe = { workspace = true, optional = true }
-egui = { workspace = true, optional = true }
-breakwater-egui-overlay = { workspace = true, optional = true}
-bytemuck = { version = "1.21", optional = true }
-local-ip-address = "0.6.3"
-libloading = { version = "0.8", optional = true }
 
 [dev-dependencies]
 rstest.workspace = true
 
 [features]
-# We don't enable binary-sync-pixels by default to make it a bit harder for clients ;)
-default = ["vnc", "egui"]
+# We don't enable binary-sync-pixels and binary-set-pixel by default to make it a bit harder for clients ;)
+default = ["egui", "vnc"]
 
-vnc = ["dep:vncserver"]
 alpha = ["breakwater-parser/alpha"]
-egui = ["dep:eframe", "dep:egui", "dep:breakwater-egui-overlay", "dep:bytemuck", "dep:libloading"]
-native-display = ["dep:softbuffer", "dep:winit"]
 binary-set-pixel = ["breakwater-parser/binary-set-pixel"]
 binary-sync-pixels = ["breakwater-parser/binary-sync-pixels"]
+egui = ["dep:breakwater-egui-overlay", "dep:bytemuck", "dep:eframe", "dep:egui", "dep:libloading"]
+native-display = ["dep:softbuffer", "dep:winit"]
+vnc = ["dep:vncserver"]

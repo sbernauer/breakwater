@@ -116,10 +116,11 @@ Breakwater also has some compile-time features for dependency or performance rea
 You can get the list of available features by looking at the [Cargo.toml](Cargo.toml).
 As of writing the following features are supported:
 
-* `native-display` (enabled by default): Starts a graphical window on your local system. Please note that this requires a graphical environment.
+* `egui` (enabled by default): Enables an advanced customizable graphical frontend on your local system. Please note that this requires a graphical environment.
+* `native-display` (disabled by default): Enables a minimalist graphical window on your local system. Please note that this requires a graphical environment.
 * `vnc` (enabled by default): Starts a VNC server, where users can connect to. Needs `libvncserver-dev` to be installed. Please note that the VNC server offers basically no latency, but consumes quite some CPU.
 * `alpha` (disabled by default): Respect alpha values during `PX` commands. Disabled by default as this can cause performance degradation.
-* `binary-set-pixel` (enabled by default): Allows use of the `PB` command.
+* `binary-set-pixel` (disabled by default): Allows use of the `PB` command.
 * `binary-sync-pixels`(disabled by default): Allows use of the `PXMULTI` command.
 
 To e.g. turn the VNC server off, build with
