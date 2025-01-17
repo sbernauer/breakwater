@@ -127,7 +127,7 @@ async fn main() -> Result<(), Error> {
     .context(StartPrometheusExporterSnafu)?;
 
     let server_listener_thread = tokio::spawn(async move { server.start().await });
-    let statistics_thread = tokio::spawn(async move { statistics.start().await });
+    let statistics_thread = tokio::spawn(async move { statistics.run().await });
     let prometheus_exporter_thread = tokio::spawn(async move { prometheus_exporter.run().await });
 
     let mut display_sinks = Vec::<Box<dyn DisplaySink<SimpleFrameBuffer> + Send>>::new();
