@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Ensures statistic information updates are send periodically ([#49])
+- Ensure statistic information updates are send periodically ([#49])
 
 [#49]: https://github.com/sbernauer/breakwater/pull/49
 
