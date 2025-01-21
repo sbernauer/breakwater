@@ -4,10 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Add a customizable multi-window native display using egui ([#48])
+
 ### Fixed
 
 - Ensure statistic information updates are send periodically ([#49])
 
+[#48]: https://github.com/sbernauer/breakwater/pull/48
 [#49]: https://github.com/sbernauer/breakwater/pull/49
 
 ## [0.16.3] - 2025-01-11
