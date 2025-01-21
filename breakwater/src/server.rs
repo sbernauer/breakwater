@@ -1,8 +1,12 @@
-use std::collections::hash_map::Entry;
-use std::collections::HashMap;
-use std::{cmp::min, net::IpAddr, sync::Arc, time::Duration};
+use std::{
+    cmp::min,
+    collections::{hash_map::Entry, HashMap},
+    net::IpAddr,
+    sync::Arc,
+    time::Duration,
+};
 
-use breakwater_parser::{FrameBuffer, OriginalParser, Parser};
+use breakwater_parser::{FrameBuffer, NomParser, Parser};
 use log::{debug, info};
 use memadvise::Advice;
 use snafu::{ResultExt, Snafu};
@@ -167,7 +171,10 @@ pub async fn handle_connection<FB: FrameBuffer>(
 
     // Not using `ParserImplementation` to avoid the dynamic dispatch.
     // let mut parser = ParserImplementation::Simple(SimpleParser::new(fb));
-    let mut parser = OriginalParser::new(fb);
+    // let mut parser = OriginalParser::new(fb);
+    let mut parser = NomParser::new(fb);
+    // let mut parser = RefactoredParser::new(fb);
+
     let parser_lookahead = parser.parser_lookahead();
 
     // If we send e.g. an StatisticsEvent::BytesRead for every time we read something from the socket the statistics thread would go crazy.

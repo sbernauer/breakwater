@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 #[cfg(target_arch = "x86_64")]
 use breakwater_parser::AssemblerParser;
 use breakwater_parser::{
-    MemchrParser, OriginalParser, Parser, RefactoredParser, SimpleFrameBuffer,
+    MemchrParser, NomParser, OriginalParser, Parser, RefactoredParser, SimpleFrameBuffer,
 };
 use criterion::{criterion_group, criterion_main, Criterion};
 use pixelbomber::image_handler::{self, ImageConfigBuilder};
@@ -102,7 +102,7 @@ fn invoke_benchmark(
         FRAMEBUFFER_HEIGHT,
     ));
 
-    let parser_names = vec!["original", "refactored" /*"memchr"*/];
+    let parser_names = vec!["original", "nom" /*"refactored"*/ /*"memchr"*/];
 
     // #[cfg(target_arch = "x86_64")]
     // parser_names.push("assembler");
@@ -111,6 +111,7 @@ fn invoke_benchmark(
         c_group.bench_with_input(parse_name, &commands, |b, input| {
             b.iter(|| match parse_name {
                 "original" => OriginalParser::new(fb.clone()).parse(input, &mut Vec::new()),
+                "nom" => NomParser::new(fb.clone()).parse(input, &mut Vec::new()),
                 "refactored" => RefactoredParser::new(fb.clone()).parse(input, &mut Vec::new()),
                 "memchr" => MemchrParser::new(fb.clone()).parse(input, &mut Vec::new()),
                 #[cfg(target_arch = "x86_64")]

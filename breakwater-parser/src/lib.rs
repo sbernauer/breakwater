@@ -7,6 +7,7 @@ use const_format::formatcp;
 mod assembler;
 mod framebuffer;
 mod memchr;
+mod nom;
 mod original;
 mod refactored;
 
@@ -14,6 +15,7 @@ mod refactored;
 pub use assembler::AssemblerParser;
 pub use framebuffer::{simple::SimpleFrameBuffer, FrameBuffer};
 pub use memchr::MemchrParser;
+pub use nom::NomParser;
 pub use original::OriginalParser;
 pub use refactored::RefactoredParser;
 
