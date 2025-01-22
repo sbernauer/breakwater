@@ -9,6 +9,8 @@ use crate::{
     statistics::{StatisticsEvent, StatisticsInformationEvent},
 };
 
+#[cfg(feature = "egui")]
+pub mod egui;
 pub mod ffmpeg;
 #[cfg(feature = "native-display")]
 pub mod native_display;
@@ -28,6 +30,10 @@ pub enum Error {
 
     #[snafu(display("ffmpeg error"), context(false))]
     FfmpegError { source: ffmpeg::Error },
+
+    #[cfg(feature = "egui")]
+    #[snafu(display("egui error"), context(false))]
+    EguiError { source: egui::Error },
 }
 
 // The stabilization of async functions in traits in Rust 1.75 did not include support for using traits containing async

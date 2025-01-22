@@ -25,4 +25,4 @@ alpha = []
 binary-set-pixel = []
 binary-sync-pixels = []
 
-default = ["binary-set-pixel"]
+default = []

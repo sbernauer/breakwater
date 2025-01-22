@@ -13,12 +13,18 @@ path = "src/main.rs"
 
 [dependencies]
 breakwater-parser.workspace = true
+breakwater-egui-overlay = { workspace = true, optional = true }
 
 async-trait.workspace = true
+bytemuck = { workspace = true, optional = true }
 chrono.workspace = true
 clap.workspace = true
 const_format.workspace = true
+eframe = { workspace = true, optional = true }
+egui = { workspace = true, optional = true }
 env_logger.workspace = true
+libloading = { workspace = true, optional = true }
+local-ip-address.workspace = true
 log.workspace = true
 memadvise.workspace = true
 number_prefix.workspace = true
@@ -38,11 +44,12 @@ winit = { workspace = true, optional = true }
 rstest.workspace = true
 
 [features]
-# We don't enable binary-sync-pixels by default to make it a bit harder for clients ;)
-default = ["vnc", "native-display", "binary-set-pixel"]
+# We don't enable binary-sync-pixels and binary-set-pixel by default to make it a bit harder for clients ;)
+default = ["egui", "vnc"]
 
-vnc = ["dep:vncserver"]
 alpha = ["breakwater-parser/alpha"]
-native-display = ["dep:softbuffer", "dep:winit"]
 binary-set-pixel = ["breakwater-parser/binary-set-pixel"]
 binary-sync-pixels = ["breakwater-parser/binary-sync-pixels"]
+egui = ["dep:breakwater-egui-overlay", "dep:bytemuck", "dep:eframe", "dep:egui", "dep:libloading"]
+native-display = ["dep:softbuffer", "dep:winit"]
+vnc = ["dep:vncserver"]

@@ -1,5 +1,5 @@
 [workspace]
-members = ["breakwater-parser", "breakwater"]
+members = ["breakwater-parser", "breakwater", "breakwater-egui-overlay"]
 resolver = "2"
 
 [workspace.package]
@@ -11,11 +11,16 @@ repository = "https://github.com/sernauer/breakwater"
 
 [workspace.dependencies]
 async-trait = "0.1"
+bytemuck = { version = "1.21" }
 chrono = "0.4"
 clap = { version = "4.5", features = ["derive"] }
 const_format = "0.2"
-criterion = {version = "0.5", features = ["async_tokio"]}
+criterion = { version = "0.5", features = ["async_tokio"] }
+eframe = { version = "0.29", default-features = false, features = ["glow", "default_fonts", "persistence", "wayland", "x11"] }
+egui = { version = "0.29" }
 env_logger = "0.11"
+libloading = { version = "0.8" }
+local-ip-address = "0.6.3"
 log = "0.4"
 memadvise = "0.1"
 memchr = "2.7"
@@ -35,9 +40,11 @@ trait-variant = "0.1"
 vncserver = "0.2"
 winit = "0.30"
 
+
 # Uses the given path when used locally, and uses the specified version from crates.io when published.
 breakwater-core = { path = "breakwater-core", version = "0.16.3" }
 breakwater-parser = { path = "breakwater-parser", version = "0.16.3" }
+breakwater-egui-overlay = { path = "breakwater-egui-overlay", version = "0.16.3" }
 
 [profile.dev]
 opt-level = 3

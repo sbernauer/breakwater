@@ -56,6 +56,8 @@ cargo run --release -- --help
 cargo run --release -- --help
     Finished release [optimized] target(s) in 0.04s
      Running `target/release/breakwater --help`
+Pixelflut server
+
 Usage: breakwater [OPTIONS]
 
 Options:
@@ -93,6 +95,12 @@ Options:
           Port of the VNC server [default: 5900]
       --native-display
           Enable native display output. This requires some form of graphical system (so will probably not work on your server)
+      --viewport <VIEWPORT>
+          Specify a view port to display the canvas or a certain part of it. Format: <offset_x>x<offset_y>,<width>x<height>. Might be specified multiple times for more than one viewport. Useful for multi-projector setups. Defaults to display the entire canvas. Implies --native-display
+      --advertised-endpoints <ADVERTISED_ENDPOINTS>
+          Specify one or more pixelflut endpoints to display
+      --ui <UI>
+          Provide a path to a dylib containing a custom egui overlay
   -h, --help
           Print help
   -V, --version
@@ -108,10 +116,11 @@ Breakwater also has some compile-time features for dependency or performance rea
 You can get the list of available features by looking at the [Cargo.toml](Cargo.toml).
 As of writing the following features are supported:
 
-* `native-display` (enabled by default): Starts a graphical window on your local system. Please note that this requires a graphical environment.
+* `egui` (enabled by default): Enables an advanced customizable graphical frontend on your local system. Please note that this requires a graphical environment.
+* `native-display` (disabled by default): Enables a minimalist graphical window on your local system. Please note that this requires a graphical environment.
 * `vnc` (enabled by default): Starts a VNC server, where users can connect to. Needs `libvncserver-dev` to be installed. Please note that the VNC server offers basically no latency, but consumes quite some CPU.
 * `alpha` (disabled by default): Respect alpha values during `PX` commands. Disabled by default as this can cause performance degradation.
-* `binary-set-pixel` (enabled by default): Allows use of the `PB` command.
+* `binary-set-pixel` (disabled by default): Allows use of the `PB` command.
 * `binary-sync-pixels`(disabled by default): Allows use of the `PXMULTI` command.
 
 To e.g. turn the VNC server off, build with
@@ -119,6 +128,10 @@ To e.g. turn the VNC server off, build with
 ```bash
 cargo run --release --no-default-features # --features alpha,vnc to explicitly enable
 ```
+
+## Custom overlay for the egui native display
+
+See this [guide](docs/custom-overlay.md).
 
 ## Usage of SIMD and nightly Rust
 [Fabian Wunsch](https://github.com/fabi321) has introduced initial support for SIMD when parsing the hexadecimal color values in [#5](https://github.com/sbernauer/breakwater/pull/5). Thanks!

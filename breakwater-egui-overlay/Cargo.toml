@@ -1,0 +1,11 @@
+[package]
+name = "breakwater-egui-overlay"
+version.workspace = true
+license.workspace = true
+authors.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
+eframe = { workspace = true, features = [] }
+egui = { workspace = true, features = [] }
