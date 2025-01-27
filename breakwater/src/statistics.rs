@@ -221,12 +221,13 @@ impl Statistics {
         let elapsed_ms = max(1, elapsed.as_millis()) as u64;
         let frame = self.frame;
         let connections = self.connections_for_ip.values().sum();
-        let ips = self.connections_for_ip.len() as u32;
-        let legacy_ips = self
-            .connections_for_ip
-            .keys()
-            .filter(|ip| ip.is_ipv4())
-            .count() as u32;
+        let [ips, legacy_ips] =
+            self.connections_for_ip
+                .keys()
+                .fold([0, 0], |[v6, v4], e| match e {
+                    IpAddr::V6(_) => [v6 + 1, v4],
+                    IpAddr::V4(_) => [v6, v4 + 1],
+                });
         let bytes = self.bytes_for_ip.values().sum();
         self.bytes_per_s_window
             .add_sample((bytes - prev.bytes) * 1000 / elapsed_ms);
