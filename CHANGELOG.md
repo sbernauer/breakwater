@@ -10,10 +10,12 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Fix IPv6 counting in stats ([#50])
 - Ensure statistic information updates are send periodically ([#49])
 
 [#48]: https://github.com/sbernauer/breakwater/pull/48
 [#49]: https://github.com/sbernauer/breakwater/pull/49
+[#50]: https://github.com/sbernauer/breakwater/pull/50
 
 ## [0.16.3] - 2025-01-11
 
