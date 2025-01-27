@@ -56,11 +56,11 @@ impl PrometheusExporter {
             statistics_information_rx,
             metric_legacy_ips: register_int_gauge(
                 "breakwater_ips",
-                "Total number of IPs connected",
+                "Total number of connected IPv6 addresses",
             )?,
             metric_ips: register_int_gauge(
                 "breakwater_legacy_ips",
-                "Total number of legacy (v4) IPs connected",
+                "Total number of connected IPv4 addresses",
             )?,
             metric_frame: register_int_gauge("breakwater_frame", "Frame number of the VNC server")?,
             metric_statistic_events: register_int_gauge(

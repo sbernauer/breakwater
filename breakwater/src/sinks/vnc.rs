@@ -184,7 +184,7 @@ impl<FB: FrameBuffer> VncSink<'_, FB> {
             27_f32,
             0x00ff_ffff,
             format!(
-                "{}. {} Bit/s ({}B total) by {} connections from {} IPs ({} legacy)",
+                "{}. {} Bit/s ({}B total) by {} connections from {} IPv6 and {} IPv4.",
                 self.text,
                 format_per_s(stats.bytes_per_s as f64 * 8.0),
                 format(stats.bytes as f64),
