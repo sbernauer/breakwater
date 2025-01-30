@@ -189,8 +189,8 @@ impl<FB: FrameBuffer> VncSink<'_, FB> {
                 format_per_s(stats.bytes_per_s as f64 * 8.0),
                 format(stats.bytes as f64),
                 stats.connections,
-                stats.ips,
-                stats.legacy_ips,
+                stats.ips_v6,
+                stats.ips_v4,
             )
             .as_str(),
         );
