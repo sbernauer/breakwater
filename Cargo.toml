@@ -16,8 +16,8 @@ chrono = "0.4"
 clap = { version = "4.5", features = ["derive"] }
 const_format = "0.2"
 criterion = { version = "0.5", features = ["async_tokio"] }
-eframe = { version = "0.29", default-features = false, features = ["glow", "default_fonts", "persistence", "wayland", "x11"] }
-egui = { version = "0.29" }
+eframe = { version = "0.31", default-features = false, features = ["glow", "default_fonts", "persistence", "wayland", "x11"] }
+egui = { version = "0.31" }
 env_logger = "0.11"
 libloading = { version = "0.8" }
 local-ip-address = "0.6.3"
@@ -26,9 +26,9 @@ memadvise = "0.1"
 memchr = "2.7"
 number_prefix = "0.4"
 page_size = "0.6"
-pixelbomber = "0.9"
+pixelbomber = "1.1"
 prometheus_exporter = "0.8"
-rstest = "0.23"
+rstest = "0.24"
 rusttype = "0.9"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
