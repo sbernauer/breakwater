@@ -84,8 +84,8 @@ extern "C" fn draw_ui(
     ctx: &egui::Context,
     _advertised_endpoints: &[String],
     connections: u32,
-    ips: u32,
-    legacy_ips: u32,
+    ips_v6: u32,
+    ips_v4: u32,
     bytes_per_s: u64,
 ) { 
   // your fancy egui widgets go here

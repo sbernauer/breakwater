@@ -31,8 +31,8 @@ pub struct PrometheusExporter {
     statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
 
     // Prometheus metrics
-    metric_ips: IntGauge,
-    metric_legacy_ips: IntGauge,
+    metric_ips_v6: IntGauge,
+    metric_ips_v4: IntGauge,
     metric_frame: IntGauge,
     metric_statistic_events: IntGauge,
 
@@ -54,13 +54,13 @@ impl PrometheusExporter {
 
         Ok(PrometheusExporter {
             statistics_information_rx,
-            metric_legacy_ips: register_int_gauge(
-                "breakwater_ips",
-                "Total number of IPs connected",
+            metric_ips_v6: register_int_gauge(
+                "breakwater_ips_v6",
+                "Total number of connected IPv6 addresses",
             )?,
-            metric_ips: register_int_gauge(
-                "breakwater_legacy_ips",
-                "Total number of legacy (v4) IPs connected",
+            metric_ips_v4: register_int_gauge(
+                "breakwater_ips_v4",
+                "Total number of connected IPv4 addresses",
             )?,
             metric_frame: register_int_gauge("breakwater_frame", "Frame number of the VNC server")?,
             metric_statistic_events: register_int_gauge(
@@ -87,8 +87,8 @@ impl PrometheusExporter {
 
     pub async fn run(&mut self) {
         while let Ok(event) = self.statistics_information_rx.recv().await {
-            self.metric_ips.set(event.ips as i64);
-            self.metric_legacy_ips.set(event.legacy_ips as i64);
+            self.metric_ips_v6.set(event.ips_v6 as i64);
+            self.metric_ips_v4.set(event.ips_v4 as i64);
             self.metric_frame.set(event.frame as i64);
             self.metric_statistic_events
                 .set(event.statistic_events as i64);

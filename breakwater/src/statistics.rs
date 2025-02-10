@@ -60,8 +60,8 @@ pub enum StatisticsSaveMode {
 pub struct StatisticsInformationEvent {
     pub frame: u64,
     pub connections: u32,
-    pub ips: u32,
-    pub legacy_ips: u32,
+    pub ips_v6: u32,
+    pub ips_v4: u32,
     pub bytes: u64,
     pub fps: u64,
     pub bytes_per_s: u64,
@@ -221,12 +221,13 @@ impl Statistics {
         let elapsed_ms = max(1, elapsed.as_millis()) as u64;
         let frame = self.frame;
         let connections = self.connections_for_ip.values().sum();
-        let ips = self.connections_for_ip.len() as u32;
-        let legacy_ips = self
+        let [ips_v6, ips_v4] = self
             .connections_for_ip
             .keys()
-            .filter(|ip| ip.is_ipv4())
-            .count() as u32;
+            .fold([0, 0], |[v6, v4], e| match e {
+                IpAddr::V6(_) => [v6 + 1, v4],
+                IpAddr::V4(_) => [v6, v4 + 1],
+            });
         let bytes = self.bytes_for_ip.values().sum();
         self.bytes_per_s_window
             .add_sample((bytes - prev.bytes) * 1000 / elapsed_ms);
@@ -237,8 +238,8 @@ impl Statistics {
         StatisticsInformationEvent {
             frame,
             connections,
-            ips,
-            legacy_ips,
+            ips_v6,
+            ips_v4,
             bytes,
             fps: self.fps_window.get_average(),
             bytes_per_s: self.bytes_per_s_window.get_average(),

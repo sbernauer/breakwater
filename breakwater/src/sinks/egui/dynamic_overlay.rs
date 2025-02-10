@@ -46,8 +46,8 @@ impl UiOverlay {
         ctx: &egui::Context,
         advertised_endpoints: &[String],
         connections: u32,
-        ips: u32,
-        legacy_ips: u32,
+        ips_v6: u32,
+        ips_v4: u32,
         bytes_per_s: u64,
     ) {
         match self {
@@ -58,8 +58,8 @@ impl UiOverlay {
                     ctx,
                     advertised_endpoints,
                     connections,
-                    ips,
-                    legacy_ips,
+                    ips_v6,
+                    ips_v4,
                     bytes_per_s,
                 );
             }
@@ -70,8 +70,8 @@ impl UiOverlay {
                     ctx,
                     advertised_endpoints,
                     connections,
-                    ips,
-                    legacy_ips,
+                    ips_v6,
+                    ips_v4,
                     bytes_per_s,
                 );
             }

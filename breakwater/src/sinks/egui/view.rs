@@ -165,8 +165,8 @@ impl<FB: FrameBuffer + Send + Sync + 'static> eframe::App for EguiView<FB> {
                     ctx,
                     &self.advertised_endpoints,
                     self.latest_stats.connections,
-                    self.latest_stats.ips,
-                    self.latest_stats.legacy_ips,
+                    self.latest_stats.ips_v6,
+                    self.latest_stats.ips_v4,
                     self.latest_stats.bytes_per_s,
                 );
             } else {
@@ -191,8 +191,8 @@ impl<FB: FrameBuffer + Send + Sync + 'static> eframe::App for EguiView<FB> {
                             ctx,
                             &self.advertised_endpoints,
                             self.latest_stats.connections,
-                            self.latest_stats.ips,
-                            self.latest_stats.legacy_ips,
+                            self.latest_stats.ips_v6,
+                            self.latest_stats.ips_v4,
                             self.latest_stats.bytes_per_s,
                         );
 
