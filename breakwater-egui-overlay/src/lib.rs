@@ -69,8 +69,8 @@ pub type DrawUi = extern "C" fn(
     ctx: &egui::Context,
     advertised_endpoints: &[String],
     connections: u32,
-    ips: u32,
-    legacy_ips: u32,
+    ips_v6: u32,
+    ips_v4: u32,
     bytes_per_s: u64,
 );
 
@@ -111,8 +111,8 @@ extern "C" fn draw_ui(
     ctx: &egui::Context,
     advertised_endpoints: &[String],
     connections: u32,
-    ips: u32,
-    legacy_ips: u32,
+    ips_v6: u32,
+    ips_v4: u32,
     bytes_per_s: u64,
 ) {
     use colors::*;
@@ -174,7 +174,7 @@ extern "C" fn draw_ui(
                             .size(24.0),
                     );
                     ui.label(
-                        egui::RichText::new(format!("{}", ips))
+                        egui::RichText::new(format!("{}", ips_v6))
                             .color(COLOR_HIGHLIGHT)
                             .size(24.0)
                             .strong(),
@@ -200,7 +200,7 @@ extern "C" fn draw_ui(
                             .size(24.0),
                     );
                     ui.label(
-                        egui::RichText::new(format!("{}", legacy_ips))
+                        egui::RichText::new(format!("{}", ips_v4))
                             .color(COLOR_HIGHLIGHT)
                             .size(24.0)
                             .strong(),

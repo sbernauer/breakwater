@@ -10,10 +10,14 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- BREAKING: Count IPv4 and IPv6 statistics individually to avoid confusion.
+  Because of this, the Prometheus metrics `breakwater_ips` and `breakwater_legacy_ips` have been removed,
+  use `breakwater_ips_v4` and `breakwater_ips_v6` instead ([#50])
 - Ensure statistic information updates are send periodically ([#49])
 
 [#48]: https://github.com/sbernauer/breakwater/pull/48
 [#49]: https://github.com/sbernauer/breakwater/pull/49
+[#50]: https://github.com/sbernauer/breakwater/pull/50
 
 ## [0.16.3] - 2025-01-11
 

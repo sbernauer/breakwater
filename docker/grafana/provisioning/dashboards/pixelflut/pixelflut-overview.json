@@ -544,7 +544,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Legacy IPs"
+              "options": "IPv4"
             },
             "properties": [
               {
@@ -559,7 +559,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "IPs"
+              "options": "IPv6"
             },
             "properties": [
               {
@@ -600,9 +600,9 @@
             "uid": "P0FAC05DE14135586"
           },
           "exemplar": true,
-          "expr": "breakwater_ips",
+          "expr": "breakwater_ips_v6",
           "interval": "",
-          "legendFormat": "IPs",
+          "legendFormat": "IPv6",
           "refId": "A"
         },
         {
@@ -611,10 +611,10 @@
             "uid": "P0FAC05DE14135586"
           },
           "exemplar": true,
-          "expr": "breakwater_legacy_ips",
+          "expr": "breakwater_ips_v4",
           "hide": false,
           "interval": "",
-          "legendFormat": "Legacy IPs",
+          "legendFormat": "IPv4",
           "refId": "B"
         }
       ],
