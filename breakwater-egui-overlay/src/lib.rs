@@ -1,6 +1,5 @@
 pub use eframe;
 pub use egui;
-
 use egui::Margin;
 
 /// rustc version that compiled this crate
@@ -126,10 +125,10 @@ extern "C" fn draw_ui(
     let stats_frame = egui::Frame {
         fill: COLOR_BACKGROUND.gamma_multiply(0.7),
         stroke: egui::Stroke::new(1.0, COLOR_PRIMARY),
-        rounding: egui::Rounding::same(10.0),
+        corner_radius: egui::CornerRadius::same(10),
         shadow: eframe::epaint::Shadow::default(),
-        inner_margin: Margin::same(12.0),
-        outer_margin: Margin::same(12.0),
+        inner_margin: Margin::same(12),
+        outer_margin: Margin::same(12),
     };
 
     egui::Area::new(egui::Id::new("overlay_area"))

@@ -1,7 +1,7 @@
 use std::{num::NonZero, sync::Arc};
 
 use breakwater_parser::FrameBuffer;
-use eframe::glow::{self, HasContext};
+use eframe::glow::{self, HasContext, PixelUnpackData};
 
 const VERTEX: Vertex = Vertex {
     position: [0.0; 2],
@@ -74,7 +74,7 @@ impl<FB: FrameBuffer> CanvasRenderer<FB> {
                     self.framebuffer.get_height() as i32,
                     glow::RGBA,
                     glow::UNSIGNED_BYTE,
-                    glow::PixelUnpackData::Slice(self.framebuffer.as_bytes()),
+                    glow::PixelUnpackData::Slice(Some(self.framebuffer.as_bytes())),
                 );
 
                 gl.bind_texture(glow::TEXTURE_2D, None);
@@ -169,7 +169,7 @@ unsafe fn init_canvas_texture(gl: &glow::Context, width: i32, height: i32) -> gl
         0,
         glow::RGBA,
         glow::UNSIGNED_BYTE,
-        None,
+        PixelUnpackData::Slice(None),
     );
 
     gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::REPEAT as i32);
