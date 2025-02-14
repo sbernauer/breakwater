@@ -1,5 +1,6 @@
 [package]
 name = "breakwater-egui-overlay"
+description = "Bindings for a custom breakwater egui overlay"
 version.workspace = true
 license.workspace = true
 authors.workspace = true
