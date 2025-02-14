@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.17.0] - 2025-02-14
+
 ### Added
 
 - Add a customizable multi-window native display using egui ([#48])

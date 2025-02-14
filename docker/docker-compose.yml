@@ -1,6 +1,6 @@
 services:
   pixelflut:
-    image: sbernauer/breakwater:0.16.3
+    image: sbernauer/breakwater:0.17.0
     # build: ..
     restart: unless-stopped
     entrypoint:
