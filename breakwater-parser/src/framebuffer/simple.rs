@@ -33,7 +33,7 @@ impl FrameBuffer for SimpleFrameBuffer {
 
     #[inline(always)]
     unsafe fn get_unchecked(&self, x: usize, y: usize) -> u32 {
-        *self.buffer.get_unchecked(x + y * self.width)
+        unsafe { *self.buffer.get_unchecked(x + y * self.width) }
     }
 
     #[inline(always)]
@@ -89,9 +89,9 @@ impl FrameBuffer for SimpleFrameBuffer {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use rstest::{fixture, rstest};
+
+    use super::*;
 
     #[fixture]
     fn fb() -> SimpleFrameBuffer {

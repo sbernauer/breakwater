@@ -5,13 +5,12 @@ use eframe::egui_glow;
 use snafu::OptionExt;
 use tokio::sync::broadcast;
 
-use crate::statistics::StatisticsInformationEvent;
-
 use super::{
+    ViewportConfig,
     canvas_renderer::{CanvasRenderer, Vertex},
     dynamic_overlay::UiOverlay,
-    ViewportConfig,
 };
+use crate::statistics::StatisticsInformationEvent;
 
 pub struct EguiView<FB: FrameBuffer> {
     framebuffer: Arc<FB>,

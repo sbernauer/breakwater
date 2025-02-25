@@ -88,7 +88,9 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
                         ),
                     ]);
 
-                    todo!("Writing to file and rtmp sink simultaneously currently not supported, sorry!");
+                    todo!(
+                        "Writing to file and rtmp sink simultaneously currently not supported, sorry!"
+                    );
                 }
                 None => {
                     // Only write to rtmp

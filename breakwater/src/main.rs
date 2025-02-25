@@ -13,7 +13,7 @@ use crate::{
     cli_args::CliArgs,
     prometheus_exporter::PrometheusExporter,
     server::Server,
-    sinks::{ffmpeg::FfmpegSink, DisplaySink},
+    sinks::{DisplaySink, ffmpeg::FfmpegSink},
     statistics::{Statistics, StatisticsEvent, StatisticsInformationEvent, StatisticsSaveMode},
 };
 
@@ -67,8 +67,9 @@ pub enum Error {
 #[tokio::main]
 #[snafu::report]
 async fn main() -> Result<(), Error> {
+    // TODO: Is there a more nice way of doing this?
     if env::var("RUST_LOG").is_err() {
-        env::set_var("RUST_LOG", "info")
+        unsafe { env::set_var("RUST_LOG", "info") }
     }
     env_logger::init();
 
@@ -188,7 +189,7 @@ async fn main() -> Result<(), Error> {
     {
         use sinks::egui::EguiSink;
 
-        if let Some(mut egui_sink) = EguiSink::new(
+        match EguiSink::new(
             fb.clone(),
             &args,
             statistics_tx.clone(),
@@ -198,14 +199,17 @@ async fn main() -> Result<(), Error> {
         .await
         .context(CreateSinkSnafu)?
         {
-            tokio::spawn(handle_ctrl_c(terminate_signal_tx));
+            Some(mut egui_sink) => {
+                tokio::spawn(handle_ctrl_c(terminate_signal_tx));
 
-            // Some platforms require opening windows from the main thread.
-            // The tokio::main macro uses Runtime::block_on(future) which runs the future on
-            // the current thread, which should be the main thread right now.
-            egui_sink.run().await.context(RunSinkSnafu)?;
-        } else {
-            handle_ctrl_c(terminate_signal_tx).await?;
+                // Some platforms require opening windows from the main thread.
+                // The tokio::main macro uses Runtime::block_on(future) which runs the future on
+                // the current thread, which should be the main thread right now.
+                egui_sink.run().await.context(RunSinkSnafu)?;
+            }
+            _ => {
+                handle_ctrl_c(terminate_signal_tx).await?;
+            }
         }
     }
 
@@ -226,7 +230,9 @@ async fn main() -> Result<(), Error> {
     statistics_thread.abort();
 
     if ffmpeg_thread_present {
-        info!("Successfully shut down (there might still be a ffmpeg process running - it's complicated)");
+        info!(
+            "Successfully shut down (there might still be a ffmpeg process running - it's complicated)"
+        );
     } else {
         info!("Successfully shut down");
     }

@@ -6,7 +6,7 @@ resolver = "2"
 version = "0.17.0"
 license = "Beerware"
 authors = ["Sebastian Bernauer <bernauerse@web.de>"]
-edition = "2021"
+edition = "2024"
 repository = "https://github.com/sernauer/breakwater"
 
 [workspace.dependencies]

@@ -120,112 +120,118 @@ unsafe fn init_vertex_data(
     gl: &glow::Context,
     view_port_count: usize,
 ) -> (glow::VertexArray, glow::Buffer) {
-    let vao = gl.create_vertex_array().unwrap();
-    gl.bind_vertex_array(Some(vao));
+    unsafe {
+        let vao = gl.create_vertex_array().unwrap();
+        gl.bind_vertex_array(Some(vao));
 
-    let vbo = gl.create_buffer().unwrap();
-    gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
-    gl.buffer_data_size(
-        glow::ARRAY_BUFFER,
-        (std::mem::size_of::<Vertex>() * 4 * view_port_count) as i32,
-        glow::STATIC_DRAW,
-    );
+        let vbo = gl.create_buffer().unwrap();
+        gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
+        gl.buffer_data_size(
+            glow::ARRAY_BUFFER,
+            (std::mem::size_of::<Vertex>() * 4 * view_port_count) as i32,
+            glow::STATIC_DRAW,
+        );
 
-    gl.enable_vertex_attrib_array(0);
-    gl.vertex_attrib_pointer_f32(
-        0,
-        2,
-        glow::FLOAT,
-        false,
-        std::mem::size_of_val(&VERTEX) as i32,
-        0,
-    );
-    gl.enable_vertex_attrib_array(1);
-    gl.vertex_attrib_pointer_f32(
-        1,
-        2,
-        glow::FLOAT,
-        false,
-        std::mem::size_of_val(&VERTEX) as i32,
-        std::mem::size_of_val(&VERTEX.position) as i32,
-    );
+        gl.enable_vertex_attrib_array(0);
+        gl.vertex_attrib_pointer_f32(
+            0,
+            2,
+            glow::FLOAT,
+            false,
+            std::mem::size_of_val(&VERTEX) as i32,
+            0,
+        );
+        gl.enable_vertex_attrib_array(1);
+        gl.vertex_attrib_pointer_f32(
+            1,
+            2,
+            glow::FLOAT,
+            false,
+            std::mem::size_of_val(&VERTEX) as i32,
+            std::mem::size_of_val(&VERTEX.position) as i32,
+        );
 
-    // Unbind for safety
-    gl.bind_vertex_array(None);
+        // Unbind for safety
+        gl.bind_vertex_array(None);
 
-    (vao, vbo)
+        (vao, vbo)
+    }
 }
 
 unsafe fn init_canvas_texture(gl: &glow::Context, width: i32, height: i32) -> glow::Texture {
-    let texture = gl.create_texture().unwrap();
-    gl.bind_texture(glow::TEXTURE_2D, Some(texture));
+    unsafe {
+        let texture = gl.create_texture().unwrap();
+        gl.bind_texture(glow::TEXTURE_2D, Some(texture));
 
-    gl.tex_image_2d(
-        glow::TEXTURE_2D,
-        0,
-        glow::RGBA as i32,
-        width,
-        height,
-        0,
-        glow::RGBA,
-        glow::UNSIGNED_BYTE,
-        PixelUnpackData::Slice(None),
-    );
+        gl.tex_image_2d(
+            glow::TEXTURE_2D,
+            0,
+            glow::RGBA as i32,
+            width,
+            height,
+            0,
+            glow::RGBA,
+            glow::UNSIGNED_BYTE,
+            PixelUnpackData::Slice(None),
+        );
 
-    gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::REPEAT as i32);
-    gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::REPEAT as i32);
-    gl.tex_parameter_i32(
-        glow::TEXTURE_2D,
-        glow::TEXTURE_MIN_FILTER,
-        glow::LINEAR as i32,
-    );
-    gl.tex_parameter_i32(
-        glow::TEXTURE_2D,
-        glow::TEXTURE_MAG_FILTER,
-        glow::LINEAR as i32,
-    );
-    gl.bind_texture(glow::TEXTURE_2D, None);
+        gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::REPEAT as i32);
+        gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::REPEAT as i32);
+        gl.tex_parameter_i32(
+            glow::TEXTURE_2D,
+            glow::TEXTURE_MIN_FILTER,
+            glow::LINEAR as i32,
+        );
+        gl.tex_parameter_i32(
+            glow::TEXTURE_2D,
+            glow::TEXTURE_MAG_FILTER,
+            glow::LINEAR as i32,
+        );
+        gl.bind_texture(glow::TEXTURE_2D, None);
 
-    texture
+        texture
+    }
 }
 
 unsafe fn init_shaders(gl: &glow::Context) -> glow::Program {
-    let vertex_shader = gl.create_shader(glow::VERTEX_SHADER).unwrap();
-    gl.shader_source(vertex_shader, include_str!("./canvas.vert"));
-    gl.compile_shader(vertex_shader);
+    unsafe {
+        let vertex_shader = gl.create_shader(glow::VERTEX_SHADER).unwrap();
+        gl.shader_source(vertex_shader, include_str!("./canvas.vert"));
+        gl.compile_shader(vertex_shader);
 
-    if !gl.get_shader_compile_status(vertex_shader) {
-        panic!(
-            "vertex_shader compilation failed: {}",
-            gl.get_shader_info_log(vertex_shader)
-        );
+        if !gl.get_shader_compile_status(vertex_shader) {
+            panic!(
+                "vertex_shader compilation failed: {}",
+                gl.get_shader_info_log(vertex_shader)
+            );
+        }
+
+        let fragment_shader = gl.create_shader(glow::FRAGMENT_SHADER).unwrap();
+        gl.shader_source(fragment_shader, include_str!("./canvas.frag"));
+        gl.compile_shader(fragment_shader);
+
+        if !gl.get_shader_compile_status(fragment_shader) {
+            panic!(
+                "fragment_shader compilation failed: {}",
+                gl.get_shader_info_log(fragment_shader)
+            );
+        }
+
+        let program = gl.create_program().unwrap();
+        gl.attach_shader(program, vertex_shader);
+        gl.attach_shader(program, fragment_shader);
+        gl.link_program(program);
+
+        if !gl.get_program_link_status(program) {
+            panic!(
+                "Shader program linking failed: {}",
+                gl.get_program_info_log(program)
+            );
+        }
+
+        gl.delete_shader(vertex_shader);
+        gl.delete_shader(fragment_shader);
+
+        program
     }
-
-    let fragment_shader = gl.create_shader(glow::FRAGMENT_SHADER).unwrap();
-    gl.shader_source(fragment_shader, include_str!("./canvas.frag"));
-    gl.compile_shader(fragment_shader);
-
-    if !gl.get_shader_compile_status(fragment_shader) {
-        panic!(
-            "fragment_shader compilation failed: {}",
-            gl.get_shader_info_log(fragment_shader)
-        );
-    }
-
-    let program = gl.create_program().unwrap();
-    gl.attach_shader(program, vertex_shader);
-    gl.attach_shader(program, fragment_shader);
-    gl.link_program(program);
-
-    if !gl.get_program_link_status(program) {
-        panic!(
-            "Shader program linking failed: {}",
-            gl.get_program_info_log(program)
-        );
-    }
-
-    gl.delete_shader(vertex_shader);
-    gl.delete_shader(fragment_shader);
-
-    program
 }

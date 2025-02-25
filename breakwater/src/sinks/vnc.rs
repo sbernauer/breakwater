@@ -4,15 +4,15 @@ use std::{sync::Arc, time::Duration};
 use async_trait::async_trait;
 use breakwater_parser::FrameBuffer;
 use number_prefix::NumberPrefix;
-use rusttype::{point, Font, Scale};
+use rusttype::{Font, Scale, point};
 use snafu::{OptionExt, ResultExt, Snafu};
 use tokio::{
     sync::{broadcast, mpsc},
     time,
 };
 use vncserver::{
-    rfb_framebuffer_malloc, rfb_get_screen, rfb_init_server, rfb_mark_rect_as_modified,
-    rfb_run_event_loop, RfbScreenInfoPtr,
+    RfbScreenInfoPtr, rfb_framebuffer_malloc, rfb_get_screen, rfb_init_server,
+    rfb_mark_rect_as_modified, rfb_run_event_loop,
 };
 
 use crate::{

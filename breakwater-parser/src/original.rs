@@ -1,11 +1,11 @@
 #[cfg(feature = "binary-sync-pixels")]
 use core::slice;
 use std::{
-    simd::{num::SimdUint, u32x8, Simd},
+    simd::{Simd, num::SimdUint, u32x8},
     sync::Arc,
 };
 
-use crate::{FrameBuffer, Parser, ALT_HELP_TEXT, HELP_TEXT};
+use crate::{ALT_HELP_TEXT, FrameBuffer, HELP_TEXT, Parser};
 
 pub const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
 

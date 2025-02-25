@@ -1,6 +1,10 @@
-use std::collections::hash_map::Entry;
-use std::collections::HashMap;
-use std::{cmp::min, net::IpAddr, sync::Arc, time::Duration};
+use std::{
+    cmp::min,
+    collections::{HashMap, hash_map::Entry},
+    net::IpAddr,
+    sync::Arc,
+    time::Duration,
+};
 
 use breakwater_parser::{FrameBuffer, OriginalParser, Parser};
 use log::{debug, info};
