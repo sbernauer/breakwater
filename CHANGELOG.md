@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Bump to `2024` Rust edition ([#52])
+
+[#52]: https://github.com/sbernauer/breakwater/pull/52
+
 ## [0.17.0] - 2025-02-14
 
 ### Added
