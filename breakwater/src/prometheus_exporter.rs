@@ -2,7 +2,7 @@ use std::net::AddrParseError;
 
 use prometheus_exporter::{
     self,
-    prometheus::{register_int_gauge, register_int_gauge_vec, IntGauge, IntGaugeVec},
+    prometheus::{IntGauge, IntGaugeVec, register_int_gauge, register_int_gauge_vec},
 };
 use snafu::{ResultExt, Snafu};
 use tokio::sync::broadcast;

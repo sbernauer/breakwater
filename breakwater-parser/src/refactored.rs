@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use crate::{
+    FrameBuffer, HELP_TEXT, Parser,
     original::{
-        parse_pixel_coordinates, simd_unhex, HELP_PATTERN, OFFSET_PATTERN, PB_PATTERN, PX_PATTERN,
-        SIZE_PATTERN,
+        HELP_PATTERN, OFFSET_PATTERN, PB_PATTERN, PX_PATTERN, SIZE_PATTERN,
+        parse_pixel_coordinates, simd_unhex,
     },
-    FrameBuffer, Parser, HELP_TEXT,
 };
 
 const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command

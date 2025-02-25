@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use breakwater_parser::{FrameBuffer, SimpleFrameBuffer, HELP_TEXT};
+use breakwater_parser::{FrameBuffer, HELP_TEXT, SimpleFrameBuffer};
 use rstest::{fixture, rstest};
 use tokio::sync::mpsc;
 

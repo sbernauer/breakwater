@@ -56,7 +56,9 @@ impl ConnectionBuffer {
                 MemAdviseError::UnalignedAddress => "UnalignedAddress",
                 MemAdviseError::InvalidRange => "InvalidRange",
             };
-            warn!("Failed to memadvise sequential read access for buffer to kernel. This should not effect any client connections, but might having some minor performance degration: {err}");
+            warn!(
+                "Failed to memadvise sequential read access for buffer to kernel. This should not effect any client connections, but might having some minor performance degration: {err}"
+            );
         }
 
         Ok(Self { ptr, layout })

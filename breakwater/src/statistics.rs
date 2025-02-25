@@ -1,13 +1,14 @@
-use serde::{Deserialize, Serialize};
-use simple_moving_average::{SingleSumSMA, SMA};
-use snafu::{ResultExt, Snafu};
 use std::{
     cmp::max,
-    collections::{hash_map::Entry, HashMap},
+    collections::{HashMap, hash_map::Entry},
     fs::File,
     net::IpAddr,
     time::Duration,
 };
+
+use serde::{Deserialize, Serialize};
+use simple_moving_average::{SMA, SingleSumSMA};
+use snafu::{ResultExt, Snafu};
 use tokio::{
     sync::{broadcast, mpsc},
     time::interval,

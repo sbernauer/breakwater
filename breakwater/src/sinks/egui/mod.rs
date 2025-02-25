@@ -8,9 +8,8 @@ use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
 use tokio::sync::{broadcast, mpsc};
 
-use crate::statistics::StatisticsInformationEvent;
-
 use super::DisplaySink;
+use crate::statistics::StatisticsInformationEvent;
 
 mod canvas_renderer;
 mod dynamic_overlay;

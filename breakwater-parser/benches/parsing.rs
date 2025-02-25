@@ -5,7 +5,7 @@ use breakwater_parser::AssemblerParser;
 use breakwater_parser::{
     MemchrParser, OriginalParser, Parser, RefactoredParser, SimpleFrameBuffer,
 };
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use pixelbomber::image_handler::{self, ImageConfigBuilder};
 
 const FRAMEBUFFER_WIDTH: usize = 1920;
