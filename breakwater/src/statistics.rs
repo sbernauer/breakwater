@@ -18,14 +18,25 @@ pub const STATS_REPORT_INTERVAL: Duration = Duration::from_millis(1000);
 pub const STATS_SLIDING_WINDOW_SIZE: usize = 5;
 pub const STATISTICS_SEND_ERR: &str = "failed to send on statistics channel";
 pub const STATISTICS_INFO_SEND_ERR: &str = "failed to send on statistics information channel";
+#[cfg(feature = "vnc")]
 pub const STATISTICS_INFO_RECV_ERR: &str = "failed to receive on statistics information channel";
 
 #[derive(Debug)]
 pub enum StatisticsEvent {
-    ConnectionCreated { ip: IpAddr },
-    ConnectionClosed { ip: IpAddr },
-    ConnectionDenied { ip: IpAddr },
-    BytesRead { ip: IpAddr, bytes: u64 },
+    ConnectionCreated {
+        ip: IpAddr,
+    },
+    ConnectionClosed {
+        ip: IpAddr,
+    },
+    ConnectionDenied {
+        ip: IpAddr,
+    },
+    BytesRead {
+        ip: IpAddr,
+        bytes: u64,
+    },
+    #[cfg(feature = "vnc")]
     VncFrameRendered,
 }
 
@@ -186,6 +197,7 @@ impl Statistics {
             StatisticsEvent::BytesRead { ip, bytes } => {
                 *self.bytes_for_ip.entry(ip).or_insert(0) += bytes;
             }
+            #[cfg(feature = "vnc")]
             StatisticsEvent::VncFrameRendered => self.frame += 1,
         }
     }
