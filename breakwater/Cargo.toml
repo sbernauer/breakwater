@@ -23,10 +23,8 @@ color-eyre.workspace = true
 const_format.workspace = true
 eframe = { workspace = true, optional = true }
 egui = { workspace = true, optional = true }
-env_logger.workspace = true
 libloading = { workspace = true, optional = true }
 local-ip-address.workspace = true
-log.workspace = true
 memadvise.workspace = true
 number_prefix.workspace = true
 page_size.workspace = true
@@ -38,6 +36,8 @@ simple_moving_average.workspace = true
 softbuffer = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 vncserver = { workspace = true, optional = true }
 winit = { workspace = true, optional = true }
 

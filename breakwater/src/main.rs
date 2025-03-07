@@ -1,9 +1,8 @@
-use std::{env, sync::Arc};
+use std::sync::Arc;
 
 use breakwater_parser::SimpleFrameBuffer;
 use clap::Parser;
 use color_eyre::eyre::{self, Context};
-use log::info;
 use tokio::sync::{broadcast, mpsc};
 
 use crate::{
@@ -30,11 +29,14 @@ mod tests;
 async fn main() -> eyre::Result<()> {
     color_eyre::install()?;
 
-    // TODO: Is there a more nice way of doing this?
-    if env::var("RUST_LOG").is_err() {
-        unsafe { env::set_var("RUST_LOG", "info") }
-    }
-    env_logger::init();
+    let filter = tracing_subscriber::EnvFilter::builder()
+        .with_default_directive(if cfg!(debug_assertions) {
+            tracing::Level::DEBUG.into()
+        } else {
+            tracing::Level::INFO.into()
+        })
+        .from_env()?;
+    tracing_subscriber::fmt().with_env_filter(filter).init();
 
     let args = CliArgs::parse();
 
@@ -193,11 +195,11 @@ async fn main() -> eyre::Result<()> {
     statistics_thread.abort();
 
     if ffmpeg_thread_present {
-        info!(
+        tracing::info!(
             "successfully shut down (there might still be a ffmpeg process running - it's complicated)"
         );
     } else {
-        info!("successfully shut down");
+        tracing::info!("successfully shut down");
     }
 
     Ok(())

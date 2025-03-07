@@ -8,7 +8,6 @@ use std::{
 
 use breakwater_parser::{FrameBuffer, OriginalParser, Parser};
 use color_eyre::eyre::{self, Context};
-use log::{debug, info};
 use memadvise::Advice;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -16,6 +15,7 @@ use tokio::{
     sync::mpsc,
     time::Instant,
 };
+use tracing::instrument;
 
 use crate::{
     connection_buffer::ConnectionBuffer,
@@ -38,6 +38,7 @@ pub struct Server<FB: FrameBuffer> {
 }
 
 impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
+    #[instrument(skip(fb, statistics_tx), err)]
     pub async fn new(
         listen_address: &str,
         fb: Arc<FB>,
@@ -48,7 +49,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
         let listener = TcpListener::bind(listen_address)
             .await
             .with_context(|| format!("failed to bind to {listen_address}"))?;
-        info!("Started Pixelflut server on {listen_address}");
+        tracing::info!("started Pixelflut server");
 
         Ok(Self {
             listener,
@@ -124,6 +125,10 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
     }
 }
 
+#[instrument(
+    skip(stream, fb, statistics_tx, connection_dropped_tx),
+    err(level = "debug")
+)]
 pub async fn handle_connection<FB: FrameBuffer>(
     mut stream: impl AsyncReadExt + AsyncWriteExt + Send + Unpin,
     ip: IpAddr,
@@ -132,7 +137,7 @@ pub async fn handle_connection<FB: FrameBuffer>(
     network_buffer_size: usize,
     connection_dropped_tx: Option<mpsc::UnboundedSender<IpAddr>>,
 ) -> eyre::Result<()> {
-    debug!("Handling connection from {ip}");
+    tracing::debug!("handling new connection");
 
     statistics_tx
         .send(StatisticsEvent::ConnectionCreated { ip })

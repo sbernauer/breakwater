@@ -19,10 +19,8 @@ const_format = "0.2"
 criterion = { version = "0.5", features = ["async_tokio"] }
 eframe = { version = "0.31", default-features = false, features = ["glow", "default_fonts", "persistence", "wayland", "x11"] }
 egui = { version = "0.31" }
-env_logger = "0.11"
 libloading = { version = "0.8" }
 local-ip-address = "0.6.3"
-log = "0.4"
 memadvise = "0.1"
 memchr = "2.7"
 number_prefix = "0.4"
@@ -37,6 +35,8 @@ simple_moving_average = "1.0"
 softbuffer = "0.4"
 thiserror = "2"
 tokio = { version = "1.41", features = ["fs", "rt-multi-thread", "net", "io-util", "macros", "process", "signal", "sync", "time"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"]}
 trait-variant = "0.1"
 vncserver = "0.2"
 winit = "0.30"
