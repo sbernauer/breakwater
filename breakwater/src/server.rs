@@ -47,7 +47,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
     ) -> eyre::Result<Self> {
         let listener = TcpListener::bind(listen_address)
             .await
-            .context(format!("unable to bind to {listen_address}"))?;
+            .context(format!("failed to bind to {listen_address}"))?;
         info!("Started Pixelflut server on {listen_address}");
 
         Ok(Self {
@@ -70,7 +70,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
                 .listener
                 .accept()
                 .await
-                .context("unable to accept new client connection")?;
+                .context("failed to accept new client connection")?;
 
             // If connections are unlimited, will execute one try_recv per new connection
             while let Ok(ip) = connection_dropped_rx.try_recv() {
@@ -140,7 +140,7 @@ pub async fn handle_connection<FB: FrameBuffer>(
         .context(STATISTICS_SEND_ERR)?;
 
     let mut recv_buf = ConnectionBuffer::new(network_buffer_size)
-        .context("unable to allocate network connection buffer")?;
+        .context("failed to allocate network connection buffer")?;
     let buffer = recv_buf.as_slice_mut();
     let mut response_buf = Vec::new();
 

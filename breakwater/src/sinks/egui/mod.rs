@@ -47,11 +47,11 @@ impl FromStr for ViewportConfig {
 
         match parts {
             Err(e) => {
-                error!("unable to parse view port config: {e}");
+                error!("failed to parse view port config: {e}");
                 Err(InvalidViewportConfig)
             }
             Ok(parts) if parts.len() != 4 => {
-                error!("unable to parse view port config: invalid format");
+                error!("failed to parse view port config: invalid format");
                 Err(InvalidViewportConfig)
             }
             Ok(parts) => Ok(Self {
@@ -103,7 +103,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
 
         let ui_overlay = Arc::new({
             if let Some(ui) = cli_args.ui.as_ref() {
-                dynamic_overlay::load_and_check(ui).context("unable to load dynamic overlay")?
+                dynamic_overlay::load_and_check(ui).context("failed to load dynamic overlay")?
             } else {
                 UiOverlay::BuiltIn
             }
@@ -184,7 +184,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> EguiSink<FB> {
                     advertised_endpoints,
                     ui_overlay,
                 )
-                .expect("unable to create egui frontend");
+                .expect("failed to create egui frontend");
 
                 Ok(Box::new(frontend))
             }),

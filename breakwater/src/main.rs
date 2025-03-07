@@ -76,13 +76,13 @@ async fn main() -> eyre::Result<()> {
         args.connections_per_ip,
     )
     .await
-    .context("unable to start pixelflut server")?;
+    .context("failed to start pixelflut server")?;
 
     let mut prometheus_exporter = PrometheusExporter::new(
         &args.prometheus_listen_address,
         statistics_information_rx.resubscribe(),
     )
-    .context("unable to start prometheus exporter")?;
+    .context("failed to start prometheus exporter")?;
 
     let server_listener_thread = tokio::spawn(async move { server.start().await });
     let statistics_thread = tokio::spawn(async move { statistics.run().await });
@@ -102,7 +102,7 @@ async fn main() -> eyre::Result<()> {
             terminate_signal_rx.resubscribe(),
         )
         .await
-        .context("unable to start native display sink")?
+        .context("failed to start native display sink")?
         {
             display_sinks.push(Box::new(native_display_sink));
         }
@@ -120,7 +120,7 @@ async fn main() -> eyre::Result<()> {
             terminate_signal_rx.resubscribe(),
         )
         .await
-        .context("unable to start vnc sink")?
+        .context("failed to start vnc sink")?
         {
             display_sinks.push(Box::new(vnc_sink));
         }
@@ -135,7 +135,7 @@ async fn main() -> eyre::Result<()> {
         terminate_signal_rx.resubscribe(),
     )
     .await
-    .context("unable to start ffmpeg sink")?
+    .context("failed to start ffmpeg sink")?
     {
         display_sinks.push(Box::new(ffmpeg_sink));
         ffmpeg_thread_present = true;
@@ -161,7 +161,7 @@ async fn main() -> eyre::Result<()> {
             terminate_signal_rx.resubscribe(),
         )
         .await
-        .context("unable to create egui sink")?
+        .context("failed to create egui sink")?
         {
             Some(mut egui_sink) => {
                 tokio::spawn(handle_ctrl_c(terminate_signal_tx));
@@ -169,7 +169,7 @@ async fn main() -> eyre::Result<()> {
                 // Some platforms require opening windows from the main thread.
                 // The tokio::main macro uses Runtime::block_on(future) which runs the future on
                 // the current thread, which should be the main thread right now.
-                egui_sink.run().await.context("unable to run egui sink")?;
+                egui_sink.run().await.context("failed to run egui sink")?;
             }
             _ => {
                 handle_ctrl_c(terminate_signal_tx).await?;
@@ -186,8 +186,8 @@ async fn main() -> eyre::Result<()> {
     for sink_thread in sink_threads {
         sink_thread
             .await
-            .context("unable to join sink thread")?
-            .context("unable to stop sink")?;
+            .context("failed to join sink thread")?
+            .context("failed to stop sink")?;
     }
 
     // We need to stop this thread as the last, as others always try to send statistics to it
@@ -207,11 +207,11 @@ async fn main() -> eyre::Result<()> {
 async fn handle_ctrl_c(terminate_signal_tx: broadcast::Sender<()>) -> eyre::Result<()> {
     tokio::signal::ctrl_c()
         .await
-        .context("unable to wait for ctrl + c")?;
+        .context("failed to wait for ctrl + c")?;
 
     terminate_signal_tx
         .send(())
-        .context("unable to signal termination")?;
+        .context("failed to signal termination")?;
 
     Ok(())
 }
