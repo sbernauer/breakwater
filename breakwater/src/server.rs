@@ -7,9 +7,9 @@ use std::{
 };
 
 use breakwater_parser::{FrameBuffer, OriginalParser, Parser};
+use color_eyre::eyre::{self, Context};
 use log::{debug, info};
 use memadvise::Advice;
-use snafu::{ResultExt, Snafu};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
@@ -18,37 +18,14 @@ use tokio::{
 };
 
 use crate::{
-    connection_buffer::{self, ConnectionBuffer},
-    statistics::StatisticsEvent,
+    connection_buffer::ConnectionBuffer,
+    statistics::{STATISTICS_SEND_ERR, StatisticsEvent},
 };
 
 const CONNECTION_DENIED_TEXT: &[u8] = b"Connection denied as connection limit is reached";
 
 // Every client connection spawns a new thread, so we need to limit the number of stat events we send
 const STATISTICS_REPORT_INTERVAL: Duration = Duration::from_millis(250);
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    #[snafu(display("Failed to bind to listen address {listen_address:?}"))]
-    BindToListenAddress {
-        source: std::io::Error,
-        listen_address: String,
-    },
-
-    #[snafu(display("Failed to accept new client connection"))]
-    AcceptNewClientConnection { source: std::io::Error },
-
-    #[snafu(display("Failed to write to client connection"))]
-    WriteToClientConnection { source: std::io::Error },
-
-    #[snafu(display("Failed to write to statistics channel"))]
-    WriteToStatisticsChannel {
-        source: mpsc::error::SendError<StatisticsEvent>,
-    },
-
-    #[snafu(display("Failed to allocate network connection buffer"))]
-    BufferAllocation { source: connection_buffer::Error },
-}
 
 pub struct Server<FB: FrameBuffer> {
     // listen_address: String,
@@ -67,10 +44,10 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
         statistics_tx: mpsc::Sender<StatisticsEvent>,
         network_buffer_size: usize,
         max_connections_per_ip: Option<u64>,
-    ) -> Result<Self, Error> {
+    ) -> eyre::Result<Self> {
         let listener = TcpListener::bind(listen_address)
             .await
-            .context(BindToListenAddressSnafu { listen_address })?;
+            .context(format!("unable to bind to {listen_address}"))?;
         info!("Started Pixelflut server on {listen_address}");
 
         Ok(Self {
@@ -83,7 +60,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
         })
     }
 
-    pub async fn start(&mut self) -> Result<(), Error> {
+    pub async fn start(&mut self) -> eyre::Result<()> {
         let (connection_dropped_tx, mut connection_dropped_rx) =
             mpsc::unbounded_channel::<IpAddr>();
         let connection_dropped_tx = self.max_connections_per_ip.map(|_| connection_dropped_tx);
@@ -93,7 +70,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
                 .listener
                 .accept()
                 .await
-                .context(AcceptNewClientConnectionSnafu)?;
+                .context("unable to accept new client connection")?;
 
             // If connections are unlimited, will execute one try_recv per new connection
             while let Ok(ip) = connection_dropped_rx.try_recv() {
@@ -118,7 +95,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
                     self.statistics_tx
                         .send(StatisticsEvent::ConnectionDenied { ip })
                         .await
-                        .context(WriteToStatisticsChannelSnafu)?;
+                        .context(STATISTICS_SEND_ERR)?;
 
                     // Only best effort, it's ok if this message get's missed
                     let _ = socket.write_all(CONNECTION_DENIED_TEXT).await;
@@ -154,15 +131,16 @@ pub async fn handle_connection<FB: FrameBuffer>(
     statistics_tx: mpsc::Sender<StatisticsEvent>,
     network_buffer_size: usize,
     connection_dropped_tx: Option<mpsc::UnboundedSender<IpAddr>>,
-) -> Result<(), Error> {
+) -> eyre::Result<()> {
     debug!("Handling connection from {ip}");
 
     statistics_tx
         .send(StatisticsEvent::ConnectionCreated { ip })
         .await
-        .context(WriteToStatisticsChannelSnafu)?;
+        .context(STATISTICS_SEND_ERR)?;
 
-    let mut recv_buf = ConnectionBuffer::new(network_buffer_size).context(BufferAllocationSnafu)?;
+    let mut recv_buf = ConnectionBuffer::new(network_buffer_size)
+        .context("unable to allocate network connection buffer")?;
     let buffer = recv_buf.as_slice_mut();
     let mut response_buf = Vec::new();
 
@@ -200,7 +178,7 @@ pub async fn handle_connection<FB: FrameBuffer>(
                     bytes: statistics_bytes_read,
                 })
                 .await
-                .context(WriteToStatisticsChannelSnafu)?;
+                .context(STATISTICS_SEND_ERR)?;
             last_statistics = Instant::now();
             statistics_bytes_read = 0;
         }
@@ -230,7 +208,7 @@ pub async fn handle_connection<FB: FrameBuffer>(
                 stream
                     .write_all(&response_buf)
                     .await
-                    .context(WriteToClientConnectionSnafu)?;
+                    .context(STATISTICS_SEND_ERR)?;
                 response_buf.clear();
             }
 
@@ -264,7 +242,7 @@ pub async fn handle_connection<FB: FrameBuffer>(
     statistics_tx
         .send(StatisticsEvent::ConnectionClosed { ip })
         .await
-        .context(WriteToStatisticsChannelSnafu)?;
+        .context(STATISTICS_SEND_ERR)?;
 
     if let Some(tx) = connection_dropped_tx {
         // Will fail if the server thread ends before the client thread

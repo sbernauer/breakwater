@@ -3,9 +3,9 @@ use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use breakwater_parser::FrameBuffer;
+use color_eyre::eyre::{self, Context, ContextCompat};
 use number_prefix::NumberPrefix;
 use rusttype::{Font, Scale, point};
-use snafu::{OptionExt, ResultExt, Snafu};
 use tokio::{
     sync::{broadcast, mpsc},
     time,
@@ -18,32 +18,12 @@ use vncserver::{
 use crate::{
     cli_args::CliArgs,
     sinks::DisplaySink,
-    statistics::{StatisticsEvent, StatisticsInformationEvent},
+    statistics::{
+        STATISTICS_INFO_RECV_ERR, STATISTICS_SEND_ERR, StatisticsEvent, StatisticsInformationEvent,
+    },
 };
 
 const STATS_HEIGHT: usize = 35;
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    #[snafu(display("Failed to read font from file {font_file}"))]
-    ReadFontFile {
-        source: std::io::Error,
-        font_file: String,
-    },
-
-    #[snafu(display("Failed to construct font from font file {font_file}"))]
-    ConstructFontFromFontFile { font_file: String },
-
-    #[snafu(display("Failed to write to statistics channel"))]
-    WriteToStatisticsChannel {
-        source: mpsc::error::SendError<StatisticsEvent>,
-    },
-
-    #[snafu(display("Failed to read from statistics information channel"))]
-    ReadFromStatisticsInformationChannel {
-        source: broadcast::error::TryRecvError,
-    },
-}
 
 // Sorry! Help needed :)
 unsafe impl<FB: FrameBuffer> Send for VncSink<'_, FB> {}
@@ -68,7 +48,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
         statistics_tx: mpsc::Sender<StatisticsEvent>,
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
-    ) -> Result<Option<Self>, super::Error> {
+    ) -> eyre::Result<Option<Self>> {
         if !cli_args.vnc {
             return Ok(None);
         }
@@ -77,18 +57,15 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
             // We ship our own copy of Arial.ttf, so that users don't need to download and provide it
             "Arial.ttf" => {
                 let font_bytes = include_bytes!("../../../Arial.ttf");
-                Font::try_from_bytes(font_bytes).context(ConstructFontFromFontFileSnafu {
-                    font_file: "Arial.ttf".to_string(),
-                })?
+                Font::try_from_bytes(font_bytes).context("failed to load default font")?
             }
             _ => {
-                let font_bytes = std::fs::read(&cli_args.font).context(ReadFontFileSnafu {
-                    font_file: cli_args.font.clone(),
-                })?;
-
-                Font::try_from_vec(font_bytes).context(ConstructFontFromFontFileSnafu {
-                    font_file: cli_args.font.clone(),
-                })?
+                let font_bytes = std::fs::read(&cli_args.font)
+                    .context(format!("failed to read font from file {}", cli_args.font))?;
+                Font::try_from_vec(font_bytes).context(format!(
+                    "failed to construct font from file {}",
+                    cli_args.font
+                ))?
             }
         };
 
@@ -122,7 +99,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
         }))
     }
 
-    async fn run(&mut self) -> Result<(), super::Error> {
+    async fn run(&mut self) -> eyre::Result<()> {
         let vnc_fb_slice: &mut [u32] = unsafe {
             slice::from_raw_parts_mut((*self.screen).frameBuffer as *mut u32, self.fb.get_size())
         };
@@ -154,13 +131,13 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
             self.statistics_tx
                 .send(StatisticsEvent::VncFrameRendered)
                 .await
-                .context(WriteToStatisticsChannelSnafu)?;
+                .context(STATISTICS_SEND_ERR)?;
 
             if !self.statistics_information_rx.is_empty() {
                 let statistics_information_event = self
                     .statistics_information_rx
                     .try_recv()
-                    .context(ReadFromStatisticsInformationChannelSnafu)?;
+                    .context(STATISTICS_INFO_RECV_ERR)?;
                 self.display_stats(statistics_information_event);
             }
 

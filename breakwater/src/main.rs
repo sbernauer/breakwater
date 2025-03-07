@@ -1,13 +1,10 @@
-use std::{env, num::TryFromIntError, sync::Arc};
+use std::{env, sync::Arc};
 
 use breakwater_parser::SimpleFrameBuffer;
 use clap::Parser;
+use color_eyre::eyre::{self, Context};
 use log::info;
-use snafu::{ResultExt, Snafu};
-use tokio::{
-    sync::{broadcast, mpsc},
-    task::JoinError,
-};
+use tokio::sync::{broadcast, mpsc};
 
 use crate::{
     cli_args::CliArgs,
@@ -29,44 +26,10 @@ mod test_helpers;
 #[cfg(test)]
 mod tests;
 
-#[derive(Debug, Snafu)]
-pub enum Error {
-    #[snafu(display("Failed to start Pixelflut server"))]
-    StartPixelflutServer { source: server::Error },
-
-    #[snafu(display("Failed to wait for CTRL + C signal"))]
-    WaitForCtrlCSignal { source: std::io::Error },
-
-    #[snafu(display("Failed to start Prometheus exporter"))]
-    StartPrometheusExporter { source: prometheus_exporter::Error },
-
-    #[snafu(display("Invalid network buffer size {network_buffer_size:?}"))]
-    InvalidNetworkBufferSize {
-        source: TryFromIntError,
-        network_buffer_size: i64,
-    },
-
-    #[snafu(display("Failed to send termination signal"))]
-    SendTerminationSignal {
-        source: broadcast::error::SendError<()>,
-    },
-
-    #[snafu(display("Failed to create sink"))]
-    CreateSink { source: sinks::Error },
-
-    #[snafu(display("Failed to run sink"))]
-    RunSink { source: sinks::Error },
-
-    #[snafu(display("Failed to join sink thread"))]
-    JoinSinkThread { source: JoinError },
-
-    #[snafu(display("Failed to stop sink"))]
-    StopSink { source: sinks::Error },
-}
-
 #[tokio::main]
-#[snafu::report]
-async fn main() -> Result<(), Error> {
+async fn main() -> eyre::Result<()> {
+    color_eyre::install()?;
+
     // TODO: Is there a more nice way of doing this?
     if env::var("RUST_LOG").is_err() {
         unsafe { env::set_var("RUST_LOG", "info") }
@@ -106,19 +69,20 @@ async fn main() -> Result<(), Error> {
         args.network_buffer_size
             .try_into()
             // This should never happen as clap checks the range for us
-            .context(InvalidNetworkBufferSizeSnafu {
-                network_buffer_size: args.network_buffer_size,
-            })?,
+            .context(format!(
+                "invalid network buffer size: {}",
+                args.network_buffer_size
+            ))?,
         args.connections_per_ip,
     )
     .await
-    .context(StartPixelflutServerSnafu)?;
+    .context("unable to start pixelflut server")?;
 
     let mut prometheus_exporter = PrometheusExporter::new(
         &args.prometheus_listen_address,
         statistics_information_rx.resubscribe(),
     )
-    .context(StartPrometheusExporterSnafu)?;
+    .context("unable to start prometheus exporter")?;
 
     let server_listener_thread = tokio::spawn(async move { server.start().await });
     let statistics_thread = tokio::spawn(async move { statistics.run().await });
@@ -138,7 +102,7 @@ async fn main() -> Result<(), Error> {
             terminate_signal_rx.resubscribe(),
         )
         .await
-        .context(CreateSinkSnafu)?
+        .context("unable to start native display sink")?
         {
             display_sinks.push(Box::new(native_display_sink));
         }
@@ -156,7 +120,7 @@ async fn main() -> Result<(), Error> {
             terminate_signal_rx.resubscribe(),
         )
         .await
-        .context(CreateSinkSnafu)?
+        .context("unable to start vnc sink")?
         {
             display_sinks.push(Box::new(vnc_sink));
         }
@@ -171,7 +135,7 @@ async fn main() -> Result<(), Error> {
         terminate_signal_rx.resubscribe(),
     )
     .await
-    .context(CreateSinkSnafu)?
+    .context("unable to start ffmpeg sink")?
     {
         display_sinks.push(Box::new(ffmpeg_sink));
         ffmpeg_thread_present = true;
@@ -181,7 +145,7 @@ async fn main() -> Result<(), Error> {
     for mut sink in display_sinks {
         sink_threads.push(tokio::spawn(async move {
             sink.run().await?;
-            Ok::<(), sinks::Error>(())
+            eyre::Result::<()>::Ok(())
         }));
     }
 
@@ -197,7 +161,7 @@ async fn main() -> Result<(), Error> {
             terminate_signal_rx.resubscribe(),
         )
         .await
-        .context(CreateSinkSnafu)?
+        .context("unable to create egui sink")?
         {
             Some(mut egui_sink) => {
                 tokio::spawn(handle_ctrl_c(terminate_signal_tx));
@@ -205,7 +169,7 @@ async fn main() -> Result<(), Error> {
                 // Some platforms require opening windows from the main thread.
                 // The tokio::main macro uses Runtime::block_on(future) which runs the future on
                 // the current thread, which should be the main thread right now.
-                egui_sink.run().await.context(RunSinkSnafu)?;
+                egui_sink.run().await.context("unable to run egui sink")?;
             }
             _ => {
                 handle_ctrl_c(terminate_signal_tx).await?;
@@ -222,8 +186,8 @@ async fn main() -> Result<(), Error> {
     for sink_thread in sink_threads {
         sink_thread
             .await
-            .context(JoinSinkThreadSnafu)?
-            .context(StopSinkSnafu)?;
+            .context("unable to join sink thread")?
+            .context("unable to stop sink")?;
     }
 
     // We need to stop this thread as the last, as others always try to send statistics to it
@@ -240,14 +204,14 @@ async fn main() -> Result<(), Error> {
     Ok(())
 }
 
-async fn handle_ctrl_c(terminate_signal_tx: broadcast::Sender<()>) -> Result<(), Error> {
+async fn handle_ctrl_c(terminate_signal_tx: broadcast::Sender<()>) -> eyre::Result<()> {
     tokio::signal::ctrl_c()
         .await
-        .context(WaitForCtrlCSignalSnafu)?;
+        .context("unable to wait for ctrl + c")?;
 
     terminate_signal_tx
         .send(())
-        .context(SendTerminationSignalSnafu)?;
+        .context("unable to signal termination")?;
 
     Ok(())
 }

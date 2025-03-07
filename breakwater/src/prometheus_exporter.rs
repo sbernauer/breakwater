@@ -1,31 +1,11 @@
-use std::net::AddrParseError;
-
+use color_eyre::eyre;
 use prometheus_exporter::{
     self,
     prometheus::{IntGauge, IntGaugeVec, register_int_gauge, register_int_gauge_vec},
 };
-use snafu::{ResultExt, Snafu};
 use tokio::sync::broadcast;
 
 use crate::statistics::StatisticsInformationEvent;
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    #[snafu(display("Failed to parse Prometheus listen address {listen_address:?}"))]
-    ParseListenAddress {
-        source: AddrParseError,
-        listen_address: String,
-    },
-
-    #[snafu(display("Failed to start Prometheus server"))]
-    StartPrometheusServer { source: prometheus_exporter::Error },
-
-    #[snafu(display("Failed to register prometheus gauge {name:?}"))]
-    RegisterPrometheusGauge {
-        source: prometheus_exporter::prometheus::Error,
-        name: String,
-    },
-}
 
 pub struct PrometheusExporter {
     statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
@@ -45,39 +25,39 @@ impl PrometheusExporter {
     pub fn new(
         listen_addr: &str,
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
-    ) -> Result<Self, Error> {
-        let listen_addr = listen_addr.parse().context(ParseListenAddressSnafu {
-            listen_address: listen_addr.to_string(),
-        })?;
-
-        prometheus_exporter::start(listen_addr).context(StartPrometheusServerSnafu)?;
+    ) -> eyre::Result<Self> {
+        let listen_addr = listen_addr.parse()?;
+        prometheus_exporter::start(listen_addr)?;
 
         Ok(PrometheusExporter {
             statistics_information_rx,
-            metric_ips_v6: register_int_gauge(
+            metric_ips_v6: register_int_gauge!(
                 "breakwater_ips_v6",
                 "Total number of connected IPv6 addresses",
             )?,
-            metric_ips_v4: register_int_gauge(
+            metric_ips_v4: register_int_gauge!(
                 "breakwater_ips_v4",
                 "Total number of connected IPv4 addresses",
             )?,
-            metric_frame: register_int_gauge("breakwater_frame", "Frame number of the VNC server")?,
-            metric_statistic_events: register_int_gauge(
+            metric_frame: register_int_gauge!(
+                "breakwater_frame",
+                "Frame number of the VNC server"
+            )?,
+            metric_statistic_events: register_int_gauge!(
                 "breakwater_statistic_events",
                 "Number of statistics events send internally",
             )?,
-            metric_connections_for_ip: register_int_gauge_vec(
+            metric_connections_for_ip: register_int_gauge_vec!(
                 "breakwater_connections",
                 "Number of client connections per IP address",
                 &["ip"],
             )?,
-            metric_denied_connections_for_ip: register_int_gauge_vec(
+            metric_denied_connections_for_ip: register_int_gauge_vec!(
                 "breakwater_denied_connections",
                 "Number of denied connections per IP address because it tried to open too many connections",
                 &["ip"],
             )?,
-            metric_bytes_for_ip: register_int_gauge_vec(
+            metric_bytes_for_ip: register_int_gauge_vec!(
                 "breakwater_bytes",
                 "Number of bytes received per IP address",
                 &["ip"],
@@ -121,20 +101,4 @@ impl PrometheusExporter {
             });
         }
     }
-}
-
-fn register_int_gauge(name: &str, description: &str) -> Result<IntGauge, Error> {
-    register_int_gauge!(name, description).context(RegisterPrometheusGaugeSnafu {
-        name: name.to_string(),
-    })
-}
-
-fn register_int_gauge_vec(
-    name: &str,
-    description: &str,
-    label_names: &[&str],
-) -> Result<IntGaugeVec, Error> {
-    register_int_gauge_vec!(name, description, label_names).context(RegisterPrometheusGaugeSnafu {
-        name: name.to_string(),
-    })
 }

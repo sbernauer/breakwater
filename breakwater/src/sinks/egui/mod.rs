@@ -2,10 +2,10 @@ use std::{fmt::Display, net::ToSocketAddrs, str::FromStr, sync::Arc};
 
 use async_trait::async_trait;
 use breakwater_parser::FrameBuffer;
+use color_eyre::eyre::{self, Context};
 use dynamic_overlay::UiOverlay;
 use log::error;
 use serde::{Deserialize, Serialize};
-use snafu::{ResultExt, Snafu};
 use tokio::sync::{broadcast, mpsc};
 
 use super::DisplaySink;
@@ -14,18 +14,6 @@ use crate::statistics::StatisticsInformationEvent;
 mod canvas_renderer;
 mod dynamic_overlay;
 mod view;
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    #[snafu(display("eframe started with an unsupported frontend"))]
-    UnsupportedEguiFrontend,
-
-    #[snafu(display("egui failed"))]
-    EguiFailed,
-
-    #[snafu(display("dynamic overlay error"))]
-    DynamicOverlay { source: dynamic_overlay::Error },
-}
 
 /// Describes the part of the framebuffer that the corresponding viewport will display.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
@@ -94,7 +82,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
         _statistics_tx: mpsc::Sender<crate::statistics::StatisticsEvent>,
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
-    ) -> Result<Option<Self>, super::Error>
+    ) -> eyre::Result<Option<Self>>
     where
         Self: Sized,
     {
@@ -115,7 +103,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
 
         let ui_overlay = Arc::new({
             if let Some(ui) = cli_args.ui.as_ref() {
-                dynamic_overlay::load_and_check(ui).context(DynamicOverlaySnafu)?
+                dynamic_overlay::load_and_check(ui).context("unable to load dynamic overlay")?
             } else {
                 UiOverlay::BuiltIn
             }
@@ -149,21 +137,21 @@ impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
     }
 
     /// This should only run on the main thread
-    async fn run(&mut self) -> Result<(), super::Error> {
+    async fn run(&mut self) -> eyre::Result<()> {
         // block_in_place below should only be used in a MultiThread runtime
         assert_eq!(
             tokio::runtime::Handle::current().runtime_flavor(),
             tokio::runtime::RuntimeFlavor::MultiThread
         );
 
-        tokio::task::block_in_place(move || self.run_eframe_display())
-            .map_err(|e| {
+        tokio::task::block_in_place(move || {
+            if let Err(e) = self.run_eframe_display() {
                 error!("egui failed: {e:?}");
-                snafu::NoneError
-            })
-            .context(EguiFailedSnafu)?;
+                return Err(eyre::eyre!("egui failed: {e:?}"));
+            }
 
-        Ok(())
+            Ok(())
+        })
     }
 }
 

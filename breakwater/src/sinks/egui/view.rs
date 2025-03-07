@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use breakwater_parser::FrameBuffer;
+use color_eyre::eyre::{self, ContextCompat};
 use eframe::egui_glow;
-use snafu::OptionExt;
 use tokio::sync::broadcast;
 
 use super::{
@@ -33,11 +33,11 @@ impl<FB: FrameBuffer + Send + Sync + 'static> EguiView<FB> {
         stats_rx: broadcast::Receiver<StatisticsInformationEvent>,
         advertised_endpoints: Vec<String>,
         ui: Arc<UiOverlay>,
-    ) -> Result<Self, super::Error> {
+    ) -> eyre::Result<Self> {
         let gl_context = cc
             .gl
             .as_ref()
-            .context(super::UnsupportedEguiFrontendSnafu)?;
+            .context("egui backend 'glow' is not available")?;
 
         let canvas_renderer = CanvasRenderer::new(
             gl_context,
