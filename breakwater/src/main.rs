@@ -102,7 +102,7 @@ async fn main() -> eyre::Result<()> {
             terminate_signal_rx.resubscribe(),
         )
         .await
-        .context("failed to start native display sink")?
+        .context("failed to create native display sink")?
         {
             display_sinks.push(Box::new(native_display_sink));
         }
@@ -120,7 +120,7 @@ async fn main() -> eyre::Result<()> {
             terminate_signal_rx.resubscribe(),
         )
         .await
-        .context("failed to start vnc sink")?
+        .context("failed to create vnc sink")?
         {
             display_sinks.push(Box::new(vnc_sink));
         }
@@ -135,7 +135,7 @@ async fn main() -> eyre::Result<()> {
         terminate_signal_rx.resubscribe(),
     )
     .await
-    .context("failed to start ffmpeg sink")?
+    .context("failed to create ffmpeg sink")?
     {
         display_sinks.push(Box::new(ffmpeg_sink));
         ffmpeg_thread_present = true;
@@ -195,10 +195,10 @@ async fn main() -> eyre::Result<()> {
 
     if ffmpeg_thread_present {
         info!(
-            "Successfully shut down (there might still be a ffmpeg process running - it's complicated)"
+            "successfully shut down (there might still be a ffmpeg process running - it's complicated)"
         );
     } else {
-        info!("Successfully shut down");
+        info!("successfully shut down");
     }
 
     Ok(())
