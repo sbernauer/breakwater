@@ -111,7 +111,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
             let network_buffer_size = self.network_buffer_size;
             let connection_dropped_tx_clone = connection_dropped_tx.clone();
             tokio::spawn(async move {
-                handle_connection(
+                if let Err(error) = handle_connection(
                     socket,
                     ip,
                     fb_for_thread,
@@ -120,6 +120,9 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
                     connection_dropped_tx_clone,
                 )
                 .await
+                {
+                    tracing::error!(?error, %ip, "failed to handle connection");
+                }
             });
         }
     }
