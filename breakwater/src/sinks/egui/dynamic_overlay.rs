@@ -96,7 +96,7 @@ pub fn load_and_check(dylib_path: impl AsRef<Path>) -> eyre::Result<UiOverlay> {
                 "dylib version ({dylib_versions:?}) do not match our version ({:?})",
                 breakwater_egui_overlay::VERSIONS
             );
-            return Err(eyre::eyre!("dynamic overlay version check failed"));
+            eyre::bail!("dynamic overlay version check failed");
         }
 
         let dylib_new: libloading::Symbol<fn() -> DynamicOverlay> = dylib

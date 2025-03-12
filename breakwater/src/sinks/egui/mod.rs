@@ -146,8 +146,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
 
         tokio::task::block_in_place(move || {
             if let Err(e) = self.run_eframe_display() {
-                error!("egui failed: {e:?}");
-                return Err(eyre::eyre!("egui failed: {e:?}"));
+                eyre::bail!("egui failed: {e:?}");
             }
 
             Ok(())
