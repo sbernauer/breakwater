@@ -47,7 +47,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
     ) -> eyre::Result<Self> {
         let listener = TcpListener::bind(listen_address)
             .await
-            .context(format!("failed to bind to {listen_address}"))?;
+            .with_context(|| format!("failed to bind to {listen_address}"))?;
         info!("Started Pixelflut server on {listen_address}");
 
         Ok(Self {

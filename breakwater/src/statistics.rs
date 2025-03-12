@@ -82,18 +82,19 @@ impl StatisticsInformationEvent {
     fn save_to_file(&self, file_name: &str) -> eyre::Result<()> {
         // TODO Check if we can use tokio's File here. This needs some integration with serde_json though
         // This operation is also called very infrequently
-        let file = File::create(file_name).context(format!(
-            "failed to create statistics save file at {file_name}"
-        ))?;
-        serde_json::to_writer(file, &self).context("failed to write statistics to file")?;
+        let file = File::create(file_name)
+            .with_context(|| format!("failed to create statistics save file at {file_name}"))?;
+        serde_json::to_writer(file, &self)
+            .context("failed to write statistics to file at {file_name}")?;
 
         Ok(())
     }
 
     fn load_from_file(file_name: &str) -> eyre::Result<Self> {
         let file = File::open(file_name)
-            .context(format!("failed to load statistic from file '{file_name}'"))?;
-        serde_json::from_reader(file).context("failed to deserialize statistics from file")
+            .with_context(|| format!("failed to load statistic from file '{file_name}'"))?;
+        serde_json::from_reader(file)
+            .with_context(|| format!("failed to deserialize statistics from file '{file_name}'"))
     }
 }
 

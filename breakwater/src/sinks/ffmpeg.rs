@@ -109,7 +109,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
             .args(ffmpeg_args.clone())
             .stdin(Stdio::piped())
             .spawn()
-            .context(format!("failed to start ffmpeg command '{ffmpeg_command}'"))?;
+            .with_context(|| format!("failed to start ffmpeg command '{ffmpeg_command}'"))?;
 
         let mut stdin = command
             .stdin

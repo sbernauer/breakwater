@@ -61,11 +61,10 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
             }
             _ => {
                 let font_bytes = std::fs::read(&cli_args.font)
-                    .context(format!("failed to read font from file {}", cli_args.font))?;
-                Font::try_from_vec(font_bytes).context(format!(
-                    "failed to construct font from file {}",
-                    cli_args.font
-                ))?
+                    .with_context(|| format!("failed to read font from file {}", cli_args.font))?;
+                Font::try_from_vec(font_bytes).with_context(|| {
+                    format!("failed to construct font from file {}", cli_args.font)
+                })?
             }
         };
 

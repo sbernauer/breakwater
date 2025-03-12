@@ -69,10 +69,9 @@ async fn main() -> eyre::Result<()> {
         args.network_buffer_size
             .try_into()
             // This should never happen as clap checks the range for us
-            .context(format!(
-                "invalid network buffer size: {}",
-                args.network_buffer_size
-            ))?,
+            .with_context(|| {
+                format!("invalid network buffer size: {}", args.network_buffer_size)
+            })?,
         args.connections_per_ip,
     )
     .await
