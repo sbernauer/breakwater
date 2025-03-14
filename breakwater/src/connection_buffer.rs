@@ -2,18 +2,19 @@ use std::alloc::{self, LayoutError};
 
 use log::warn;
 use memadvise::{Advice, MemAdviseError};
-use snafu::{ResultExt, Snafu};
 
-#[derive(Debug, Snafu)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[snafu(display("Failed to create memory layout"))]
+    #[error(
+        "failed to create memory layout for {buffer_size} bytes with a page size of {page_size}"
+    )]
     CreateMemoryLayout {
         source: LayoutError,
         buffer_size: usize,
         page_size: usize,
     },
 
-    #[snafu(display("Allocation failed (alloc::alloc returned null ptr) for layout {layout:?}"))]
+    #[error("allocation failed (alloc::alloc returned null ptr) for layout {layout:?}")]
     AllocationFailed { layout: alloc::Layout },
 }
 
@@ -35,17 +36,18 @@ unsafe impl Send for ConnectionBuffer {}
 impl ConnectionBuffer {
     pub fn new(buffer_size: usize) -> Result<Self, Error> {
         let page_size = page_size::get();
-        let layout = alloc::Layout::from_size_align(buffer_size, page_size).context(
-            CreateMemoryLayoutSnafu {
+        let layout = alloc::Layout::from_size_align(buffer_size, page_size).map_err(|source| {
+            Error::CreateMemoryLayout {
+                source,
                 buffer_size,
                 page_size,
-            },
-        )?;
+            }
+        })?;
 
         let ptr = unsafe { alloc::alloc(layout) };
 
         if ptr.is_null() {
-            AllocationFailedSnafu { layout }.fail()?;
+            return Err(Error::AllocationFailed { layout });
         }
 
         if let Err(err) = memadvise::advise(ptr as _, layout.size(), Advice::Sequential) {

@@ -6,9 +6,9 @@ use std::{
     time::Duration,
 };
 
+use color_eyre::eyre::{self, Context};
 use serde::{Deserialize, Serialize};
 use simple_moving_average::{SMA, SingleSumSMA};
-use snafu::{ResultExt, Snafu};
 use tokio::{
     sync::{broadcast, mpsc},
     time::interval,
@@ -16,39 +16,27 @@ use tokio::{
 
 pub const STATS_REPORT_INTERVAL: Duration = Duration::from_millis(1000);
 pub const STATS_SLIDING_WINDOW_SIZE: usize = 5;
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    #[snafu(display("Failed to create statistics save file {save_file}"))]
-    CreateStatisticsSaveFile {
-        source: std::io::Error,
-        save_file: String,
-    },
-
-    #[snafu(display("Failed to open statistics save file {save_file}"))]
-    OpenStatisticsSaveFile {
-        source: std::io::Error,
-        save_file: String,
-    },
-
-    #[snafu(display("Failed to serialize statistics to save file"))]
-    SerializeStatistics { source: serde_json::Error },
-
-    #[snafu(display("Failed to deserialize statistics from save file"))]
-    DeserializeStatistics { source: serde_json::Error },
-
-    #[snafu(display("Failed to write to statistics information channel"))]
-    WriteToStatisticsInformationChannel {
-        source: Box<broadcast::error::SendError<StatisticsInformationEvent>>,
-    },
-}
+pub const STATISTICS_SEND_ERR: &str = "failed to send on statistics channel";
+pub const STATISTICS_INFO_SEND_ERR: &str = "failed to send on statistics information channel";
+#[cfg(feature = "vnc")]
+pub const STATISTICS_INFO_RECV_ERR: &str = "failed to receive on statistics information channel";
 
 #[derive(Debug)]
 pub enum StatisticsEvent {
-    ConnectionCreated { ip: IpAddr },
-    ConnectionClosed { ip: IpAddr },
-    ConnectionDenied { ip: IpAddr },
-    BytesRead { ip: IpAddr, bytes: u64 },
+    ConnectionCreated {
+        ip: IpAddr,
+    },
+    ConnectionClosed {
+        ip: IpAddr,
+    },
+    ConnectionDenied {
+        ip: IpAddr,
+    },
+    BytesRead {
+        ip: IpAddr,
+        bytes: u64,
+    },
+    #[cfg(feature = "vnc")]
     VncFrameRendered,
 }
 
@@ -91,22 +79,22 @@ pub struct Statistics {
 }
 
 impl StatisticsInformationEvent {
-    fn save_to_file(&self, file_name: &str) -> Result<(), Error> {
+    fn save_to_file(&self, file_name: &str) -> eyre::Result<()> {
         // TODO Check if we can use tokio's File here. This needs some integration with serde_json though
         // This operation is also called very infrequently
-        let file = File::create(file_name).context(CreateStatisticsSaveFileSnafu {
-            save_file: file_name.to_string(),
-        })?;
-        serde_json::to_writer(file, &self).context(SerializeStatisticsSnafu)?;
+        let file = File::create(file_name)
+            .with_context(|| format!("failed to create statistics save file at {file_name}"))?;
+        serde_json::to_writer(file, &self)
+            .context("failed to write statistics to file at {file_name}")?;
 
         Ok(())
     }
 
-    fn load_from_file(file_name: &str) -> Result<Self, Error> {
-        let file = File::open(file_name).context(OpenStatisticsSaveFileSnafu {
-            save_file: file_name.to_string(),
-        })?;
-        serde_json::from_reader(file).context(DeserializeStatisticsSnafu)
+    fn load_from_file(file_name: &str) -> eyre::Result<Self> {
+        let file = File::open(file_name)
+            .with_context(|| format!("failed to load statistic from file '{file_name}'"))?;
+        serde_json::from_reader(file)
+            .with_context(|| format!("failed to deserialize statistics from file '{file_name}'"))
     }
 }
 
@@ -141,7 +129,7 @@ impl Statistics {
         statistics
     }
 
-    pub async fn run(&mut self) -> Result<(), Error> {
+    pub async fn run(&mut self) -> eyre::Result<()> {
         let mut statistics_information_event = StatisticsInformationEvent::default();
 
         let mut stats_report = interval(STATS_REPORT_INTERVAL);
@@ -176,7 +164,7 @@ impl Statistics {
                     self.statistics_information_tx
                         .send(statistics_information_event.clone())
                         .map_err(Box::new)
-                        .context(WriteToStatisticsInformationChannelSnafu)?;
+                        .context(STATISTICS_INFO_SEND_ERR)?;
                 },
                 // Cancellation safety: This method is cancellation safe. If tick is used as the branch in a tokio::select!
                 // and another branch completes first, then no tick has been consumed.
@@ -210,6 +198,7 @@ impl Statistics {
             StatisticsEvent::BytesRead { ip, bytes } => {
                 *self.bytes_for_ip.entry(ip).or_insert(0) += bytes;
             }
+            #[cfg(feature = "vnc")]
             StatisticsEvent::VncFrameRendered => self.frame += 1,
         }
     }

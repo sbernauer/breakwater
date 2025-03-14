@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use snafu::Snafu;
+use color_eyre::eyre;
 use tokio::sync::{broadcast, mpsc};
 
 use crate::{
@@ -17,25 +17,6 @@ pub mod native_display;
 #[cfg(feature = "vnc")]
 pub mod vnc;
 
-#[allow(clippy::enum_variant_names)]
-#[derive(Debug, Snafu)]
-pub enum Error {
-    #[cfg(feature = "native-display")]
-    #[snafu(display("Native display error"), context(false))]
-    NativeDisplayError { source: native_display::Error },
-
-    #[cfg(feature = "vnc")]
-    #[snafu(display("VNC error"), context(false))]
-    VncError { source: vnc::Error },
-
-    #[snafu(display("ffmpeg error"), context(false))]
-    FfmpegError { source: ffmpeg::Error },
-
-    #[cfg(feature = "egui")]
-    #[snafu(display("egui error"), context(false))]
-    EguiError { source: egui::Error },
-}
-
 // The stabilization of async functions in traits in Rust 1.75 did not include support for using traits containing async
 // functions as dyn Trait, so we still need to use async_trait here.
 #[async_trait]
@@ -47,9 +28,9 @@ pub trait DisplaySink<FB> {
         statistics_tx: mpsc::Sender<StatisticsEvent>,
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
-    ) -> Result<Option<Self>, Error>
+    ) -> eyre::Result<Option<Self>>
     where
         Self: Sized;
 
-    async fn run(&mut self) -> Result<(), Error>;
+    async fn run(&mut self) -> eyre::Result<()>;
 }

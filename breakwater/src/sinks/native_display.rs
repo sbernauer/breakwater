@@ -2,20 +2,15 @@ use std::{num::NonZero, sync::Arc};
 
 use async_trait::async_trait;
 use breakwater_parser::FrameBuffer;
+use color_eyre::eyre::{self, Context};
 use log::{debug, warn};
-use snafu::{ResultExt, Snafu};
-use softbuffer::{Context, Surface};
-use tokio::{
-    sync::{broadcast, mpsc},
-    task::JoinError,
-};
+use tokio::sync::{broadcast, mpsc};
 use winit::{
     application::ApplicationHandler,
-    error::{EventLoopError, OsError},
     event::WindowEvent,
     event_loop::{self, EventLoop},
     platform::wayland::EventLoopBuilderExtWayland,
-    raw_window_handle::{DisplayHandle, HandleError, HasDisplayHandle},
+    raw_window_handle::{DisplayHandle, HasDisplayHandle},
     window::{Window, WindowAttributes, WindowId},
 };
 
@@ -25,24 +20,6 @@ use crate::{
     statistics::{StatisticsEvent, StatisticsInformationEvent},
 };
 
-#[derive(Debug, Snafu)]
-pub enum Error {
-    #[snafu(display("Failed to create window"))]
-    CreateWindow { source: OsError },
-
-    #[snafu(display("Failed to get display handle"))]
-    GetDisplayHandle { source: HandleError },
-
-    #[snafu(display("Failed to join native display thread"))]
-    JoinNativeDisplayThread { source: JoinError },
-
-    #[snafu(display("Failed to build eventloop"))]
-    BuildEventLoop { source: EventLoopError },
-
-    #[snafu(display("Failed to run eventloop"))]
-    RunEventLoop { source: EventLoopError },
-}
-
 // Sorry! Help needed :)
 unsafe impl<FB: FrameBuffer> Send for NativeDisplaySink<FB> {}
 
@@ -50,7 +27,7 @@ pub struct NativeDisplaySink<FB: FrameBuffer> {
     fb: Arc<FB>,
     terminate_signal_rx: broadcast::Receiver<()>,
 
-    surface: Option<Surface<DisplayHandle<'static>, Arc<Window>>>,
+    surface: Option<softbuffer::Surface<DisplayHandle<'static>, Arc<Window>>>,
 }
 
 #[async_trait]
@@ -61,7 +38,7 @@ impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for NativeDisplayS
         _statistics_tx: mpsc::Sender<StatisticsEvent>,
         _statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
-    ) -> Result<Option<Self>, super::Error> {
+    ) -> eyre::Result<Option<Self>> {
         if !cli_args.native_display {
             return Ok(None);
         }
@@ -73,7 +50,7 @@ impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for NativeDisplayS
         }))
     }
 
-    async fn run(&mut self) -> Result<(), super::Error> {
+    async fn run(&mut self) -> eyre::Result<()> {
         let fb_clone = self.fb.clone();
         let terminate_signal_rx = self.terminate_signal_rx.resubscribe();
 
@@ -89,16 +66,16 @@ impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for NativeDisplayS
                 // FIXME: Can we get rid of this?
                 .with_any_thread(true)
                 .build()
-                .context(BuildEventLoopSnafu)?;
+                .context("failed to create event loop")?;
 
             event_loop
                 .run_app(&mut self_clone)
-                .context(RunEventLoopSnafu)?;
+                .context("failed to run event loop")?;
 
-            Ok::<(), super::Error>(())
+            eyre::Result::<()>::Ok(())
         })
         .await
-        .context(JoinNativeDisplayThreadSnafu)??;
+        .context("failed to join native display thread")??;
 
         Ok(())
     }
@@ -109,21 +86,21 @@ impl<FB: FrameBuffer> ApplicationHandler for NativeDisplaySink<FB> {
         let window = Arc::new(
             event_loop
                 .create_window(self.window_attributes())
-                .context(CreateWindowSnafu)
+                .context("failed to create window")
                 .unwrap(),
         );
         self.surface = {
-            let context = Context::new(unsafe {
+            let context = softbuffer::Context::new(unsafe {
                 // Fiddling around with lifetimes
                 std::mem::transmute::<DisplayHandle, DisplayHandle>(
                     event_loop
                         .display_handle()
-                        .context(GetDisplayHandleSnafu)
+                        .context("failed to get display handle")
                         .unwrap(),
                 )
             })
             .expect("Failed to create window context");
-            Some(Surface::new(&context, window).expect("Failed to create surface"))
+            Some(softbuffer::Surface::new(&context, window).expect("Failed to create surface"))
         };
     }
 

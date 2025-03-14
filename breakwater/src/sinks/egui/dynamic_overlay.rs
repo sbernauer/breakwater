@@ -1,20 +1,8 @@
 use std::path::Path;
 
 use breakwater_egui_overlay::{DynamicOverlay, Versions};
+use color_eyre::eyre::{self, Context};
 use log::error;
-use snafu::{IntoError, ResultExt, Snafu};
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    #[snafu(display("unable to load dynamic library"))]
-    LibLoading { source: libloading::Error },
-
-    #[snafu(display("unable to find symbol in dynamic library"))]
-    Symbol { source: libloading::Error },
-
-    #[snafu(display("version mismatch"))]
-    VersionMismatch,
-}
 
 pub enum UiOverlay {
     BuiltIn,
@@ -93,12 +81,13 @@ impl Drop for UiOverlay {
 }
 
 /// loads a dynamic library for a custom overlay and checks its version
-pub fn load_and_check(dylib_path: impl AsRef<Path>) -> Result<UiOverlay, Error> {
+pub fn load_and_check(dylib_path: impl AsRef<Path>) -> eyre::Result<UiOverlay> {
     unsafe {
-        let dylib =
-            libloading::Library::new(dylib_path.as_ref().as_os_str()).context(LibLoadingSnafu)?;
-        let dylib_versions: libloading::Symbol<fn() -> Versions> =
-            dylib.get(b"versions").context(SymbolSnafu)?;
+        let dylib = libloading::Library::new(dylib_path.as_ref().as_os_str())
+            .context("failed to load dynamic library")?;
+        let dylib_versions: libloading::Symbol<fn() -> Versions> = dylib
+            .get(b"versions")
+            .context("failed to locate 'versions()' function")?;
 
         let dylib_versions = dylib_versions();
 
@@ -107,11 +96,12 @@ pub fn load_and_check(dylib_path: impl AsRef<Path>) -> Result<UiOverlay, Error> 
                 "dylib version ({dylib_versions:?}) do not match our version ({:?})",
                 breakwater_egui_overlay::VERSIONS
             );
-            return Err(VersionMismatchSnafu.into_error(snafu::NoneError));
+            eyre::bail!("dynamic overlay version check failed");
         }
 
-        let dylib_new: libloading::Symbol<fn() -> DynamicOverlay> =
-            dylib.get(b"new").context(SymbolSnafu)?;
+        let dylib_new: libloading::Symbol<fn() -> DynamicOverlay> = dylib
+            .get(b"new")
+            .context("failed to locate 'new()' function")?;
 
         let overlay = dylib_new();
 

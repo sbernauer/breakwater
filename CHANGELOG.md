@@ -7,8 +7,11 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Bump to `2024` Rust edition ([#52])
+- Replace `snafu` with `eyre` and `thiserror` for error handling ([#53])
+  - Use `color-eyre` for prettier error reports
 
 [#52]: https://github.com/sbernauer/breakwater/pull/52
+[#53]: https://github.com/sbernauer/breakwater/pull/53
 
 ## [0.17.0] - 2025-02-14
 

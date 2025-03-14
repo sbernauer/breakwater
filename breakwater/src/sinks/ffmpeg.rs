@@ -3,8 +3,8 @@ use std::{process::Stdio, sync::Arc, time::Duration};
 use async_trait::async_trait;
 use breakwater_parser::FrameBuffer;
 use chrono::Local;
+use color_eyre::eyre::{self, Context};
 use log::debug;
-use snafu::{ResultExt, Snafu};
 use tokio::{
     io::AsyncWriteExt,
     process::Command,
@@ -13,18 +13,6 @@ use tokio::{
 };
 
 use crate::{sinks::DisplaySink, statistics::StatisticsInformationEvent};
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    #[snafu(display("Failed to start ffmpeg command {command:?}. Is ffmpeg installed?"))]
-    StartFfmpeg {
-        source: std::io::Error,
-        command: String,
-    },
-
-    #[snafu(display("Failed to write new data to ffmpeg via stdout"))]
-    WriteDataToFfmpeg { source: std::io::Error },
-}
 
 pub struct FfmpegSink<FB: FrameBuffer> {
     fb: Arc<FB>,
@@ -43,7 +31,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
         _statistics_tx: mpsc::Sender<crate::statistics::StatisticsEvent>,
         _statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
-    ) -> Result<Option<Self>, super::Error> {
+    ) -> eyre::Result<Option<Self>> {
         if cli_args.rtmp_address.is_some() || cli_args.video_save_folder.is_some() {
             Ok(Some(Self {
                 fb,
@@ -57,7 +45,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
         }
     }
 
-    async fn run(&mut self) -> Result<(), super::Error> {
+    async fn run(&mut self) -> eyre::Result<()> {
         let mut ffmpeg_args: Vec<String> = self
             .ffmpeg_input_args()
             .into_iter()
@@ -121,9 +109,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
             .args(ffmpeg_args.clone())
             .stdin(Stdio::piped())
             .spawn()
-            .context(StartFfmpegSnafu {
-                command: ffmpeg_command,
-            })?;
+            .with_context(|| format!("failed to start ffmpeg command '{ffmpeg_command}'"))?;
 
         let mut stdin = command
             .stdin
@@ -170,7 +156,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
             stdin
                 .write_all(bytes)
                 .await
-                .context(WriteDataToFfmpegSnafu)?;
+                .context("failed to write to ffmpeg stdin")?;
             interval.tick().await;
         }
     }
