@@ -3,8 +3,8 @@ use std::{num::NonZero, sync::Arc};
 use async_trait::async_trait;
 use breakwater_parser::FrameBuffer;
 use color_eyre::eyre::{self, Context};
-use log::{debug, warn};
 use tokio::sync::{broadcast, mpsc};
+use tracing::instrument;
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
@@ -32,6 +32,7 @@ pub struct NativeDisplaySink<FB: FrameBuffer> {
 
 #[async_trait]
 impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for NativeDisplaySink<FB> {
+    #[instrument(skip_all, err)]
     async fn new(
         fb: Arc<FB>,
         cli_args: &CliArgs,
@@ -50,6 +51,7 @@ impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for NativeDisplayS
         }))
     }
 
+    #[instrument(skip(self), err)]
     async fn run(&mut self) -> eyre::Result<()> {
         let fb_clone = self.fb.clone();
         let terminate_signal_rx = self.terminate_signal_rx.resubscribe();
@@ -135,7 +137,9 @@ impl<FB: FrameBuffer> ApplicationHandler for NativeDisplaySink<FB> {
 
                 let fbsize = self.fb.as_pixels().len();
                 if buffer.len() != fbsize {
-                    warn!(
+                    tracing::warn!(
+                        buffer_size = buffer.len(),
+                        fb_size = fbsize,
                         "window buffer has size {}, but fb has size {}! Skipping redraw.",
                         buffer.len(),
                         fbsize
@@ -159,7 +163,7 @@ impl<FB: FrameBuffer> ApplicationHandler for NativeDisplaySink<FB> {
             | WindowEvent::CursorEntered { .. }
             | WindowEvent::CursorLeft { .. } => (),
             _ => {
-                debug!("Received window event: {event:?}");
+                tracing::debug!(?event, "received window event");
             }
         };
     }

@@ -4,9 +4,9 @@ use async_trait::async_trait;
 use breakwater_parser::FrameBuffer;
 use color_eyre::eyre::{self, Context};
 use dynamic_overlay::UiOverlay;
-use log::error;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, mpsc};
+use tracing::instrument;
 
 use super::DisplaySink;
 use crate::statistics::StatisticsInformationEvent;
@@ -46,14 +46,8 @@ impl FromStr for ViewportConfig {
             .collect();
 
         match parts {
-            Err(e) => {
-                error!("failed to parse view port config: {e}");
-                Err(InvalidViewportConfig)
-            }
-            Ok(parts) if parts.len() != 4 => {
-                error!("failed to parse view port config: invalid format");
-                Err(InvalidViewportConfig)
-            }
+            Err(_) => Err(InvalidViewportConfig),
+            Ok(parts) if parts.len() != 4 => Err(InvalidViewportConfig),
             Ok(parts) => Ok(Self {
                 x: parts[0],
                 y: parts[1],
@@ -76,6 +70,7 @@ pub struct EguiSink<FB: FrameBuffer> {
 #[async_trait]
 impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
     /// This function can return [`None`] in case this sink is not configured (by looking at the `cli_args`).
+    #[instrument(skip_all, err)]
     async fn new(
         fb: Arc<FB>,
         cli_args: &crate::cli_args::CliArgs,
@@ -137,6 +132,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
     }
 
     /// This should only run on the main thread
+    #[instrument(skip(self), err)]
     async fn run(&mut self) -> eyre::Result<()> {
         // block_in_place below should only be used in a MultiThread runtime
         assert_eq!(

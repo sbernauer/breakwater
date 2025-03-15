@@ -2,7 +2,7 @@ use std::path::Path;
 
 use breakwater_egui_overlay::{DynamicOverlay, Versions};
 use color_eyre::eyre::{self, Context};
-use log::error;
+use tracing::instrument;
 
 pub enum UiOverlay {
     BuiltIn,
@@ -81,7 +81,8 @@ impl Drop for UiOverlay {
 }
 
 /// loads a dynamic library for a custom overlay and checks its version
-pub fn load_and_check(dylib_path: impl AsRef<Path>) -> eyre::Result<UiOverlay> {
+#[instrument(err)]
+pub fn load_and_check(dylib_path: impl AsRef<Path> + std::fmt::Debug) -> eyre::Result<UiOverlay> {
     unsafe {
         let dylib = libloading::Library::new(dylib_path.as_ref().as_os_str())
             .context("failed to load dynamic library")?;
@@ -92,8 +93,8 @@ pub fn load_and_check(dylib_path: impl AsRef<Path>) -> eyre::Result<UiOverlay> {
         let dylib_versions = dylib_versions();
 
         if dylib_versions != breakwater_egui_overlay::VERSIONS {
-            error!(
-                "dylib version ({dylib_versions:?}) do not match our version ({:?})",
+            tracing::error!(
+                "dylib versions ({dylib_versions:?}) do not match our versions ({:?})",
                 breakwater_egui_overlay::VERSIONS
             );
             eyre::bail!("dynamic overlay version check failed");
