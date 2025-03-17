@@ -18,8 +18,8 @@ LIBS+= -Wl,--no-whole-archive -lrt -lm -ldl -lcrypto -pthread -lnuma
 
 TARGET="breakwater-f-stack"
 all:
-	cc ${CFLAGS} -DINET6 -o ${TARGET} breakwater-f-stack.c ${LIBS}
-	cc ${CFLAGS} -o ${TARGET}-v4-only breakwater-f-stack.c ${LIBS}
+	cc ${CFLAGS} -DINET6 -o ${TARGET} parser.c breakwater-f-stack.c ${LIBS}
+	cc ${CFLAGS} -o ${TARGET}-v4-only parser.c breakwater-f-stack.c ${LIBS}
 
 .PHONY: clean
 clean:
