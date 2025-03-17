@@ -13,6 +13,8 @@
 #include "ff_config.h"
 #include "ff_api.h"
 
+#include "parser.h"
+
 #define MAX_EVENTS 512
 
 /* kevent set */
@@ -36,6 +38,9 @@ int loop(void *arg)
         printf("ff_kevent failed:%d, %s\n", errno, strerror(errno));
         return -1;
     }
+
+    // The main read buffer
+    char buf[32 * 1024];
 
     for (i = 0; i < nevents; ++i) {
         struct kevent event = events[i];
@@ -69,14 +74,8 @@ int loop(void *arg)
                 available--;
             } while (available);
         } else if (event.filter == EVFILT_READ) {
-            char buf[256];
             ssize_t readlen = ff_read(clientfd, buf, sizeof(buf));
-            // ssize_t writelen = ff_write(clientfd, html, sizeof(html) - 1);
-            // if (writelen < 0){
-            //     printf("ff_write failed:%d, %s\n", errno, strerror(errno));
-            //     ff_close(clientfd);
-            // }
-            // printf("readlen: %d, writelen: %d, sizeof(html): %d\n", readlen, writelen, sizeof(html));
+            printf("readlen: %ld for clientfd: %d\n", readlen, clientfd);
         } else {
             printf("unknown event: %8.8X\n", event.flags);
         }
