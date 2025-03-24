@@ -4,13 +4,13 @@ use async_trait::async_trait;
 use breakwater_parser::FrameBuffer;
 use chrono::Local;
 use color_eyre::eyre::{self, Context};
-use log::debug;
 use tokio::{
     io::AsyncWriteExt,
     process::Command,
     sync::{broadcast, mpsc},
     time,
 };
+use tracing::instrument;
 
 use crate::{sinks::DisplaySink, statistics::StatisticsInformationEvent};
 
@@ -25,6 +25,7 @@ pub struct FfmpegSink<FB: FrameBuffer> {
 
 #[async_trait]
 impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
+    #[instrument(skip_all, err)]
     async fn new(
         fb: Arc<FB>,
         cli_args: &crate::cli_args::CliArgs,
@@ -45,6 +46,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
         }
     }
 
+    #[instrument(skip(self), err)]
     async fn run(&mut self) -> eyre::Result<()> {
         let mut ffmpeg_args: Vec<String> = self
             .ffmpeg_input_args()
@@ -103,7 +105,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
         }
 
         let ffmpeg_command = format!("ffmpeg {}", ffmpeg_args.join(" "));
-        debug!("Executing {ffmpeg_command:?}");
+        tracing::debug!(command = ffmpeg_command, "executing ffmpeg");
         let mut command = Command::new("ffmpeg")
             .kill_on_drop(false)
             .args(ffmpeg_args.clone())

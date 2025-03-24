@@ -1,7 +1,7 @@
 use std::alloc::{self, LayoutError};
 
-use log::warn;
 use memadvise::{Advice, MemAdviseError};
+use tracing::instrument;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -34,6 +34,7 @@ unsafe impl Send for ConnectionBuffer {}
 /// It also `memadvise`s the memory slice, so that the Kernel is aware that we are going to
 /// sequentially read it.
 impl ConnectionBuffer {
+    #[instrument(level = "debug", err)]
     pub fn new(buffer_size: usize) -> Result<Self, Error> {
         let page_size = page_size::get();
         let layout = alloc::Layout::from_size_align(buffer_size, page_size).map_err(|source| {
@@ -58,8 +59,9 @@ impl ConnectionBuffer {
                 MemAdviseError::UnalignedAddress => "UnalignedAddress",
                 MemAdviseError::InvalidRange => "InvalidRange",
             };
-            warn!(
-                "Failed to memadvise sequential read access for buffer to kernel. This should not effect any client connections, but might having some minor performance degration: {err}"
+            tracing::warn!(
+                ?err,
+                "Failed to memadvise sequential read access for buffer to kernel. This should not effect any client connections, but might having some minor performance degration"
             );
         }
 
