@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <assert.h>
 #include <sys/ioctl.h>
+#include <sys/resource.h>
 
 #include "ff_config.h"
 #include "ff_api.h"
@@ -28,6 +29,82 @@ int sockfd;
 int sockfd6;
 #endif
 
+// The main read buffer
+char buf[32 * 1024];
+
+// Array of pointers to client structures
+client_state **clients;
+// Max number of FDs (from ulimit -n)
+size_t max_clients;
+
+
+// Get the system limit for file descriptors
+size_t get_max_fds() {
+    struct rlimit limit;
+    if (getrlimit(RLIMIT_NOFILE, &limit) != 0) {
+        perror("getrlimit failed");
+        exit(EXIT_FAILURE);
+    }
+    return limit.rlim_cur;
+}
+
+// Initialize client array
+void init_clients() {
+    max_clients = get_max_fds();
+    clients = calloc(max_clients, sizeof(client_state *));
+    if (!clients) {
+        perror("Memory allocation for clients failed");
+        exit(EXIT_FAILURE);
+    }
+    printf("Allocated space for %zu client connections (~%zu KB)\n",
+           max_clients, (max_clients * sizeof(client_state *)) / 1024);
+}
+
+// Add a client state
+void add_client(int fd) {
+    if (fd < 0 || fd >= max_clients) {
+        fprintf(stderr, "Invalid fd: %d\n", fd);
+        return;
+    }
+
+    if (clients[fd] == NULL) {
+        clients[fd] = malloc(sizeof(client_state));
+        if (!clients[fd]) {
+            perror("Failed to allocate client state");
+            return;
+        }
+        memset(clients[fd], 0, sizeof(client_state));
+    }
+}
+
+// Lookup client state by fd
+client_state *get_client(int fd) {
+    // if (fd < 0 || fd >= max_clients) {
+    //     return NULL;
+    // }
+    return clients[fd];
+}
+
+// Remove a client state
+void remove_client(int fd) {
+    if (fd < 0 || fd >= max_clients || clients[fd] == NULL) {
+        return;
+    }
+    free(clients[fd]);
+    clients[fd] = NULL;
+}
+
+// Cleanup memory
+void cleanup_clients() {
+    for (size_t i = 0; i < max_clients; i++) {
+        if (clients[i]) {
+            free(clients[i]);
+        }
+    }
+    free(clients);
+}
+
+
 int loop(void *arg)
 {
     /* Wait for events to happen */
@@ -38,9 +115,6 @@ int loop(void *arg)
         printf("ff_kevent failed:%d, %s\n", errno, strerror(errno));
         return -1;
     }
-
-    // The main read buffer
-    char buf[32 * 1024];
 
     for (i = 0; i < nevents; ++i) {
         struct kevent event = events[i];
@@ -63,7 +137,9 @@ int loop(void *arg)
                     break;
                 }
 
-                /* Add to event list */
+                // Add to clients array
+                add_client(nclientfd);
+                // Add to event list
                 EV_SET(&kevSet, nclientfd, EVFILT_READ, EV_ADD, 0, 0, NULL);
 
                 if(ff_kevent(kq, &kevSet, 1, NULL, 0, NULL) < 0) {
@@ -74,8 +150,19 @@ int loop(void *arg)
                 available--;
             } while (available);
         } else if (event.filter == EVFILT_READ) {
+            client_state *client = get_client(clientfd);
             ssize_t readlen = ff_read(clientfd, buf, sizeof(buf));
-            printf("readlen: %ld for clientfd: %d\n", readlen, clientfd);
+            client->bytes_parsed += readlen;
+
+            // Simulate the application load
+            // int i, j, k = 0;
+            // for (i = 0; i < 1000000000; i++){
+            //     for (j = 0; j < 1000000000; j++){
+            //         k++;
+            //     }
+            // }
+
+            // printf("readlen: %ld for clientfd: %d. Client send %ld bytes so far\n", readlen, clientfd, client->bytes_parsed);
         } else {
             printf("unknown event: %8.8X\n", event.flags);
         }
@@ -116,7 +203,7 @@ int main(int argc, char * argv[])
         exit(1);
     }
 
-     ret = ff_listen(sockfd, MAX_EVENTS);
+    ret = ff_listen(sockfd, MAX_EVENTS);
     if (ret < 0) {
         printf("ff_listen failed, sockfd:%d, errno:%d, %s\n", sockfd, errno, strerror(errno));
         exit(1);
@@ -159,6 +246,9 @@ int main(int argc, char * argv[])
     }
 #endif
 
+    init_clients();
     ff_run(loop, NULL);
+
+    cleanup_clients();
     return 0;
 }
