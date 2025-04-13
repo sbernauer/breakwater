@@ -14,9 +14,15 @@
 #include "ff_config.h"
 #include "ff_api.h"
 
+#include "framebuffer.h"
 #include "parser.h"
 
 #define MAX_EVENTS 512
+
+// TODO: Read via CLI args
+#define WIDTH 1280
+#define HEIGHT 720
+#define SHARED_MEMORY_NAME "breakwater"
 
 /* kevent set */
 struct kevent kevSet;
@@ -137,6 +143,8 @@ int loop(void *arg)
                     break;
                 }
 
+                printf("Got new client connection");
+
                 // Add to clients array
                 add_client(nclientfd);
                 // Add to event list
@@ -153,6 +161,14 @@ int loop(void *arg)
             client_state *client = get_client(clientfd);
             ssize_t readlen = ff_read(clientfd, buf, sizeof(buf));
             client->bytes_parsed += readlen;
+
+            char response[] = "pixelflut server, see https://github.com/sbernauer/breakwater/ and https://wiki.cccgoe.de/wiki/Pixelflut";
+
+            ssize_t writelen = ff_write(clientfd, response, sizeof(response));
+            if (writelen < 0){
+                printf("ff_write failed: %d, %s\n", errno, strerror(errno));
+                ff_close(clientfd);
+            }
 
             // Simulate the application load
             // int i, j, k = 0;
@@ -173,6 +189,20 @@ int loop(void *arg)
 
 int main(int argc, char * argv[])
 {
+    int err = 0;
+
+    struct framebuffer* fb;
+    if((err = create_fb(&fb, WIDTH, HEIGHT, SHARED_MEMORY_NAME))) {
+		fprintf(stderr, "Failed to allocate framebuffer: %s\n", strerror(err));
+        return err;
+	}
+
+    for (uint16_t x = 0; x <= 150; x++) {
+        for (uint16_t y = 0; y <= 50; y++) {
+            fb_set(fb, x, y, 0x00ff0000);
+        }
+    }
+
     ff_init(argc, argv);
 
     kq = ff_kqueue();

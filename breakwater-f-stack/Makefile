@@ -1,4 +1,5 @@
 # Copied and modified from https://github.com/F-Stack/f-stack/blob/dev/example/Makefile
+SERVER_SOURCES := parser.c framebuffer.c breakwater-f-stack.c
 
 ifeq ($(FF_PATH),)
 $(error "Please export the environment variable `FF_PATH` and point it to the f-stack root directory. This Makefile assumes you have run 'make' in the '<f-stack root>/lib' folder")
@@ -18,9 +19,10 @@ LIBS+= -Wl,--no-whole-archive -lrt -lm -ldl -lcrypto -pthread -lnuma
 
 TARGET="breakwater-f-stack"
 all:
-	cc ${CFLAGS} -DINET6 -o ${TARGET} parser.c breakwater-f-stack.c ${LIBS}
-	cc ${CFLAGS} -o ${TARGET}-v4-only parser.c breakwater-f-stack.c ${LIBS}
+	mkdir -p build/
+	cc ${CFLAGS} -DINET6 -o build/${TARGET} $(SERVER_SOURCES) ${LIBS}
+	cc ${CFLAGS} -o build/${TARGET}-v4-only $(SERVER_SOURCES) ${LIBS}
 
 .PHONY: clean
 clean:
-	rm -f *.o ${TARGET}
+	rm -rf build/

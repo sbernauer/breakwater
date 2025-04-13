@@ -1,18 +1,61 @@
 `apt install dpdk libdpdk-dev make pkg-config libnuma-dev libsystemd-dev ethtool`
 
-Build f-stack
-`sbernauer@debian:~/pixelflut/f-stack/lib$ make -j 8`
-`sbernauer@debian:~/pixelflut/f-stack/example$ make`
+### Build f-stack
 
-Build breakwater-fstack
+Hint: The following `default.nix` might be helpful
+
+```
+{
+  nixpkgs ? import <nixpkgs> {},
+  nixpkgsUnstable ? import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixos-unstable.tar.gz") {},
+}:
+
+nixpkgs.mkShell {
+  buildInputs = [
+    nixpkgs.pkg-config
+    nixpkgs.meson
+    nixpkgs.ninja
+
+    nixpkgs.dpdk
+    nixpkgs.openssl # Needed by f-stack
+    nixpkgs.numactl
+
+    # Needed by the redis example app
+    nixpkgs.zlib
+    nixpkgs.jemalloc
+    nixpkgs.jansson
+    nixpkgs.libpcap
+    # nixpkgs.libnfnetlink
+    nixpkgs.libnl
+    nixpkgs.libelf
+
+    # nixpkgsUnstable.dpdk # Uncomment to use dpdk from nixpkgs-unstable
+    # nixpkgs.imagemagick
+    nixpkgs.python312Packages.pyelftools # needed for dpdk-pmdinfo.py
+
+    # For debugging
+    # nixpkgs.gdb
+  ];
+}
+```
+
+`sbernauer@debian:~/pixelflut/f-stack/lib$ make -j 8`
+`sbernauer@debian:~/pixelflut/f-stack/example$ make # Only needed for testing`
+
+### Build breakwater-fstack
+
 `export FF_PATH=/home/sbernauer/pixelflut/f-stack/`
 `make`
 
+### Run breakwater-fstack server
+
 Start server on 0000:02:00.0:
+
 `sudo dpdk-devbind.py --bind=uio_pci_generic 0000:02:00.0`
 `sudo example/helloworld_epoll`
 
 Add clients IP:
+
 `sudo ip link set up dev enp2s0f1`
 `sudo ip a a 10.0.0.43/8 dev enp2s0f1`
 `sudo ip a a 192.168.1.3/24 dev enp2s0f1`
@@ -27,8 +70,8 @@ No epoll:   Requests/sec: 171561.5445
 epoll:      Requests/sec: 163363.2243
 No epoll:   Requests/sec: 162239.4396
 
+### Special experiment for virtual device, as my NIC is not supported
 
-# Special experiment for virtual device, as my NIC is not supported
 f-stack patches:
 
 ```patch
