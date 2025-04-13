@@ -12,8 +12,11 @@ name = "parsing"
 harness = false
 
 [dependencies]
+color-eyre.workspace = true
 const_format.workspace = true
 memchr.workspace = true
+shared_memory.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true

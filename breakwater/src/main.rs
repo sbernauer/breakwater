@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
-use breakwater_parser::SimpleFrameBuffer;
+use breakwater_parser::SharedMemoryFrameBuffer;
 use clap::Parser;
 use color_eyre::eyre::{self, Context};
+use server::Server;
 use tokio::sync::{broadcast, mpsc};
 
 use crate::{
     cli_args::CliArgs,
     prometheus_exporter::PrometheusExporter,
-    server::Server,
     sinks::{DisplaySink, ffmpeg::FfmpegSink},
     statistics::{Statistics, StatisticsEvent, StatisticsInformationEvent, StatisticsSaveMode},
 };
@@ -41,7 +41,10 @@ async fn main() -> eyre::Result<()> {
     let args = CliArgs::parse();
 
     // Not using dynamic dispatch here for performance reasons
-    let fb = Arc::new(SimpleFrameBuffer::new(args.width, args.height));
+    let fb = Arc::new(
+        SharedMemoryFrameBuffer::new(args.width, args.height, args.shared_memory_name.as_deref())
+            .context("failed to create shared memory framebuffer")?,
+    );
 
     // If we make the channel to big, stats will start to lag behind
     // TODO: Check performance impact in real-world scenario. Maybe the statistics thread blocks the other threads
@@ -89,7 +92,7 @@ async fn main() -> eyre::Result<()> {
     let statistics_thread = tokio::spawn(async move { statistics.run().await });
     let prometheus_exporter_thread = tokio::spawn(async move { prometheus_exporter.run().await });
 
-    let mut display_sinks = Vec::<Box<dyn DisplaySink<SimpleFrameBuffer> + Send>>::new();
+    let mut display_sinks = Vec::<Box<dyn DisplaySink<SharedMemoryFrameBuffer> + Send>>::new();
 
     #[cfg(all(feature = "native-display", not(feature = "egui")))]
     {

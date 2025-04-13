@@ -2,7 +2,7 @@ use core::slice;
 use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use breakwater_parser::FrameBuffer;
+use breakwater_parser::{FB_BYTES_PER_PIXEL, FrameBuffer};
 use color_eyre::eyre::{self, Context, ContextCompat};
 use number_prefix::NumberPrefix;
 use rusttype::{Font, Scale, point};
@@ -99,8 +99,11 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
     }
 
     async fn run(&mut self) -> eyre::Result<()> {
-        let vnc_fb_slice: &mut [u32] = unsafe {
-            slice::from_raw_parts_mut((*self.screen).frameBuffer as *mut u32, self.fb.get_size())
+        let vnc_fb_slice: &mut [u8] = unsafe {
+            slice::from_raw_parts_mut(
+                (*self.screen).frameBuffer as *mut u8,
+                self.fb.get_size() * FB_BYTES_PER_PIXEL,
+            )
         };
 
         // A line less because the (height - STATS_SURFACE_HEIGHT) belongs to the stats and gets refreshed by them
@@ -116,8 +119,9 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
 
             // I don't think we need to use spawn_blocking or something like that, as this operation should hopefully be
             // a quick memcpy. But I'm no expert on this.
-            vnc_fb_slice[0..fb_size_up_to_stats_text]
-                .copy_from_slice(&self.fb.as_pixels()[0..fb_size_up_to_stats_text]);
+            vnc_fb_slice[0..fb_size_up_to_stats_text * FB_BYTES_PER_PIXEL].copy_from_slice(
+                &self.fb.as_bytes()[0..fb_size_up_to_stats_text * FB_BYTES_PER_PIXEL],
+            );
 
             // Only refresh the drawing surface, not the stats surface
             rfb_mark_rect_as_modified(

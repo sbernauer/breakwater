@@ -12,7 +12,10 @@ mod refactored;
 
 #[cfg(target_arch = "x86_64")]
 pub use assembler::AssemblerParser;
-pub use framebuffer::{FrameBuffer, simple::SimpleFrameBuffer};
+pub use framebuffer::{
+    FB_BYTES_PER_PIXEL, FrameBuffer, shared_memory::SharedMemoryFrameBuffer,
+    simple::SimpleFrameBuffer,
+};
 pub use memchr::MemchrParser;
 pub use original::OriginalParser;
 pub use refactored::RefactoredParser;

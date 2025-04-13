@@ -1,10 +1,14 @@
+pub mod shared_memory;
 pub mod simple;
+
+pub const FB_BYTES_PER_PIXEL: usize = std::mem::size_of::<u32>();
 
 pub trait FrameBuffer {
     fn get_width(&self) -> usize;
 
     fn get_height(&self) -> usize;
 
+    /// Returns the number of pixels (not bytes)
     fn get_size(&self) -> usize {
         self.get_width() * self.get_height()
     }
@@ -44,6 +48,4 @@ pub trait FrameBuffer {
     fn set_multi_from_start_index(&self, starting_index: usize, pixels: &[u8]) -> usize;
 
     fn as_bytes(&self) -> &[u8];
-
-    fn as_pixels(&self) -> &[u32];
 }
