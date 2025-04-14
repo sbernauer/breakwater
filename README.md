@@ -31,7 +31,7 @@ Note: This command needs to be enabled using the `binary-sync-pixels` feature
 The easiest way is to continue with the provided [Ready to use Docker setup](#run-in-docker-container) below.
 
 If you prefer the manual way (the best performance - as e.g. can use native SIMD instructions) you need to have [Rust installed](https://www.rust-lang.org/tools/install).
-You may need to install some additional packages with `sudo apt install pkg-config libvncserver-dev`
+You may need to install some additional packages with `sudo apt install clang pkg-config libvncserver-dev`
 Then you can directly run the server with
 
 ```bash
