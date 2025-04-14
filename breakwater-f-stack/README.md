@@ -40,11 +40,13 @@ nixpkgs.mkShell {
 ```
 
 `sbernauer@debian:~/pixelflut/f-stack/lib$ make -j 8`
+
 `sbernauer@debian:~/pixelflut/f-stack/example$ make # Only needed for testing`
 
 ### Build breakwater-fstack
 
 `export FF_PATH=/home/sbernauer/pixelflut/f-stack/`
+
 `make`
 
 ### Run breakwater-fstack server
@@ -52,13 +54,20 @@ nixpkgs.mkShell {
 Start server on 0000:02:00.0:
 
 `sudo dpdk-devbind.py --bind=uio_pci_generic 0000:02:00.0`
-`sudo example/helloworld_epoll`
+
+`sudo bash -c 'echo 1024 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages'`
+
+`sudo build/breakwater-f-stack`
 
 Add clients IP:
 
-`sudo ip link set up dev enp2s0f1`
-`sudo ip a a 10.0.0.43/8 dev enp2s0f1`
-`sudo ip a a 192.168.1.3/24 dev enp2s0f1`
+`sudo ip link set up dev enp1s0f1`
+
+`sudo ip a a 10.0.0.42/8 dev enp1s0f1`
+
+`sudo ip a a 192.168.1.3/24 dev enp1s0f1`
+
+`ping 192.168.1.2` should now succeed (if it doesn't check e.g. `dmesg`).
 
 100 connections, 10s
 epoll:      Requests/sec: 166722.4461
