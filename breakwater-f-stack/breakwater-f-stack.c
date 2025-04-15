@@ -14,15 +14,11 @@
 #include "ff_config.h"
 #include "ff_api.h"
 
+#include "breakwater-f-stack.h"
 #include "framebuffer.h"
 #include "parser.h"
 
 #define MAX_EVENTS 512
-
-// TODO: Read via CLI args
-#define WIDTH 1280
-#define HEIGHT 720
-#define SHARED_MEMORY_NAME "breakwater"
 
 /* kevent set */
 struct kevent kevSet;
@@ -113,6 +109,8 @@ void cleanup_clients() {
 
 int loop(void *arg)
 {
+    struct framebuffer *framebuffer = (struct framebuffer *)arg;
+
     /* Wait for events to happen */
     int nevents = ff_kevent(kq, NULL, 0, events, MAX_EVENTS, NULL);
     int i;
@@ -143,7 +141,7 @@ int loop(void *arg)
                     break;
                 }
 
-                printf("Got new client connection");
+                // printf("Got new client connection");
 
                 // Add to clients array
                 add_client(nclientfd);
@@ -162,23 +160,7 @@ int loop(void *arg)
             ssize_t readlen = ff_read(clientfd, buf, sizeof(buf));
             client->bytes_parsed += readlen;
 
-            char response[] = "pixelflut server, see https://github.com/sbernauer/breakwater/ and https://wiki.cccgoe.de/wiki/Pixelflut";
-
-            ssize_t writelen = ff_write(clientfd, response, sizeof(response));
-            if (writelen < 0){
-                printf("ff_write failed: %d, %s\n", errno, strerror(errno));
-                ff_close(clientfd);
-            }
-
-            // Simulate the application load
-            // int i, j, k = 0;
-            // for (i = 0; i < 1000000000; i++){
-            //     for (j = 0; j < 1000000000; j++){
-            //         k++;
-            //     }
-            // }
-
-            // printf("readlen: %ld for clientfd: %d. Client send %ld bytes so far\n", readlen, clientfd, client->bytes_parsed);
+            size_t bytes_parsed = parse(buf, readlen, framebuffer, clientfd);
         } else {
             printf("unknown event: %8.8X\n", event.flags);
         }
@@ -191,17 +173,17 @@ int main(int argc, char * argv[])
 {
     int err = 0;
 
-    struct framebuffer* fb;
-    if((err = create_fb(&fb, WIDTH, HEIGHT, SHARED_MEMORY_NAME))) {
+    struct framebuffer* framebuffer;
+    if((err = create_fb(&framebuffer, WIDTH, HEIGHT, SHARED_MEMORY_NAME))) {
 		fprintf(stderr, "Failed to allocate framebuffer: %s\n", strerror(err));
         return err;
 	}
 
-    for (uint16_t x = 0; x <= 150; x++) {
-        for (uint16_t y = 0; y <= 50; y++) {
-            fb_set(fb, x, y, 0x00ff0000);
-        }
-    }
+    // for (uint16_t x = 0; x <= 150; x++) {
+    //     for (uint16_t y = 0; y <= 50; y++) {
+    //         fb_set(framebuffer, x, y, 0x00ff0000);
+    //     }
+    // }
 
     ff_init(argc, argv);
 
@@ -224,7 +206,7 @@ int main(int argc, char * argv[])
     struct sockaddr_in my_addr;
     bzero(&my_addr, sizeof(my_addr));
     my_addr.sin_family = AF_INET;
-    my_addr.sin_port = htons(80);
+    my_addr.sin_port = htons(SERVER_PORT);
     my_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
     int ret = ff_bind(sockfd, (struct linux_sockaddr *)&my_addr, sizeof(my_addr));
@@ -253,7 +235,7 @@ int main(int argc, char * argv[])
     struct sockaddr_in6 my_addr6;
     bzero(&my_addr6, sizeof(my_addr6));
     my_addr6.sin6_family = AF_INET6;
-    my_addr6.sin6_port = htons(80);
+    my_addr6.sin6_port = htons(SERVER_PORT);
     my_addr6.sin6_addr = in6addr_any;
 
     ret = ff_bind(sockfd6, (struct linux_sockaddr *)&my_addr6, sizeof(my_addr6));
@@ -277,7 +259,7 @@ int main(int argc, char * argv[])
 #endif
 
     init_clients();
-    ff_run(loop, NULL);
+    ff_run(loop, framebuffer);
 
     cleanup_clients();
     return 0;
