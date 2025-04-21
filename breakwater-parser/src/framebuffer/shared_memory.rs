@@ -114,10 +114,12 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
     #[inline(always)]
     unsafe fn get_unchecked(&self, x: usize, y: usize) -> u32 {
         unsafe {
-            *(self
+            (self
                 .buffer
                 .as_ptr()
                 .add((x + y * self.width) * FB_BYTES_PER_PIXEL) as *const u32)
+                // The buffer coming from the shared memory might be unaligned!
+                .read_unaligned()
         }
     }
 
