@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Support using shared memory for the framebuffer. This e.g. allows  on-Rust applications to join
+- Support using shared memory for the framebuffer. This e.g. allows non-Rust applications to join
   the shared memory and read/write screen contents ([#55])
 
 ### Changed
