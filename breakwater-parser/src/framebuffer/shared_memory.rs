@@ -2,7 +2,7 @@ use core::slice;
 
 use color_eyre::eyre::{self, Context, bail};
 use shared_memory::{Shmem, ShmemConf, ShmemError};
-use tracing::{info, instrument};
+use tracing::{debug, info, instrument};
 
 use super::FrameBuffer;
 use crate::framebuffer::FB_BYTES_PER_PIXEL;
@@ -32,74 +32,71 @@ impl SharedMemoryFrameBuffer {
     ) -> eyre::Result<Self> {
         let pixels = width * height;
 
-        match shared_memory_name {
-            Some(shared_memory_name) => {
-                let target_size = HEADER_SIZE + pixels * FB_BYTES_PER_PIXEL;
+        let Some(shared_memory_name) = shared_memory_name else {
+            debug!("Using plain (non shared memory) framebuffer");
 
-                let shared_memory = match ShmemConf::new()
-                    .os_id(shared_memory_name)
-                    .size(target_size)
-                    .create()
-                {
-                    Ok(shared_memory) => shared_memory,
-                    Err(ShmemError::LinkExists | ShmemError::MappingIdExists) => ShmemConf::new()
-                        .os_id(shared_memory_name)
-                        .open()
-                        .with_context(|| {
-                            format!(
-                                "failed to open existing shared memory \"{shared_memory_name}\""
-                            )
-                        })?,
-                    Err(err) => Err(err).with_context(|| {
-                        format!("failed to create shared memory \"{shared_memory_name}\"")
-                    })?,
-                };
+            let mut buffer = Vec::with_capacity(pixels * FB_BYTES_PER_PIXEL);
+            buffer.resize_with(pixels * FB_BYTES_PER_PIXEL, || 0);
+            let buffer = buffer.into_boxed_slice();
 
-                let actual_size = shared_memory.len();
-                if actual_size != target_size {
-                    bail!(
-                        "The shared memory had the wrong size! Expected {target_size} bytes, \
+            return Ok(Self {
+                width,
+                height,
+                buffer,
+                shared_memory: None,
+            });
+        };
+
+        let target_size = HEADER_SIZE + pixels * FB_BYTES_PER_PIXEL;
+
+        let shared_memory = match ShmemConf::new()
+            .os_id(shared_memory_name)
+            .size(target_size)
+            .create()
+        {
+            Ok(shared_memory) => shared_memory,
+            Err(ShmemError::LinkExists | ShmemError::MappingIdExists) => ShmemConf::new()
+                .os_id(shared_memory_name)
+                .open()
+                .with_context(|| {
+                    format!("failed to open existing shared memory \"{shared_memory_name}\"")
+                })?,
+            Err(err) => Err(err).with_context(|| {
+                format!("failed to create shared memory \"{shared_memory_name}\"")
+            })?,
+        };
+
+        let actual_size = shared_memory.len();
+        if actual_size != target_size {
+            bail!(
+                "The shared memory had the wrong size! Expected {target_size} bytes, \
                         but it has {actual_size} bytes."
-                    );
-                }
-
-                info!(
-                    actual_size,
-                    target_size, "Shared memory \"shared_memory_name\" loaded"
-                );
-                let size_ptr = shared_memory.as_ptr() as *mut u16;
-                unsafe {
-                    *size_ptr = width.try_into().context("Framebuffer width too high")?;
-                    *size_ptr.add(1) = height.try_into().context("Framebuffer height too high")?;
-                }
-
-                let buffer = unsafe {
-                    Box::from_raw(slice::from_raw_parts_mut(
-                        shared_memory.as_ptr().add(2),
-                        pixels * FB_BYTES_PER_PIXEL,
-                    ))
-                };
-
-                Ok(Self {
-                    width,
-                    height,
-                    buffer,
-                    shared_memory: Some(shared_memory),
-                })
-            }
-            None => {
-                let mut buffer = Vec::with_capacity(pixels * FB_BYTES_PER_PIXEL);
-                buffer.resize_with(pixels * FB_BYTES_PER_PIXEL, || 0);
-                let buffer = buffer.into_boxed_slice();
-
-                Ok(Self {
-                    width,
-                    height,
-                    buffer,
-                    shared_memory: None,
-                })
-            }
+            );
         }
+
+        info!(
+            actual_size,
+            target_size, "Shared memory \"shared_memory_name\" loaded"
+        );
+        let size_ptr = shared_memory.as_ptr() as *mut u16;
+        unsafe {
+            *size_ptr = width.try_into().context("Framebuffer width too high")?;
+            *size_ptr.add(1) = height.try_into().context("Framebuffer height too high")?;
+        }
+
+        let buffer = unsafe {
+            Box::from_raw(slice::from_raw_parts_mut(
+                shared_memory.as_ptr().add(2),
+                pixels * FB_BYTES_PER_PIXEL,
+            ))
+        };
+
+        Ok(Self {
+            width,
+            height,
+            buffer,
+            shared_memory: Some(shared_memory),
+        })
     }
 }
 
