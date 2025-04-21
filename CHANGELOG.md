@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Support using shared memory for the framebuffer. This e.g. allows for non-Rust applications to
+  join the shared memory and read/write screen contents ([#55])
+
 ### Changed
 
 - Bump to `2024` Rust edition ([#52])
@@ -14,6 +19,7 @@ All notable changes to this project will be documented in this file.
 [#52]: https://github.com/sbernauer/breakwater/pull/52
 [#53]: https://github.com/sbernauer/breakwater/pull/53
 [#54]: https://github.com/sbernauer/breakwater/pull/54
+[#55]: https://github.com/sbernauer/breakwater/pull/55
 
 ## [0.17.0] - 2025-02-14
 
