@@ -6,8 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Support using shared memory for the framebuffer. This e.g. allows non-Rust applications to join
-  the shared memory and read/write screen contents ([#55])
+- Support using shared memory for the framebuffer.
+  This enables other applications to read and write Pixel values to the framebuffer or can be  used
+  to persist the canvas across restarts ([#55])
 
 ### Changed
 

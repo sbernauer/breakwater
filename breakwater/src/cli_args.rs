@@ -104,9 +104,11 @@ pub struct CliArgs {
 
     /// Provide a path to a dylib containing a custom egui overlay.
     /// Implies --native-display.
+    //
+    // Qualifying import here to avoid feature-specific imports
     #[cfg(feature = "egui")]
     #[clap(long)]
-    pub ui: Option<std::path::PathBuf>, // Qualifying import here to avoid feature-specific imports
+    pub ui: Option<std::path::PathBuf>,
 
     /// Create (or use an existing) shared memory region for the framebuffer.
     /// This enables other applications to read and write Pixel values to the framebuffer or can be
