@@ -101,14 +101,17 @@ impl SharedMemoryFrameBuffer {
 }
 
 impl FrameBuffer for SharedMemoryFrameBuffer {
+    #[inline(always)]
     fn get_width(&self) -> usize {
         self.width
     }
 
+    #[inline(always)]
     fn get_height(&self) -> usize {
         self.height
     }
 
+    #[inline(always)]
     unsafe fn get_unchecked(&self, x: usize, y: usize) -> u32 {
         unsafe {
             *(self
@@ -118,6 +121,7 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
         }
     }
 
+    #[inline(always)]
     fn set(&self, x: usize, y: usize, rgba: u32) {
         // See 'SimpleFrameBuffer::set' for performance consideration
         if x < self.width && y < self.height {
@@ -133,6 +137,7 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
         }
     }
 
+    #[inline(always)]
     fn set_multi_from_start_index(&self, starting_index: usize, pixels: &[u8]) -> usize {
         let num_pixels = pixels.len() / 4;
 
@@ -155,6 +160,7 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
         num_pixels
     }
 
+    #[inline(always)]
     fn as_bytes(&self) -> &[u8] {
         &self.buffer
     }
