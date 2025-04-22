@@ -1,6 +1,11 @@
 use core::slice;
+use std::{
+    alloc::{self, Layout},
+    cell::UnsafeCell,
+    ptr::NonNull,
+};
 
-use color_eyre::eyre::{self, Context, bail};
+use color_eyre::eyre::{self, Context, ContextCompat, bail};
 use shared_memory::{Shmem, ShmemConf, ShmemError};
 use tracing::{debug, info, instrument};
 
@@ -16,7 +21,11 @@ unsafe impl Sync for SharedMemoryFrameBuffer {}
 pub struct SharedMemoryFrameBuffer {
     width: usize,
     height: usize,
-    buffer: Box<[u8]>,
+
+    bytes: usize,
+    buffer: NonNull<UnsafeCell<[u8]>>,
+
+    deallocate_buffer_on_drop: bool,
 
     /// We need to keep the shared memory (so not drop it), otherwise we get a segfault.
     #[allow(unused)]
@@ -31,19 +40,29 @@ impl SharedMemoryFrameBuffer {
         shared_memory_name: Option<&str>,
     ) -> eyre::Result<Self> {
         let pixels = width * height;
+        let bytes = pixels * FB_BYTES_PER_PIXEL;
 
         let Some(shared_memory_name) = shared_memory_name else {
             debug!("Using plain (non shared memory) framebuffer");
 
-            let mut buffer = Vec::with_capacity(pixels * FB_BYTES_PER_PIXEL);
-            buffer.resize_with(pixels * FB_BYTES_PER_PIXEL, || 0);
-            let buffer = buffer.into_boxed_slice();
+            let layout = Layout::array::<u8>(bytes)
+                .context("Invalid memory layout for framebuffer buffer")?;
+            let ptr = unsafe { alloc::alloc(layout) };
+            if ptr.is_null() {
+                bail!("Failed to allocate framebuffer memory (returned pointer was null)");
+            }
+            let slice_ptr: *mut [u8] = std::ptr::slice_from_raw_parts_mut(ptr, bytes);
+            let cell_ptr = slice_ptr as *mut UnsafeCell<[u8]>;
+            let buffer =
+                NonNull::new(cell_ptr).context("failed to create non-null framebuffer buffer")?;
 
             return Ok(Self {
                 width,
                 height,
+                bytes,
                 buffer,
                 shared_memory: None,
+                deallocate_buffer_on_drop: true,
             });
         };
 
@@ -86,19 +105,38 @@ impl SharedMemoryFrameBuffer {
             *size_ptr.add(1) = height.try_into().context("Framebuffer height too high")?;
         }
 
-        let buffer = unsafe {
-            Box::from_raw(slice::from_raw_parts_mut(
-                shared_memory.as_ptr().add(2),
-                pixels * FB_BYTES_PER_PIXEL,
-            ))
-        };
+        // We need to skip the 4 header bytes
+        let fb_base_ptr = unsafe { shared_memory.as_ptr().add(4) };
+        let slice_ptr: *mut [u8] = std::ptr::slice_from_raw_parts_mut(fb_base_ptr, bytes);
+        let cell_ptr = slice_ptr as *mut UnsafeCell<[u8]>;
+        let buffer = NonNull::new(cell_ptr)
+            .context("failed to create non-null framebuffer buffer from shared memory")?;
 
         Ok(Self {
             width,
             height,
+            bytes,
             buffer,
             shared_memory: Some(shared_memory),
+            // When the `Shmem` get's dropped, it automatically frees the underlying memory
+            deallocate_buffer_on_drop: false,
         })
+    }
+}
+
+impl Drop for SharedMemoryFrameBuffer {
+    fn drop(&mut self) {
+        if !self.deallocate_buffer_on_drop {
+            return;
+        }
+
+        let ptr = self.buffer.as_ptr() as *mut u8;
+        // We can not use "normal" error handling here, so we expect() instead
+        let layout =
+            Layout::array::<u8>(self.bytes).expect("Invalid memory layout for framebuffer buffer");
+        unsafe {
+            alloc::dealloc(ptr, layout);
+        }
     }
 }
 
@@ -115,29 +153,28 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
 
     #[inline(always)]
     unsafe fn get_unchecked(&self, x: usize, y: usize) -> u32 {
-        unsafe {
-            (self
-                .buffer
-                .as_ptr()
-                .add((x + y * self.width) * FB_BYTES_PER_PIXEL) as *const u32)
-                // The buffer coming from the shared memory might be unaligned!
-                .read_unaligned()
-        }
+        debug_assert!(x < self.width);
+        debug_assert!(y < self.height);
+
+        let offset = (x + y * self.width) * FB_BYTES_PER_PIXEL;
+
+        let base_ptr = self.buffer.as_ptr() as *const u8;
+        let pixel_ptr = unsafe { base_ptr.add(offset) } as *const u32;
+
+        // The buffer coming from the shared memory might be unaligned!
+        unsafe { pixel_ptr.read_unaligned() }
     }
 
     #[inline(always)]
     fn set(&self, x: usize, y: usize, rgba: u32) {
         // See 'SimpleFrameBuffer::set' for performance consideration
         if x < self.width && y < self.height {
-            unsafe {
-                let ptr = self
-                    .buffer
-                    .as_ptr()
-                    .add((x + y * self.width) * FB_BYTES_PER_PIXEL)
-                    as *mut u32;
-                // The buffer coming from the shared memory might be unaligned!
-                ptr.write_unaligned(rgba)
-            }
+            let offset = (x + y * self.width) * FB_BYTES_PER_PIXEL;
+            let base_ptr = unsafe { self.buffer.as_ref().get() } as *mut u8;
+            let pixel_ptr = unsafe { base_ptr.add(offset) } as *mut u32;
+
+            // The buffer coming from the shared memory might be unaligned!
+            unsafe { pixel_ptr.write_unaligned(rgba) }
         }
     }
 
@@ -145,20 +182,19 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
     fn set_multi_from_start_index(&self, starting_index: usize, pixels: &[u8]) -> usize {
         let num_pixels = pixels.len() / 4;
 
-        if starting_index + num_pixels > self.width * self.height {
+        if starting_index + num_pixels > self.get_size() {
             debug!(
                 starting_index,
                 num_pixels,
-                buffer_len = self.buffer.len(),
+                buffer_bytes = self.bytes,
                 "Ignoring invalid set_multi call, which would exceed the screen",
             );
             // We did not move
             return 0;
         }
 
-        let starting_ptr = unsafe { self.buffer.as_ptr().add(starting_index) };
-        let target_slice =
-            unsafe { slice::from_raw_parts_mut(starting_ptr as *mut u8, pixels.len()) };
+        let base_ptr = unsafe { self.buffer.as_ref().get() } as *mut u8;
+        let target_slice = unsafe { slice::from_raw_parts_mut(base_ptr, pixels.len()) };
         target_slice.copy_from_slice(pixels);
 
         num_pixels
@@ -166,6 +202,7 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
 
     #[inline(always)]
     fn as_bytes(&self) -> &[u8] {
-        &self.buffer
+        let base_ptr = self.buffer.as_ptr() as *const u8;
+        unsafe { slice::from_raw_parts(base_ptr as *mut u8, self.bytes) }
     }
 }
