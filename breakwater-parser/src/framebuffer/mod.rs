@@ -11,6 +11,7 @@ pub trait FrameBuffer {
     fn get_height(&self) -> usize;
 
     /// Returns the number of pixels (not bytes)
+    #[inline(always)]
     fn get_size(&self) -> usize {
         self.get_width() * self.get_height()
     }
