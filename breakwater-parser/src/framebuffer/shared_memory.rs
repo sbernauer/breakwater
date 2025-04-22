@@ -76,7 +76,9 @@ impl SharedMemoryFrameBuffer {
 
         info!(
             actual_size,
-            target_size, "Shared memory \"shared_memory_name\" loaded"
+            name = shared_memory_name,
+            target_size,
+            "Shared memory loaded"
         );
         let size_ptr = shared_memory.as_ptr() as *mut u16;
         unsafe {
