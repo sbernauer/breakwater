@@ -68,7 +68,7 @@ impl SharedMemoryFrameBuffer {
 
         let target_size = HEADER_SIZE + pixels * FB_BYTES_PER_PIXEL;
 
-        let shared_memory = match ShmemConf::new()
+        let mut shared_memory = match ShmemConf::new()
             .os_id(shared_memory_name)
             .size(target_size)
             .create()
@@ -84,6 +84,11 @@ impl SharedMemoryFrameBuffer {
                 format!("failed to create shared memory \"{shared_memory_name}\"")
             })?,
         };
+
+        // In case we crate the shared memory we are the owner. In that case `shared_memory` will
+        // delete the shared memory on `drop`. As we want to persist the framebuffer across
+        // restarts, we set the owner to false.
+        shared_memory.set_owner(false);
 
         let actual_size = shared_memory.len();
         if actual_size != target_size {
