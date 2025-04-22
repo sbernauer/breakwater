@@ -146,11 +146,11 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
         let num_pixels = pixels.len() / 4;
 
         if starting_index + num_pixels > self.width * self.height {
-            dbg!(
-                "Ignoring invalid set_multi call, which would exceed the screen",
+            debug!(
                 starting_index,
                 num_pixels,
-                self.width * self.height,
+                buffer_len = self.buffer.len(),
+                "Ignoring invalid set_multi call, which would exceed the screen",
             );
             // We did not move
             return 0;

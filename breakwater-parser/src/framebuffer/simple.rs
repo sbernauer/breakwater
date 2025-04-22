@@ -1,5 +1,7 @@
 use core::slice;
 
+use tracing::debug;
+
 use super::{FB_BYTES_PER_PIXEL, FrameBuffer};
 
 pub struct SimpleFrameBuffer {
@@ -56,11 +58,11 @@ impl FrameBuffer for SimpleFrameBuffer {
         let num_pixels = pixels.len() / FB_BYTES_PER_PIXEL;
 
         if starting_index + num_pixels > self.buffer.len() {
-            dbg!(
-                "Ignoring invalid set_multi call, which would exceed the screen",
+            debug!(
                 starting_index,
                 num_pixels,
-                self.buffer.len()
+                buffer_len = self.buffer.len(),
+                "Ignoring invalid set_multi call, which would exceed the screen",
             );
             // We did not move
             return 0;
