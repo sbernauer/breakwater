@@ -65,8 +65,13 @@ size_t parse(const char *buffer, size_t length, struct framebuffer* framebuffer,
                 uint32_t rgb = fast_hex(p, 6);
                 p += 6;
 
-                // For some reason we need to move the green channel
-                rgb = ((rgb << 16) & 0xff000000) | (rgb & 0x00ff00ff);
+                rgb =
+                    // Green
+                    rgb & 0x0000ff00
+                    // Red
+                    | ((rgb >> 16) & 0x000000ff)
+                    // Blue
+                    | ((rgb << 16) & 0x00ff0000);
 
                 fb_set(framebuffer, x, y, rgb);
                 continue;
