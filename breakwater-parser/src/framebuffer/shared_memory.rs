@@ -1,11 +1,7 @@
 use core::slice;
-use std::{
-    alloc::{self, Layout},
-    cell::UnsafeCell,
-    ptr::NonNull,
-};
+use std::{cell::UnsafeCell, pin::Pin};
 
-use color_eyre::eyre::{self, Context, ContextCompat, bail};
+use color_eyre::eyre::{self, Context, bail};
 use shared_memory::{Shmem, ShmemConf, ShmemError};
 use tracing::{debug, info, instrument};
 
@@ -23,13 +19,21 @@ pub struct SharedMemoryFrameBuffer {
     height: usize,
 
     bytes: usize,
-    buffer: NonNull<UnsafeCell<[u8]>>,
 
-    deallocate_buffer_on_drop: bool,
-
-    /// We need to keep the shared memory (so not drop it), otherwise we get a segfault.
+    // This owns the memory, but is never accessed
     #[allow(unused)]
-    shared_memory: Option<Shmem>,
+    memory: MemoryType,
+
+    // This is a reference to the owned memory
+    // Safety: valid as long as memory won`t change/move/...
+    buffer: Pin<&'static [UnsafeCell<u8>]>,
+}
+
+// This owns the memory, but is never accessed
+#[allow(unused)]
+enum MemoryType {
+    Shared(Shmem),
+    Local(Pin<Box<[UnsafeCell<u8>]>>),
 }
 
 impl SharedMemoryFrameBuffer {
@@ -39,36 +43,53 @@ impl SharedMemoryFrameBuffer {
         height: usize,
         shared_memory_name: Option<&str>,
     ) -> eyre::Result<Self> {
+        match shared_memory_name {
+            Some(shared_memory_name) => {
+                Self::new_from_shared_memory(width, height, shared_memory_name)
+            }
+            None => Self::new_with_local_memory(width, height),
+        }
+    }
+
+    #[instrument(skip_all)]
+    fn new_with_local_memory(width: usize, height: usize) -> eyre::Result<Self> {
         let pixels = width * height;
         let bytes = pixels * FB_BYTES_PER_PIXEL;
 
-        let Some(shared_memory_name) = shared_memory_name else {
-            debug!("Using plain (non shared memory) framebuffer");
+        debug!("Using plain (non shared memory) framebuffer");
 
-            let layout = Layout::array::<u8>(bytes)
-                .context("Invalid memory layout for framebuffer buffer")?;
-            let ptr = unsafe { alloc::alloc(layout) };
-            if ptr.is_null() {
-                bail!("Failed to allocate framebuffer memory (returned pointer was null)");
-            }
-            let slice_ptr: *mut [u8] = std::ptr::slice_from_raw_parts_mut(ptr, bytes);
-            let cell_ptr = slice_ptr as *mut UnsafeCell<[u8]>;
-            let buffer =
-                NonNull::new(cell_ptr).context("failed to create non-null framebuffer buffer")?;
-
-            return Ok(Self {
-                width,
-                height,
-                bytes,
-                buffer,
-                shared_memory: None,
-                deallocate_buffer_on_drop: true,
-            });
+        let memory: Pin<Box<[UnsafeCell<u8>]>> = Pin::new(
+            (0..(bytes))
+                .map(|_| UnsafeCell::new(0u8))
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        );
+        let buffer = unsafe {
+            std::mem::transmute::<Pin<&[UnsafeCell<u8>]>, Pin<&'static [UnsafeCell<u8>]>>(
+                memory.as_ref(),
+            )
         };
 
-        let target_size = HEADER_SIZE + pixels * FB_BYTES_PER_PIXEL;
+        Ok(Self {
+            width,
+            height,
+            bytes,
+            memory: MemoryType::Local(memory),
+            buffer,
+        })
+    }
 
-        let shared_memory = match ShmemConf::new()
+    #[instrument(skip_all)]
+    fn new_from_shared_memory(
+        width: usize,
+        height: usize,
+        shared_memory_name: &str,
+    ) -> eyre::Result<Self> {
+        let pixels = width * height;
+        let framebuffer_bytes = pixels * FB_BYTES_PER_PIXEL;
+        let target_size = HEADER_SIZE + framebuffer_bytes;
+
+        let mut shared_memory = match ShmemConf::new()
             .os_id(shared_memory_name)
             .size(target_size)
             .create()
@@ -84,6 +105,11 @@ impl SharedMemoryFrameBuffer {
                 format!("failed to create shared memory \"{shared_memory_name}\"")
             })?,
         };
+
+        // In case we crate the shared memory we are the owner. In that case `shared_memory` will
+        // delete the shared memory on `drop`. As we want to persist the framebuffer across
+        // restarts, we set the owner to false.
+        shared_memory.set_owner(false);
 
         let actual_size = shared_memory.len();
         if actual_size != target_size {
@@ -106,37 +132,20 @@ impl SharedMemoryFrameBuffer {
         }
 
         // We need to skip the 4 header bytes
-        let fb_base_ptr = unsafe { shared_memory.as_ptr().add(4) };
-        let slice_ptr: *mut [u8] = std::ptr::slice_from_raw_parts_mut(fb_base_ptr, bytes);
-        let cell_ptr = slice_ptr as *mut UnsafeCell<[u8]>;
-        let buffer = NonNull::new(cell_ptr)
-            .context("failed to create non-null framebuffer buffer from shared memory")?;
+        let framebuffer_base_ptr = unsafe { shared_memory.as_ptr().add(HEADER_SIZE) };
+        let buffer = unsafe {
+            let data = framebuffer_base_ptr as *const UnsafeCell<u8>;
+            let slice = Pin::new(slice::from_raw_parts(data, framebuffer_bytes));
+            std::mem::transmute::<Pin<&[UnsafeCell<u8>]>, Pin<&'static [UnsafeCell<u8>]>>(slice)
+        };
 
         Ok(Self {
             width,
             height,
-            bytes,
+            bytes: framebuffer_bytes,
+            memory: MemoryType::Shared(shared_memory),
             buffer,
-            shared_memory: Some(shared_memory),
-            // When the `Shmem` get's dropped, it automatically frees the underlying memory
-            deallocate_buffer_on_drop: false,
         })
-    }
-}
-
-impl Drop for SharedMemoryFrameBuffer {
-    fn drop(&mut self) {
-        if !self.deallocate_buffer_on_drop {
-            return;
-        }
-
-        let ptr = self.buffer.as_ptr() as *mut u8;
-        // We can not use "normal" error handling here, so we expect() instead
-        let layout =
-            Layout::array::<u8>(self.bytes).expect("Invalid memory layout for framebuffer buffer");
-        unsafe {
-            alloc::dealloc(ptr, layout);
-        }
     }
 }
 
@@ -170,8 +179,7 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
         // See 'SimpleFrameBuffer::set' for performance consideration
         if x < self.width && y < self.height {
             let offset = (x + y * self.width) * FB_BYTES_PER_PIXEL;
-            let base_ptr = unsafe { self.buffer.as_ref().get() } as *mut u8;
-            let pixel_ptr = unsafe { base_ptr.add(offset) } as *mut u32;
+            let pixel_ptr = unsafe { self.buffer.get_unchecked(offset).get() } as *mut u32;
 
             // The buffer coming from the shared memory might be unaligned!
             unsafe { pixel_ptr.write_unaligned(rgba) }
@@ -193,8 +201,8 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
             return 0;
         }
 
-        let base_ptr = unsafe { self.buffer.as_ref().get() } as *mut u8;
-        let target_slice = unsafe { slice::from_raw_parts_mut(base_ptr, pixels.len()) };
+        let starting_ptr = unsafe { self.buffer.get_unchecked(starting_index) }.get();
+        let target_slice = unsafe { slice::from_raw_parts_mut(starting_ptr, pixels.len()) };
         target_slice.copy_from_slice(pixels);
 
         num_pixels
