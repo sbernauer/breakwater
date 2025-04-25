@@ -43,13 +43,21 @@ nixpkgs.mkShell {
 
 `sbernauer@debian:~/pixelflut/f-stack/example$ make # Only needed for testing`
 
-### Build breakwater-fstack
+### Build breakwater-f-stack
 
 `export FF_PATH=/home/sbernauer/pixelflut/f-stack/`
 
 `make`
 
-### Run breakwater-fstack server
+### Run breakwater-f-stack server
+
+#### Prerequisites
+
+You need to have a breakwater server running using `cargo run --release -- --shared-memory-name breakwater --vnc`.
+This opens the shared memory region for the breakwater-f-stack server to write into.
+You can connect via VNC or append `--native-display` to the breakwater call to get a graphical output.
+
+#### Run breakwater-f-stack
 
 Start server on 0000:02:00.0:
 
@@ -69,15 +77,16 @@ Add clients IP:
 
 `ping 192.168.1.2` should now succeed (if it doesn't check e.g. `dmesg`).
 
-100 connections, 10s
-epoll:      Requests/sec: 166722.4461
-            Requests/sec: 163271.0972
-No epoll:   Requests/sec: 171561.5445
-            Requests/sec: 175499.0806
+With a single desktop core from 2011 we can get 4.5 Gbit/s, pretty slow!
+Normal breakwater on a single core on the same machine reaches 12G via loopback.
 
-1000 connections, 10s
-epoll:      Requests/sec: 163363.2243
-No epoll:   Requests/sec: 162239.4396
+### Run on multiple cores
+
+Disclaimer: While I got it to run on multiple cores I could not get it faster than running on a single core yet!
+
+1. Edit `lcore_mask` in `config.ini`. Hint: It's hexadecimal.
+2. Start multiple processes using `sudo ./start.sh`
+3. Stop all running processes using `sudo pkill -f breakwater-f-stack`
 
 ### Special experiment for virtual device, as my NIC is not supported
 

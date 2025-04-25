@@ -32,7 +32,7 @@ int sockfd6;
 #endif
 
 // The main read buffer
-char buf[32 * 1024];
+char buf[1024 * 1024];
 
 // Array of pointers to client structures
 client_state **clients;
