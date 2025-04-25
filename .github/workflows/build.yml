@@ -145,6 +145,9 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             file-suffix: ""
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            file-suffix: ""
           # - target: x86_64-pc-windows-gnu
           #   os: windows-latest
           #   file-suffix: ".exe"
