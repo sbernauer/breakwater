@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Support using shared memory for the framebuffer.
-  This enables other applications to read and write Pixel values to the framebuffer or can be used
+  This enables other applications to read and write Pixel values of the framebuffer and can be used
   to persist the canvas across restarts ([#55])
 
 ### Changed
