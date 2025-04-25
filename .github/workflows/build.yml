@@ -179,7 +179,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --target=${{ matrix.target }} --no-default-features
+          args: --target=${{ matrix.target }} --all-features
       # Currently the macOS build is broken because of
       #
       # error: failed to run custom build command for `vncserver v0.2.2 (https://github.com/sbernauer/libvnc-rs.git#2bf903ad)`
