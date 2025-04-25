@@ -39,9 +39,20 @@ jobs:
         run: sudo apt update && sudo apt install -y libvncserver-dev
       - if: runner.os == 'macOS'
         run: brew install libvncserver
-      - name: Build binary
+      - if: runner.os != 'Windows'
+        name: Build binary (non Windows)
         # We don't want to e.g. set "-C target-cpu=native", so that the binary should run everywhere
         run: RUSTFLAGS='' cargo build --release --target=${{ matrix.target }} --no-default-features --features egui
+      - if: runner.os == 'Windows'
+        name: Build binary (Windows)
+        # Windows is a joke :)
+        # RUSTFLAGS=: D:\a\_temp\c6583298-1841-4717-a693-03c0ce03fed6.ps1:2
+        # Line |
+        #    2 |  RUSTFLAGS='' cargo build --release --target=x86_64-pc-windows-gnu --n …
+        #      |  ~~~~~~~~~~~~
+        #      | The term 'RUSTFLAGS=' is not recognized as a name of a cmdlet, function, script file, or executable program.
+        #      | Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+        run: cargo build --release --target=${{ matrix.target }} --no-default-features --features egui
       - name: Rename binary file
         run: mv target/${{ matrix.target }}/release/breakwater${{ matrix.file-suffix }} breakwater-${{ matrix.target }}${{ matrix.file-suffix }}
       - name: Upload Release binaries
