@@ -1,4 +1,4 @@
-FROM rust:1.84.1-bookworm AS builder
+FROM rust:1.86.0-bookworm AS builder
 
 RUN apt-get update && \
     apt-get install -y clang libvncserver-dev && \

@@ -31,7 +31,7 @@ Note: This command needs to be enabled using the `binary-sync-pixels` feature
 The easiest way is to continue with the provided [Ready to use Docker setup](#run-in-docker-container) below.
 
 If you prefer the manual way (the best performance - as e.g. can use native SIMD instructions) you need to have [Rust installed](https://www.rust-lang.org/tools/install).
-You may need to install some additional packages with `sudo apt install pkg-config libvncserver-dev`
+You may need to install some additional packages with `sudo apt install clang pkg-config libvncserver-dev`
 Then you can directly run the server with
 
 ```bash
@@ -86,7 +86,7 @@ Options:
       --rtmp-address <RTMP_ADDRESS>
           Enable rtmp streaming to configured address, e.g. `rtmp://127.0.0.1:1935/live/test`
       --video-save-folder <VIDEO_SAVE_FOLDER>
-          Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4
+          Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4`
   -c, --connections-per-ip <CONNECTIONS_PER_IP>
           Allow only a certain number of connections per ip address
       --vnc
@@ -96,11 +96,13 @@ Options:
       --native-display
           Enable native display output. This requires some form of graphical system (so will probably not work on your server)
       --viewport <VIEWPORT>
-          Specify a view port to display the canvas or a certain part of it. Format: <offset_x>x<offset_y>,<width>x<height>. Might be specified multiple times for more than one viewport. Useful for multi-projector setups. Defaults to display the entire canvas. Implies --native-display
+          Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`. Might be specified multiple times for more than one viewport. Useful for multi-projector setups. Defaults to display the entire canvas. Implies --native-display
       --advertised-endpoints <ADVERTISED_ENDPOINTS>
           Specify one or more pixelflut endpoints to display
       --ui <UI>
-          Provide a path to a dylib containing a custom egui overlay
+          Provide a path to a dylib containing a custom egui overlay. Implies --native-display
+      --shared-memory-name <SHARED_MEMORY_NAME>
+          Create (or use an existing) shared memory region for the framebuffer. This enables other applications to read and write Pixel values to the framebuffer or can be used to persist the canvas across restarts
   -h, --help
           Print help
   -V, --version
@@ -145,13 +147,13 @@ If the SIMD or nightly part causes any problems on your setup please reach out b
 This command will start the Pixelflut server in a docker container
 
 ```bash
-docker run --rm --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 sbernauer/breakwater # --help
+docker run --rm --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 sbernauer/breakwater --vnc
 ```
 
 If you want to permanently save statistics (to keep them between restarts) you can use the following command:
 
 ```bash
-mkdir -p pixelflut && docker run --rm -u 1000:1000 --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 -v "$(pwd)/pixelflut:/pixelflut" sbernauer/breakwater --statistics-save-file /pixelflut/statistics.json
+mkdir -p pixelflut && docker run --rm -u 1000:1000 --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 -v "$(pwd)/pixelflut:/pixelflut" sbernauer/breakwater --vnc --statistics-save-file /pixelflut/statistics.json
 ```
 
 # Ready to use Docker compose setup
