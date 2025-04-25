@@ -26,7 +26,11 @@ pub struct CliArgs {
 
     /// The size in bytes of the network buffer used for each open TCP connection.
     /// Please use at least 64 KB (64_000 bytes).
-    #[clap(long, default_value = DEFAULT_NETWORK_BUFFER_SIZE_STR, value_parser = 64_000..100_000_000)]
+    #[clap(
+        long,
+        default_value = DEFAULT_NETWORK_BUFFER_SIZE_STR,
+        value_parser = 64_000..100_000_000,
+    )]
     pub network_buffer_size: i64,
 
     /// Text to display on the screen.
@@ -100,7 +104,15 @@ pub struct CliArgs {
 
     /// Provide a path to a dylib containing a custom egui overlay.
     /// Implies --native-display.
+    //
+    // Qualifying import here to avoid feature-specific imports
     #[cfg(feature = "egui")]
     #[clap(long)]
     pub ui: Option<std::path::PathBuf>,
+
+    /// Create (or use an existing) shared memory region for the framebuffer.
+    /// This enables other applications to read and write Pixel values to the framebuffer or can be
+    /// used to persist the canvas across restarts.
+    #[clap(long)]
+    pub shared_memory_name: Option<String>,
 }

@@ -113,19 +113,19 @@ fn calc_new_vertices(
 
     [
         Vertex {
-            position: [-1.0 * a, 1.0 * b],
+            position: [-a, b],
             tex_coords: [u, v],
         },
         Vertex {
-            position: [-1.0 * a, -1.0 * b],
+            position: [-a, -b],
             tex_coords: [u, v + vv],
         },
         Vertex {
-            position: [1.0 * a, 1.0 * b],
+            position: [a, b],
             tex_coords: [u + uu, v],
         },
         Vertex {
-            position: [1.0 * a, -1.0 * b],
+            position: [a, -b],
             tex_coords: [u + uu, v + vv],
         },
     ]

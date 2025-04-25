@@ -135,14 +135,14 @@ impl<FB: FrameBuffer> ApplicationHandler for NativeDisplaySink<FB> {
                 let window = surface.window().clone();
                 let mut buffer = surface.buffer_mut().expect("Failed to get mutable buffer");
 
-                let fbsize = self.fb.as_pixels().len();
-                if buffer.len() != fbsize {
+                let fb_size = self.fb.get_size();
+                if buffer.len() != fb_size {
                     tracing::warn!(
                         buffer_size = buffer.len(),
-                        fb_size = fbsize,
+                        fb_size,
                         "window buffer has size {}, but fb has size {}! Skipping redraw.",
                         buffer.len(),
-                        fbsize
+                        fb_size
                     );
                     return;
                 }
@@ -150,11 +150,12 @@ impl<FB: FrameBuffer> ApplicationHandler for NativeDisplaySink<FB> {
                 buffer.copy_from_slice(
                     &self
                         .fb
-                        .as_pixels()
-                        .iter()
-                        .map(|pixel| (pixel << 8).swap_bytes())
+                        .as_bytes()
+                        .chunks_exact(4)
+                        .map(|chunk| u32::from_be_bytes([0, chunk[0], chunk[1], chunk[2]]))
                         .collect::<Vec<_>>(),
                 );
+
                 window.pre_present_notify();
                 buffer.present().expect("Failed to present buffer");
                 window.request_redraw();

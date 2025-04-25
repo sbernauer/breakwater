@@ -163,7 +163,7 @@ extern "C" fn draw_ui(
                             .size(24.0),
                     );
                     ui.label(
-                        egui::RichText::new(format!("{}", connections))
+                        egui::RichText::new(format!("{connections}"))
                             .color(COLOR_HIGHLIGHT)
                             .size(24.0)
                             .strong(),
@@ -174,7 +174,7 @@ extern "C" fn draw_ui(
                             .size(24.0),
                     );
                     ui.label(
-                        egui::RichText::new(format!("{}", ips_v6))
+                        egui::RichText::new(format!("{ips_v6}"))
                             .color(COLOR_HIGHLIGHT)
                             .size(24.0)
                             .strong(),
@@ -200,7 +200,7 @@ extern "C" fn draw_ui(
                             .size(24.0),
                     );
                     ui.label(
-                        egui::RichText::new(format!("{}", ips_v4))
+                        egui::RichText::new(format!("{ips_v4}"))
                             .color(COLOR_HIGHLIGHT)
                             .size(24.0)
                             .strong(),

@@ -1,14 +1,23 @@
+pub mod shared_memory;
 pub mod simple;
 
+pub const FB_BYTES_PER_PIXEL: usize = std::mem::size_of::<u32>();
+
 pub trait FrameBuffer {
+    /// Width in pixels
     fn get_width(&self) -> usize;
 
+    /// Height in pixels
     fn get_height(&self) -> usize;
 
+    /// Returns the number of pixels (not bytes)
+    #[inline(always)]
     fn get_size(&self) -> usize {
         self.get_width() * self.get_height()
     }
 
+    /// In case the coordinates are within the framebuffers area, [`Some`] with
+    /// the current color is returned, [`None`] otherwise.
     #[inline(always)]
     fn get(&self, x: usize, y: usize) -> Option<u32> {
         if x < self.get_width() && y < self.get_height() {
@@ -43,7 +52,7 @@ pub trait FrameBuffer {
     /// Returns the number of pixels copied
     fn set_multi_from_start_index(&self, starting_index: usize, pixels: &[u8]) -> usize;
 
+    /// As the pixel memory doesn't necessarily need to be aligned (think of using shared memory for
+    /// that), we can only return it as a list of bytes, not a list of pixels.
     fn as_bytes(&self) -> &[u8];
-
-    fn as_pixels(&self) -> &[u32];
 }

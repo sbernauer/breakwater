@@ -1,6 +1,8 @@
 use core::slice;
 
-use super::FrameBuffer;
+use tracing::debug;
+
+use super::{FB_BYTES_PER_PIXEL, FrameBuffer};
 
 pub struct SimpleFrameBuffer {
     width: usize,
@@ -53,14 +55,14 @@ impl FrameBuffer for SimpleFrameBuffer {
 
     #[inline(always)]
     fn set_multi_from_start_index(&self, starting_index: usize, pixels: &[u8]) -> usize {
-        let num_pixels = pixels.len() / 4;
+        let num_pixels = pixels.len() / FB_BYTES_PER_PIXEL;
 
         if starting_index + num_pixels > self.buffer.len() {
-            dbg!(
-                "Ignoring invalid set_multi call, which would exceed the screen",
+            debug!(
                 starting_index,
                 num_pixels,
-                self.buffer.len()
+                buffer_len = self.buffer.len(),
+                "Ignoring invalid set_multi call, which would exceed the screen",
             );
             // We did not move
             return 0;
@@ -76,14 +78,9 @@ impl FrameBuffer for SimpleFrameBuffer {
 
     #[inline(always)]
     fn as_bytes(&self) -> &[u8] {
-        let len = 4 * self.buffer.len();
+        let len = self.buffer.len() * FB_BYTES_PER_PIXEL;
         let ptr = self.buffer.as_ptr() as *const u8;
         unsafe { std::slice::from_raw_parts(ptr, len) }
-    }
-
-    #[inline(always)]
-    fn as_pixels(&self) -> &[u32] {
-        &self.buffer
     }
 }
 
@@ -176,7 +173,7 @@ mod tests {
 
     #[rstest]
     pub fn test_set_multi_does_nothing_when_too_long(fb: SimpleFrameBuffer) {
-        let mut too_long = Vec::with_capacity(fb.width * fb.height * 4 /* pixels per byte */);
+        let mut too_long = Vec::with_capacity(fb.width * fb.height * FB_BYTES_PER_PIXEL);
         too_long.fill_with(|| 42_u8);
         let (current_x, current_y) = fb.set_multi(1, 0, &too_long);
 
