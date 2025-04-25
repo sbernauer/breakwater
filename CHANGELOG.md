@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.18.0] - 2025-04-25
+
 ### Added
 
 - Support using shared memory for the framebuffer.
