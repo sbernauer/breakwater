@@ -148,9 +148,9 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
             file-suffix: ""
-          # - target: x86_64-pc-windows-gnu
-          #   os: windows-latest
-          #   file-suffix: ".exe"
+          - target: x86_64-pc-windows-gnu
+            os: windows-latest
+            file-suffix: ".exe"
           - target: x86_64-apple-darwin
             os: macos-latest
             file-suffix: ""
@@ -180,16 +180,15 @@ jobs:
         with:
           command: build
           args: --target=${{ matrix.target }} --no-default-features
-      # Currently the macOS build is broken because of
-      #
-      # error: failed to run custom build command for `vncserver v0.2.2 (https://github.com/sbernauer/libvnc-rs.git#2bf903ad)`
-      #   thread 'main' panicked at /Users/runner/.cargo/git/checkouts/libvnc-rs-5fba04f2b7022219/2bf903a/vncserver/build.rs:9:66:
-      # called `Result::unwrap()` on an `Err` value: pkg-config has not been configured to support cross-compilation.
-      #
-      # This is because GitHub switched their macOS runners to use arm, and they currently can not cross-compile to x86.
-      # What a time to be alive!
-      #
-      # - uses: actions-rs/cargo@v1
-      #   with:
-      #     command: build
-      #     args: --target=${{ matrix.target }} --all-features
+      - if: runner.os == 'Linux'
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --target=${{ matrix.target }} --all-features
+      # pkg-config on MaxOS and Windows is a pain!
+      # As it is only needed for VNC, we disable that feature here
+      - if: runner.os == 'macOS' || runner.os == 'Windows'
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --target=${{ matrix.target }} --no-default-features --features egui

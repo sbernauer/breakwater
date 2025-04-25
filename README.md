@@ -86,7 +86,7 @@ Options:
       --rtmp-address <RTMP_ADDRESS>
           Enable rtmp streaming to configured address, e.g. `rtmp://127.0.0.1:1935/live/test`
       --video-save-folder <VIDEO_SAVE_FOLDER>
-          Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4
+          Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4`
   -c, --connections-per-ip <CONNECTIONS_PER_IP>
           Allow only a certain number of connections per ip address
       --vnc
@@ -96,11 +96,13 @@ Options:
       --native-display
           Enable native display output. This requires some form of graphical system (so will probably not work on your server)
       --viewport <VIEWPORT>
-          Specify a view port to display the canvas or a certain part of it. Format: <offset_x>x<offset_y>,<width>x<height>. Might be specified multiple times for more than one viewport. Useful for multi-projector setups. Defaults to display the entire canvas. Implies --native-display
+          Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`. Might be specified multiple times for more than one viewport. Useful for multi-projector setups. Defaults to display the entire canvas. Implies --native-display
       --advertised-endpoints <ADVERTISED_ENDPOINTS>
           Specify one or more pixelflut endpoints to display
       --ui <UI>
-          Provide a path to a dylib containing a custom egui overlay
+          Provide a path to a dylib containing a custom egui overlay. Implies --native-display
+      --shared-memory-name <SHARED_MEMORY_NAME>
+          Create (or use an existing) shared memory region for the framebuffer. This enables other applications to read and write Pixel values to the framebuffer or can be used to persist the canvas across restarts
   -h, --help
           Print help
   -V, --version

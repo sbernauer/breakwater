@@ -65,7 +65,7 @@ pub struct CliArgs {
     #[clap(long)]
     pub rtmp_address: Option<String>,
 
-    /// Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4
+    /// Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4`
     #[clap(long)]
     pub video_save_folder: Option<String>,
 

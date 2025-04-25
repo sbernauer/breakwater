@@ -24,6 +24,9 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-latest
             file-suffix: ""
+          - target: x86_64-pc-windows-gnu
+            os: windows-latest
+            file-suffix: ".exe"
     steps:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
@@ -38,7 +41,7 @@ jobs:
         run: brew install libvncserver
       - name: Build binary
         # We don't want to e.g. set "-C target-cpu=native", so that the binary should run everywhere
-        run: RUSTFLAGS='' cargo build --release --target=${{ matrix.target }} --no-default-features
+        run: RUSTFLAGS='' cargo build --release --target=${{ matrix.target }} --no-default-features --features egui
       - name: Rename binary file
         run: mv target/${{ matrix.target }}/release/breakwater${{ matrix.file-suffix }} breakwater-${{ matrix.target }}${{ matrix.file-suffix }}
       - name: Upload Release binaries
