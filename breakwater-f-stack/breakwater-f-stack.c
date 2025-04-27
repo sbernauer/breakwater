@@ -18,6 +18,9 @@
 #include "framebuffer.h"
 #include "parser.h"
 
+extern void breakwater_init_original_parser(int width, int height);
+extern size_t breakwater_original_parser_parse(const char* buffer, size_t buffer_len);
+
 #define MAX_EVENTS 512
 
 /* kevent set */
@@ -160,7 +163,9 @@ int loop(void *arg)
             ssize_t readlen = ff_read(clientfd, buf, sizeof(buf));
             client->bytes_parsed += readlen;
 
-            size_t bytes_parsed = parse(buf, readlen, framebuffer, clientfd);
+            // size_t bytes_parsed = parse(buf, readlen, framebuffer, clientfd);
+            long parsed = breakwater_original_parser_parse(buf, readlen);
+            printf("Parse result: %ld\n", parsed);
         } else {
             printf("unknown event: %8.8X\n", event.flags);
         }
@@ -172,6 +177,8 @@ int loop(void *arg)
 int main(int argc, char * argv[])
 {
     int err = 0;
+
+    breakwater_init_original_parser(WIDTH, HEIGHT);
 
     struct framebuffer* framebuffer;
     if((err = create_fb(&framebuffer, WIDTH, HEIGHT, SHARED_MEMORY_NAME))) {
