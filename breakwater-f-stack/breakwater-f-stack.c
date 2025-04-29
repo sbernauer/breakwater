@@ -173,6 +173,7 @@ int loop(void *arg)
             } while (available);
         } else if (event.filter == EVFILT_READ) {
             ssize_t readlen = ff_read(clientfd, buf, sizeof(buf));
+            // printf("readlen: %ld\n", readlen);
             // client_state *client = get_client(clientfd);
             // client->bytes_parsed += readlen;
 
@@ -190,9 +191,18 @@ int loop(void *arg)
             if (readlen + parser_lookahead > sizeof(buf)) {
                 // Read as many bytes as we can safely do
                 readlen = sizeof(buf) - parser_lookahead;
+            } else {
+                // Fill the next parser_lookahead bytes with zero, so we don't accidentally
+                // fabricate a valid, but semantically wrong command (e.g. resulting in
+                // "ghost pixels")
+                memset(&buf[readlen], 0, parser_lookahead);
+                // Increase the readlen, so that parser parses everything
+                readlen += parser_lookahead;
             }
+            // printf("readlen after truncation: %ld\n", readlen);
 
             long parsed = breakwater_original_parser_parse(buf, readlen, &response, &response_len);
+            // printf("Parsed %ld bytes\n", parsed);
 
             // Write the response to the client
             ff_write(clientfd, response, response_len);
@@ -210,7 +220,6 @@ int main(int argc, char * argv[])
 
     breakwater_init_original_parser(WIDTH, HEIGHT, SHARED_MEMORY_NAME);
     parser_lookahead = breakwater_original_parser_parser_lookahead();
-    printf("parser_lookahead: %ld", parser_lookahead);
 
     struct framebuffer* framebuffer;
     if((err = create_fb(&framebuffer, WIDTH, HEIGHT, SHARED_MEMORY_NAME))) {
