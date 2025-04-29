@@ -14,13 +14,15 @@ static ORIGINAL_PARSER: OnceLock<Mutex<OriginalParser<SharedMemoryFrameBuffer>>>
 ///
 /// Function is thread safe (I guess).
 ///
+/// # Safety
+///
 /// Arguments:
 ///
 /// 1 `width` (`int`): The width of the canvas in pixels
 /// 2 `height`(`int`): The height of the canvas in pixels
 /// 3. `shared_memory_name_ptr` (`char []`): The name of the shared memory region to create/use.
 #[unsafe(no_mangle)]
-pub extern "C" fn breakwater_init_original_parser(
+pub unsafe extern "C" fn breakwater_init_original_parser(
     width: c_int,
     height: c_int,
     shared_memory_name_ptr: *const c_char,
@@ -54,17 +56,14 @@ pub extern "C" fn breakwater_original_parser_parser_lookahead() -> size_t {
         .get()
         .expect("Call breakwater_init_original_parser first!");
 
-    parser
-        .lock()
-        .unwrap()
-        .parser_lookahead()
-        .try_into()
-        .unwrap()
+    parser.lock().unwrap().parser_lookahead()
 }
 
 /// Parse the given user input.
 ///
 /// Function is thread safe (I guess).
+///
+/// # Safety
 ///
 /// Arguments:
 ///
@@ -76,7 +75,7 @@ pub extern "C" fn breakwater_original_parser_parser_lookahead() -> size_t {
 /// 4. `out_response_len` (`size_t*`): This number will be changed to the number of bytes the output
 ///    for the client has.
 #[unsafe(no_mangle)]
-pub extern "C" fn breakwater_original_parser_parse(
+pub unsafe extern "C" fn breakwater_original_parser_parse(
     buffer: *mut u8,
     buffer_len: size_t,
     out_response_ptr: *mut *mut u8,
@@ -86,7 +85,7 @@ pub extern "C" fn breakwater_original_parser_parse(
         .get()
         .expect("Call breakwater_init_original_parser first!");
 
-    let buffer = unsafe { slice::from_raw_parts(buffer, buffer_len.try_into().unwrap()) };
+    let buffer = unsafe { slice::from_raw_parts(buffer, buffer_len) };
 
     // We don't know how many bytes to allocate upfront. Most clients will probably only send write-
     // traffic and not read much.
@@ -109,5 +108,5 @@ pub extern "C" fn breakwater_original_parser_parse(
     // Don't free the Vec — the C caller will have to free it later!
     std::mem::forget(response);
 
-    parsed.try_into().unwrap()
+    parsed
 }
