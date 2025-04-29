@@ -64,6 +64,8 @@ You can connect via VNC or append `--native-display` to the breakwater call to g
 
 Start server on 0000:02:00.0:
 
+`sudo modprobe uio_pci_generic`
+
 `sudo dpdk-devbind.py --bind=uio_pci_generic 0000:02:00.0`
 
 `sudo bash -c 'echo 1024 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages'`
