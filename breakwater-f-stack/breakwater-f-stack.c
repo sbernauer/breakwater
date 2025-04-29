@@ -172,9 +172,9 @@ int loop(void *arg)
                 available--;
             } while (available);
         } else if (event.filter == EVFILT_READ) {
-            client_state *client = get_client(clientfd);
             ssize_t readlen = ff_read(clientfd, buf, sizeof(buf));
-            client->bytes_parsed += readlen;
+            // client_state *client = get_client(clientfd);
+            // client->bytes_parsed += readlen;
 
             // I have hand-written same *very* basic and inperformant C parser. Because it was so
             // slow, we are instead calling out to the breakwater-parser-c-bindings.
