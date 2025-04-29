@@ -1,6 +1,6 @@
 # breakwater-parser-c-bindings
 
-This bindings allows you to call the breakwater-parsed fom C code (or all other languages that offer FFI with C functions).
+This bindings allows you to call the breakwater-parser fom C code (or all other languages that offer FFI with C functions).
 
 The bindings can be build using `cargo build --release -p breakwater-parser-c-bindings` and will be placed at `target/release/libbreakwater_parser_c_bindings.so`.
 
