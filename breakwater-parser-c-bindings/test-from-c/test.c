@@ -2,16 +2,23 @@
 #include <stdlib.h>
 #include <string.h>
 
-extern void breakwater_init_original_parser(int width, int height);
+// For docs see the Rust docs in `breakwater-parser-c-bindings/src/lib.rs`
+extern void breakwater_init_original_parser(int width, int height, char shared_memory_name[]);
 extern size_t breakwater_original_parser_parser_lookahead();
-extern size_t breakwater_original_parser_parse(const char* buffer, size_t buffer_len);
+extern size_t breakwater_original_parser_parse(
+    const char* buffer,
+    size_t buffer_len,
+    unsigned char** out_response_ptr,
+    size_t* out_response_len
+);
 
 int main(void) {
-    breakwater_init_original_parser(1920, 1080);
+    breakwater_init_original_parser(1920, 1080, "breakwater");
     size_t parser_lookahead = breakwater_original_parser_parser_lookahead();
     printf("Parser lookahead: %ld\n", parser_lookahead);
 
     const char* text = 
+    "HELP\n"
     "PX 0 0 123456\n"
     "PX 0 1 111111\n"
     "PX 0 2 222222\n"
@@ -40,8 +47,16 @@ int main(void) {
     }
     memcpy(buffer, text, text_len);
 
-    long parsed = breakwater_original_parser_parse(buffer, buffer_len);
-    printf("Parse result: %ld\n", parsed);
+    unsigned char* response = NULL;
+    size_t response_len = 0;
+
+    long parsed = breakwater_original_parser_parse(buffer, buffer_len, &response, &response_len);
+    printf("Parse bytes: %ld\n", parsed);
+
+    if (response && response_len > 0) {
+        printf("Response content: %.*s\n", (int)response_len, response);
+        free(response);
+    }
 
     free(buffer);
     return 0;
