@@ -18,8 +18,15 @@
 #include "framebuffer.h"
 #include "parser.h"
 
-extern void breakwater_init_original_parser(int width, int height);
-extern size_t breakwater_original_parser_parse(const char* buffer, size_t buffer_len);
+// For docs see the Rust docs in `breakwater-parser-c-bindings/src/lib.rs`
+extern void breakwater_init_original_parser(int width, int height, char shared_memory_name[]);
+extern size_t breakwater_original_parser_parser_lookahead();
+extern size_t breakwater_original_parser_parse(
+    const char* buffer,
+    size_t buffer_len,
+    unsigned char** out_response_ptr,
+    size_t* out_response_len
+);
 
 #define MAX_EVENTS 512
 
@@ -36,6 +43,9 @@ int sockfd6;
 
 // The main read buffer
 char buf[1024 * 1024];
+// Pointers for the response to the client
+unsigned char* response = NULL;
+size_t response_len = 0;
 
 // Array of pointers to client structures
 client_state **clients;
@@ -163,9 +173,15 @@ int loop(void *arg)
             ssize_t readlen = ff_read(clientfd, buf, sizeof(buf));
             client->bytes_parsed += readlen;
 
+            // I have hand-written same *very* basic and inperformant C parser. Because it was so
+            // slow, we are instead calling out to the breakwater-parser-c-bindings.
             // size_t bytes_parsed = parse(buf, readlen, framebuffer, clientfd);
-            long parsed = breakwater_original_parser_parse(buf, readlen);
-            printf("Parse result: %ld\n", parsed);
+
+            long parsed = breakwater_original_parser_parse(buf, readlen, &response, &response_len);
+            // printf("Parse bytes: %ld\n", parsed);
+
+            // Write the response to the client
+            ff_write(clientfd, response, response_len);
         } else {
             printf("unknown event: %8.8X\n", event.flags);
         }
@@ -178,7 +194,7 @@ int main(int argc, char * argv[])
 {
     int err = 0;
 
-    breakwater_init_original_parser(WIDTH, HEIGHT);
+    breakwater_init_original_parser(WIDTH, HEIGHT, SHARED_MEMORY_NAME);
 
     struct framebuffer* framebuffer;
     if((err = create_fb(&framebuffer, WIDTH, HEIGHT, SHARED_MEMORY_NAME))) {

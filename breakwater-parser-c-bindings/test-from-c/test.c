@@ -13,7 +13,7 @@ extern size_t breakwater_original_parser_parse(
 );
 
 int main(void) {
-    breakwater_init_original_parser(1920, 1080, "breakwater");
+    breakwater_init_original_parser(1920, 1080, "breakwater-test");
     size_t parser_lookahead = breakwater_original_parser_parser_lookahead();
     printf("Parser lookahead: %ld\n", parser_lookahead);
 

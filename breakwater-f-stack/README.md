@@ -47,7 +47,10 @@ nixpkgs.mkShell {
 
 `export FF_PATH=/home/sbernauer/pixelflut/f-stack/`
 
-`make`
+You also need to build the `breakwater-parser-c-bindings`, so that the C program can link and use the `breakwater-parser` Rust functions.
+You can do that using `cargo build --release -p breakwater-parser-c-bindings` from the git root.
+
+Afterwards, in this folder, run `make`.
 
 ### Run breakwater-f-stack server
 
@@ -65,7 +68,9 @@ Start server on 0000:02:00.0:
 
 `sudo bash -c 'echo 1024 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages'`
 
-`sudo build/breakwater-f-stack`
+As we linked against the dynamic library of `breakwater-parser-c-bindings`, we need to specify the `LD_LIBRARY_PATH` here:
+
+`sudo LD_LIBRARY_PATH=../target/release build/breakwater-f-stack`
 
 Add clients IP:
 

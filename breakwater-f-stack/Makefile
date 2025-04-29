@@ -16,7 +16,7 @@ CFLAGS += -O3 -g -gdwarf-2 $(shell $(PKGCONF) --cflags libdpdk)
 LIBS+= $(shell $(PKGCONF) --static --libs libdpdk)
 LIBS+= -I${FF_PATH}/lib -L${FF_PATH}/lib -Wl,--whole-archive,-lfstack,--no-whole-archive
 LIBS+= -Wl,--no-whole-archive -lrt -lm -ldl -lcrypto -pthread -lnuma
-# WIP, start with "sudo LD_LIBRARY_PATH=../target/release build/breakwater-f-stack"
+# Start the binary with "sudo LD_LIBRARY_PATH=../target/release build/breakwater-f-stack"
 LIBS += -l breakwater_parser_c_bindings -L ../target/release/
 
 TARGET="breakwater-f-stack"
