@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix wrong `PXMULTI` command handling introduced in [#55] ([#60]).
+
+[#60]: https://github.com/sbernauer/breakwater/pull/60
+
 ## [0.18.0] - 2025-04-25
 
 ### Added
