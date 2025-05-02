@@ -188,7 +188,7 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
 
     #[inline(always)]
     fn set_multi_from_start_index(&self, starting_index: usize, pixels: &[u8]) -> usize {
-        let num_pixels = pixels.len() / 4;
+        let num_pixels = pixels.len() / FB_BYTES_PER_PIXEL;
 
         if starting_index + num_pixels > self.get_size() {
             debug!(
@@ -201,7 +201,11 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
             return 0;
         }
 
-        let starting_ptr = unsafe { self.buffer.get_unchecked(starting_index) }.get();
+        let starting_ptr = unsafe {
+            self.buffer
+                .get_unchecked(starting_index * FB_BYTES_PER_PIXEL)
+        }
+        .get();
         let target_slice = unsafe { slice::from_raw_parts_mut(starting_ptr, pixels.len()) };
         target_slice.copy_from_slice(pixels);
 
