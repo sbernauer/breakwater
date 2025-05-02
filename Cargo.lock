@@ -401,7 +401,7 @@ dependencies = [
 
 [[package]]
 name = "breakwater"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "async-trait",
  "breakwater-egui-overlay",
@@ -435,7 +435,7 @@ dependencies = [
 
 [[package]]
 name = "breakwater-egui-overlay"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "eframe",
  "egui",
@@ -443,7 +443,7 @@ dependencies = [
 
 [[package]]
 name = "breakwater-parser"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "color-eyre",
  "const_format",

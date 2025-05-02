@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.18.1] - 2025-05-02
+
 ### Fixed
 
 - Fix wrong `PXMULTI` command handling introduced in [#55] ([#60]).
