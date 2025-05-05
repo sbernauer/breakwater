@@ -1,5 +1,10 @@
 [workspace]
-members = ["breakwater-parser", "breakwater", "breakwater-egui-overlay"]
+members = [
+    "breakwater-parser",
+    "breakwater",
+    "breakwater-egui-overlay",
+    "breakwater-parser-c-bindings"
+]
 resolver = "2"
 
 [workspace.package]

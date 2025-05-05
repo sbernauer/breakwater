@@ -1,0 +1,16 @@
+[package]
+name = "breakwater-parser-c-bindings"
+description = "Pixelflut parser C bindings"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+breakwater-parser.workspace = true
+
+libc = "0.2"
