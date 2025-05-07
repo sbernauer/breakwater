@@ -31,6 +31,7 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
         buffer: &[u8],
         mut idx: usize,
         response: &mut Vec<u8>,
+        #[cfg(feature = "count-pixels")] set_pixels_callback: &impl crate::SetPixelsCallback,
     ) -> (usize, usize) {
         let previous = idx;
         idx += 3;
@@ -51,19 +52,40 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
                 // Must be followed by 6 bytes RGB and newline or ...
                 if unsafe { *buffer.get_unchecked(idx + 6) } == b'\n' {
                     idx += 7;
-                    self.handle_rgb(idx, buffer, x, y);
+                    self.handle_rgb(
+                        idx,
+                        buffer,
+                        x,
+                        y,
+                        #[cfg(feature = "count-pixels")]
+                        set_pixels_callback,
+                    );
                     (idx, idx)
                 }
                 // ... or must be followed by 8 bytes RGBA and newline
                 else if unsafe { *buffer.get_unchecked(idx + 8) } == b'\n' {
                     idx += 9;
-                    self.handle_rgba(idx, buffer, x, y);
+                    self.handle_rgba(
+                        idx,
+                        buffer,
+                        x,
+                        y,
+                        #[cfg(feature = "count-pixels")]
+                        set_pixels_callback,
+                    );
                     (idx, idx)
                 }
                 // ... for the efficient/lazy clients
                 else if unsafe { *buffer.get_unchecked(idx + 2) } == b'\n' {
                     idx += 3;
-                    self.handle_gray(idx, buffer, x, y);
+                    self.handle_gray(
+                        idx,
+                        buffer,
+                        x,
+                        y,
+                        #[cfg(feature = "count-pixels")]
+                        set_pixels_callback,
+                    );
                     (idx, idx)
                 } else {
                     (idx, previous)
@@ -83,7 +105,12 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
     }
 
     #[inline(always)]
-    fn handle_binary_pixel(&self, buffer: &[u8], mut idx: usize) -> (usize, usize) {
+    fn handle_binary_pixel(
+        &self,
+        buffer: &[u8],
+        mut idx: usize,
+        #[cfg(feature = "count-pixels")] set_pixels_callback: &impl crate::SetPixelsCallback,
+    ) -> (usize, usize) {
         let previous = idx;
         idx += 2;
 
@@ -94,7 +121,13 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
         let rgba = u32::from_le((command_bytes >> 32) as u32);
 
         // TODO: Support alpha channel (behind alpha feature flag)
-        self.fb.set(x as usize, y as usize, rgba & 0x00ff_ffff);
+        self.fb.set(
+            x as usize,
+            y as usize,
+            rgba & 0x00ff_ffff,
+            #[cfg(feature = "count-pixels")]
+            set_pixels_callback,
+        );
 
         idx += 8;
         (idx, previous)
@@ -124,23 +157,56 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
     }
 
     #[inline(always)]
-    fn handle_rgb(&self, idx: usize, buffer: &[u8], x: usize, y: usize) {
+    fn handle_rgb(
+        &self,
+        idx: usize,
+        buffer: &[u8],
+        x: usize,
+        y: usize,
+        #[cfg(feature = "count-pixels")] set_pixels_callback: &impl crate::SetPixelsCallback,
+    ) {
         let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(idx - 7) });
 
-        self.fb.set(x, y, rgba & 0x00ff_ffff);
+        self.fb.set(
+            x,
+            y,
+            rgba & 0x00ff_ffff,
+            #[cfg(feature = "count-pixels")]
+            set_pixels_callback,
+        );
     }
 
     #[cfg(not(feature = "alpha"))]
     #[inline(always)]
-    fn handle_rgba(&self, idx: usize, buffer: &[u8], x: usize, y: usize) {
+    fn handle_rgba(
+        &self,
+        idx: usize,
+        buffer: &[u8],
+        x: usize,
+        y: usize,
+        #[cfg(feature = "count-pixels")] set_pixels_callback: &impl crate::SetPixelsCallback,
+    ) {
         let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(idx - 9) });
 
-        self.fb.set(x, y, rgba & 0x00ff_ffff);
+        self.fb.set(
+            x,
+            y,
+            rgba & 0x00ff_ffff,
+            #[cfg(feature = "count-pixels")]
+            set_pixels_callback,
+        );
     }
 
     #[cfg(feature = "alpha")]
     #[inline(always)]
-    fn handle_rgba(&self, idx: usize, buffer: &[u8], x: usize, y: usize) {
+    fn handle_rgba(
+        &self,
+        idx: usize,
+        buffer: &[u8],
+        x: usize,
+        y: usize,
+        #[cfg(feature = "count-pixels")] set_pixels_callback: &impl crate::SetPixelsCallback,
+    ) {
         let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(idx - 9) });
 
         let alpha = (rgba >> 24) & 0xff;
@@ -159,18 +225,37 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
         let g: u32 = (((current >> 16) & 0xff) * alpha_comp + g * alpha) / 0xff;
         let b: u32 = (((current >> 8) & 0xff) * alpha_comp + b * alpha) / 0xff;
 
-        self.fb.set(x, y, (r << 16) | (g << 8) | b);
+        self.fb.set(
+            x,
+            y,
+            (r << 16) | (g << 8) | b,
+            #[cfg(feature = "count-pixels")]
+            set_pixels_callback,
+        );
     }
 
     #[inline(always)]
-    fn handle_gray(&self, idx: usize, buffer: &[u8], x: usize, y: usize) {
+    fn handle_gray(
+        &self,
+        idx: usize,
+        buffer: &[u8],
+        x: usize,
+        y: usize,
+        #[cfg(feature = "count-pixels")] set_pixels_callback: &impl crate::SetPixelsCallback,
+    ) {
         // FIXME: Read that two bytes directly instead of going through the whole SIMD vector setup.
         // Or - as an alternative - still do the SIMD part but only load two bytes.
         let base: u32 = simd_unhex(unsafe { buffer.as_ptr().add(idx - 3) }) & 0xff;
 
         let rgba: u32 = (base << 16) | (base << 8) | base;
 
-        self.fb.set(x, y, rgba);
+        self.fb.set(
+            x,
+            y,
+            rgba,
+            #[cfg(feature = "count-pixels")]
+            set_pixels_callback,
+        );
     }
 
     #[inline(always)]
@@ -191,7 +276,12 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
 }
 
 impl<FB: FrameBuffer> Parser for RefactoredParser<FB> {
-    fn parse(&mut self, buffer: &[u8], response: &mut Vec<u8>) -> usize {
+    fn parse(
+        &mut self,
+        buffer: &[u8],
+        response: &mut Vec<u8>,
+        #[cfg(feature = "count-pixels")] set_pixels_callback: &impl crate::SetPixelsCallback,
+    ) -> usize {
         let mut last_byte_parsed = 0;
 
         let mut i = 0; // We can't use a for loop here because Rust don't lets use skip characters by incrementing i
@@ -201,11 +291,22 @@ impl<FB: FrameBuffer> Parser for RefactoredParser<FB> {
             let current_command =
                 unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };
             if current_command & 0x00ff_ffff == PX_PATTERN {
-                (i, last_byte_parsed) = self.handle_pixel(buffer, i, response);
+                (i, last_byte_parsed) = self.handle_pixel(
+                    buffer,
+                    i,
+                    response,
+                    #[cfg(feature = "count-pixels")]
+                    set_pixels_callback,
+                );
             } else if cfg!(feature = "binary-set-pixel")
                 && current_command & 0x0000_ffff == PB_PATTERN
             {
-                (i, last_byte_parsed) = self.handle_binary_pixel(buffer, i);
+                (i, last_byte_parsed) = self.handle_binary_pixel(
+                    buffer,
+                    i,
+                    #[cfg(feature = "count-pixels")]
+                    set_pixels_callback,
+                );
             } else if current_command & 0x00ff_ffff_ffff_ffff == OFFSET_PATTERN {
                 i += 7;
                 self.handle_offset(&mut i, buffer);

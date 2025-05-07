@@ -13,12 +13,17 @@ pub struct PrometheusExporter {
     // Prometheus metrics
     metric_ips_v6: IntGauge,
     metric_ips_v4: IntGauge,
-    metric_frame: IntGauge,
     metric_statistic_events: IntGauge,
 
     metric_connections_for_ip: IntGaugeVec,
     metric_denied_connections_for_ip: IntGaugeVec,
     metric_bytes_for_ip: IntGaugeVec,
+
+    #[cfg(feature = "vnc")]
+    metric_vnc_frame: IntGauge,
+
+    #[cfg(feature = "count-pixels")]
+    metric_pixels_for_ip: IntGaugeVec,
 }
 
 impl PrometheusExporter {
@@ -39,10 +44,6 @@ impl PrometheusExporter {
                 "breakwater_ips_v4",
                 "Total number of connected IPv4 addresses",
             )?,
-            metric_frame: register_int_gauge!(
-                "breakwater_frame",
-                "Frame number of the VNC server"
-            )?,
             metric_statistic_events: register_int_gauge!(
                 "breakwater_statistic_events",
                 "Number of statistics events send internally",
@@ -62,6 +63,17 @@ impl PrometheusExporter {
                 "Number of bytes received per IP address",
                 &["ip"],
             )?,
+            #[cfg(feature = "vnc")]
+            metric_vnc_frame: register_int_gauge!(
+                "breakwater_vnc_frame",
+                "Frame number of the VNC server"
+            )?,
+            #[cfg(feature = "count-pixels")]
+            metric_pixels_for_ip: register_int_gauge_vec!(
+                "breakwater_pixels",
+                "Number of pixels colored per IP address",
+                &["ip"],
+            )?,
         })
     }
 
@@ -69,7 +81,6 @@ impl PrometheusExporter {
         while let Ok(event) = self.statistics_information_rx.recv().await {
             self.metric_ips_v6.set(event.ips_v6 as i64);
             self.metric_ips_v4.set(event.ips_v4 as i64);
-            self.metric_frame.set(event.frame as i64);
             self.metric_statistic_events
                 .set(event.statistic_events as i64);
 
@@ -99,6 +110,19 @@ impl PrometheusExporter {
                     .with_label_values(&[&ip.to_string()])
                     .set(*bytes as i64)
             });
+
+            #[cfg(feature = "vnc")]
+            self.metric_vnc_frame.set(event.vnc_frame as i64);
+
+            #[cfg(feature = "count-pixels")]
+            {
+                self.metric_pixels_for_ip.reset();
+                event.pixels_for_ip.iter().for_each(|(ip, bytes)| {
+                    self.metric_pixels_for_ip
+                        .with_label_values(&[&ip.to_string()])
+                        .set(*bytes as i64)
+                });
+            }
         }
     }
 }

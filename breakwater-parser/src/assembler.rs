@@ -15,7 +15,12 @@ impl<FB: FrameBuffer> AssemblerParser<FB> {
 }
 
 impl<FB: FrameBuffer> Parser for AssemblerParser<FB> {
-    fn parse(&mut self, buffer: &[u8], _response: &mut Vec<u8>) -> usize {
+    fn parse(
+        &mut self,
+        buffer: &[u8],
+        _response: &mut Vec<u8>,
+        #[cfg(feature = "count-pixels")] _set_pixels_callback: &impl crate::SetPixelsCallback,
+    ) -> usize {
         let mut last_byte_parsed = 0;
 
         // This loop does nothing and should be seen as a placeholder

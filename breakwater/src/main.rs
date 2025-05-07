@@ -48,7 +48,13 @@ async fn main() -> eyre::Result<()> {
 
     // If we make the channel to big, stats will start to lag behind
     // TODO: Check performance impact in real-world scenario. Maybe the statistics thread blocks the other threads
-    let (statistics_tx, statistics_rx) = mpsc::channel::<StatisticsEvent>(100);
+    let (statistics_tx, statistics_rx) =
+        mpsc::channel::<StatisticsEvent>(if cfg!(feature = "count-pixels") {
+            // Pixel counting is currently done via StatisticEvents, resulting in high numbers!
+            10000
+        } else {
+            100
+        });
     let (statistics_information_tx, statistics_information_rx) =
         broadcast::channel::<StatisticsInformationEvent>(2);
     let (terminate_signal_tx, terminate_signal_rx) = broadcast::channel::<()>(1);
