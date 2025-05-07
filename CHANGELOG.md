@@ -8,12 +8,14 @@ All notable changes to this project will be documented in this file.
 
 - Added support for counting the number of pixels each IP has set and expose it as Prometheus metric
   `breakwater_pixels`. Pixels are only counted when the `count-pixels` feature is explicitly
-  enabled, as it has a big performance impact! ([#XX])
+  enabled, as it has a big performance impact! ([#62])
 
 ### Changed
 
 - BREAKING: The Prometheus metric `breakwater_frame` has been renamed to `breakwater_vnc_frame` and
-  is only exported when the `vnc` feature is enabled ([#XX])
+  is only exported when the `vnc` feature is enabled ([#62])
+
+[#62]: https://github.com/sbernauer/breakwater/pull/62
 
 ## [0.18.1] - 2025-05-02
 
