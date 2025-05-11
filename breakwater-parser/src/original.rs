@@ -45,7 +45,12 @@ impl<FB: FrameBuffer> OriginalParser<FB> {
 }
 
 impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
-    fn parse(&mut self, buffer: &[u8], response: &mut Vec<u8>) -> usize {
+    fn parse(
+        &mut self,
+        buffer: &[u8],
+        response: &mut Vec<u8>,
+        #[cfg(feature = "count-pixels")] set_pixels_callback: &impl crate::SetPixelsCallback,
+    ) -> usize {
         let mut last_byte_parsed = 0;
         let mut help_count = 0;
 
@@ -58,10 +63,12 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
 
             if remaining.bytes_remaining <= buffer.len() {
                 // Easy going here
-                self.fb
-                    .set_multi_from_start_index(remaining.current_index, unsafe {
-                        slice::from_raw_parts(buffer.as_ptr(), remaining.bytes_remaining)
-                    });
+                self.fb.set_multi_from_start_index(
+                    remaining.current_index,
+                    unsafe { slice::from_raw_parts(buffer.as_ptr(), remaining.bytes_remaining) },
+                    #[cfg(feature = "count-pixels")]
+                    set_pixels_callback,
+                );
                 i += remaining.bytes_remaining;
                 last_byte_parsed = i;
                 self.remaining_pixel_sync = None;
@@ -73,11 +80,12 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
                 let pixel_bytes = buffer.len() / 4 * 4;
 
                 let mut index = remaining.current_index;
-                index += self
-                    .fb
-                    .set_multi_from_start_index(remaining.current_index, unsafe {
-                        slice::from_raw_parts(buffer.as_ptr(), pixel_bytes)
-                    });
+                index += self.fb.set_multi_from_start_index(
+                    remaining.current_index,
+                    unsafe { slice::from_raw_parts(buffer.as_ptr(), pixel_bytes) },
+                    #[cfg(feature = "count-pixels")]
+                    set_pixels_callback,
+                );
 
                 self.remaining_pixel_sync = Some(RemainingPixelSync {
                     current_index: index,
@@ -117,7 +125,13 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
 
                             let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(i - 7) });
 
-                            self.fb.set(x, y, rgba & 0x00ff_ffff);
+                            self.fb.set(
+                                x,
+                                y,
+                                rgba & 0x00ff_ffff,
+                                #[cfg(feature = "count-pixels")]
+                                set_pixels_callback,
+                            );
                             continue;
                         }
 
@@ -129,7 +143,14 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
 
                             let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(i - 9) });
 
-                            self.fb.set(x, y, rgba & 0x00ff_ffff);
+                            self.fb.set(
+                                x,
+                                y,
+                                rgba & 0x00ff_ffff,
+                                #[cfg(feature = "count-pixels")]
+                                set_pixels_callback,
+                            );
+
                             continue;
                         }
                         #[cfg(feature = "alpha")]
@@ -155,7 +176,14 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
                             let g: u32 = (((current >> 16) & 0xff) * alpha_comp + g * alpha) / 0xff;
                             let b: u32 = (((current >> 8) & 0xff) * alpha_comp + b * alpha) / 0xff;
 
-                            self.fb.set(x, y, (r << 16) | (g << 8) | b);
+                            self.fb.set(
+                                x,
+                                y,
+                                (r << 16) | (g << 8) | b,
+                                #[cfg(feature = "count-pixels")]
+                                set_pixels_callback,
+                            );
+
                             continue;
                         }
 
@@ -168,7 +196,13 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
 
                             let rgba: u32 = (base << 16) | (base << 8) | base;
 
-                            self.fb.set(x, y, rgba);
+                            self.fb.set(
+                                x,
+                                y,
+                                rgba,
+                                #[cfg(feature = "count-pixels")]
+                                set_pixels_callback,
+                            );
 
                             continue;
                         }
@@ -204,7 +238,13 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
                 let rgba = u32::from_le((command_bytes >> 32) as u32);
 
                 // TODO: Support alpha channel (behind alpha feature flag)
-                self.fb.set(x as usize, y as usize, rgba & 0x00ff_ffff);
+                self.fb.set(
+                    x as usize,
+                    y as usize,
+                    rgba & 0x00ff_ffff,
+                    #[cfg(feature = "count-pixels")]
+                    set_pixels_callback,
+                );
                 //                 P   B   XX  YY  RGBA
                 last_byte_parsed = i + 1 + 2 + 2 + 4;
                 i += 10;
@@ -224,10 +264,13 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
 
                 if len_in_bytes <= bytes_left_in_buffer {
                     // Easy going here
-                    self.fb
-                        .set_multi(start_x as usize, start_y as usize, unsafe {
-                            slice::from_raw_parts(buffer.as_ptr().add(i), len_in_bytes)
-                        });
+                    self.fb.set_multi(
+                        start_x as usize,
+                        start_y as usize,
+                        unsafe { slice::from_raw_parts(buffer.as_ptr().add(i), len_in_bytes) },
+                        #[cfg(feature = "count-pixels")]
+                        set_pixels_callback,
+                    );
 
                     i += len_in_bytes;
                     last_byte_parsed = i;
@@ -240,9 +283,12 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
                     // what the client is doing.
                     let mut current_index =
                         start_x as usize + start_y as usize * self.fb.get_width();
-                    current_index += self.fb.set_multi_from_start_index(current_index, unsafe {
-                        slice::from_raw_parts(buffer.as_ptr().add(i), pixel_bytes)
-                    });
+                    current_index += self.fb.set_multi_from_start_index(
+                        current_index,
+                        unsafe { slice::from_raw_parts(buffer.as_ptr().add(i), pixel_bytes) },
+                        #[cfg(feature = "count-pixels")]
+                        set_pixels_callback,
+                    );
 
                     self.remaining_pixel_sync = Some(RemainingPixelSync {
                         current_index,

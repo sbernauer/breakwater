@@ -52,8 +52,30 @@ pub const ALT_HELP_TEXT: &[u8] = b"Stop spamming HELP!\n";
 
 pub trait Parser {
     /// Returns the last byte parsed. The next parsing loop will again contain all data that was not parsed.
-    fn parse(&mut self, buffer: &[u8], response: &mut Vec<u8>) -> usize;
+    fn parse(
+        &mut self,
+        buffer: &[u8],
+        response: &mut Vec<u8>,
+        #[cfg(feature = "count-pixels")] set_pixels_callback: &impl SetPixelsCallback,
+    ) -> usize;
 
     // Sadly this cant be const (yet?) (https://github.com/rust-lang/rust/issues/71971 and https://github.com/rust-lang/rfcs/pull/2632)
     fn parser_lookahead(&self) -> usize;
+}
+#[cfg(feature = "count-pixels")]
+pub trait SetPixelsCallback {
+    /// This function is called for every pixel or set of pixels that are set.
+    ///
+    /// It get's one parameter `pixels`: The number of pixels set.
+    ///
+    /// For performance reasons it's neither `async` nor fallible.
+    fn pixels_set(&self, pixels: u64);
+}
+
+#[cfg(feature = "count-pixels")]
+pub struct NoopSetPixelsCallback;
+
+#[cfg(feature = "count-pixels")]
+impl SetPixelsCallback for NoopSetPixelsCallback {
+    fn pixels_set(&self, _pixels: u64) {}
 }

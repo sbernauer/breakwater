@@ -175,7 +175,13 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
     }
 
     #[inline(always)]
-    fn set(&self, x: usize, y: usize, rgba: u32) {
+    fn set(
+        &self,
+        x: usize,
+        y: usize,
+        rgba: u32,
+        #[cfg(feature = "count-pixels")] set_pixels_callback: &impl crate::SetPixelsCallback,
+    ) {
         // See 'SimpleFrameBuffer::set' for performance consideration
         if x < self.width && y < self.height {
             let offset = (x + y * self.width) * FB_BYTES_PER_PIXEL;
@@ -183,11 +189,19 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
 
             // The buffer coming from the shared memory might be unaligned!
             unsafe { pixel_ptr.write_unaligned(rgba) }
+
+            #[cfg(feature = "count-pixels")]
+            set_pixels_callback.pixels_set(1);
         }
     }
 
     #[inline(always)]
-    fn set_multi_from_start_index(&self, starting_index: usize, pixels: &[u8]) -> usize {
+    fn set_multi_from_start_index(
+        &self,
+        starting_index: usize,
+        pixels: &[u8],
+        #[cfg(feature = "count-pixels")] set_pixels_callback: &impl crate::SetPixelsCallback,
+    ) -> usize {
         let num_pixels = pixels.len() / FB_BYTES_PER_PIXEL;
 
         if starting_index + num_pixels > self.get_size() {
@@ -208,6 +222,13 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
         .get();
         let target_slice = unsafe { slice::from_raw_parts_mut(starting_ptr, pixels.len()) };
         target_slice.copy_from_slice(pixels);
+
+        #[cfg(feature = "count-pixels")]
+        set_pixels_callback.pixels_set(
+            num_pixels
+                .try_into()
+                .expect("More than u64::MAX pixels colored!"),
+        );
 
         num_pixels
     }

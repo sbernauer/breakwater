@@ -39,7 +39,13 @@ impl FrameBuffer for SimpleFrameBuffer {
     }
 
     #[inline(always)]
-    fn set(&self, x: usize, y: usize, rgba: u32) {
+    fn set(
+        &self,
+        x: usize,
+        y: usize,
+        rgba: u32,
+        #[cfg(feature = "count-pixels")] set_pixels_callback: &impl crate::SetPixelsCallback,
+    ) {
         // https://github.com/sbernauer/breakwater/pull/11
         // If we make the FrameBuffer large enough (e.g. 10_000 x 10_000) we don't need to check the bounds here
         // (x and y are max 4 digit numbers). Flamegraph has shown 5.21% of runtime in this bound check. On the other
@@ -50,11 +56,19 @@ impl FrameBuffer for SimpleFrameBuffer {
                 let ptr = self.buffer.as_ptr().add(x + y * self.width) as *mut u32;
                 *ptr = rgba;
             }
+
+            #[cfg(feature = "count-pixels")]
+            set_pixels_callback.pixels_set(1);
         }
     }
 
     #[inline(always)]
-    fn set_multi_from_start_index(&self, starting_index: usize, pixels: &[u8]) -> usize {
+    fn set_multi_from_start_index(
+        &self,
+        starting_index: usize,
+        pixels: &[u8],
+        #[cfg(feature = "count-pixels")] set_pixels_callback: &impl crate::SetPixelsCallback,
+    ) -> usize {
         let num_pixels = pixels.len() / FB_BYTES_PER_PIXEL;
 
         if starting_index + num_pixels > self.buffer.len() {
@@ -72,6 +86,13 @@ impl FrameBuffer for SimpleFrameBuffer {
         let target_slice =
             unsafe { slice::from_raw_parts_mut(starting_ptr as *mut u8, pixels.len()) };
         target_slice.copy_from_slice(pixels);
+
+        #[cfg(feature = "count-pixels")]
+        set_pixels_callback.pixels_set(
+            num_pixels
+                .try_into()
+                .expect("More than u64::MAX pixels colored!"),
+        );
 
         num_pixels
     }
@@ -107,7 +128,13 @@ mod tests {
         #[case] y: usize,
         #[case] rgba: u32,
     ) {
-        fb.set(x, y, rgba);
+        fb.set(
+            x,
+            y,
+            rgba,
+            #[cfg(feature = "count-pixels")]
+            &crate::NoopSetPixelsCallback,
+        );
         assert_eq!(fb.get(x, y), Some(rgba));
     }
 
@@ -122,7 +149,13 @@ mod tests {
         let pixels = (0..10_u32).collect::<Vec<_>>();
         let pixel_bytes: Vec<u8> = pixels.iter().flat_map(|p| p.to_le_bytes()).collect();
 
-        let (current_x, current_y) = fb.set_multi(0, 0, &pixel_bytes);
+        let (current_x, current_y) = fb.set_multi(
+            0,
+            0,
+            &pixel_bytes,
+            #[cfg(feature = "count-pixels")]
+            &crate::NoopSetPixelsCallback,
+        );
 
         assert_eq!(current_x, 10);
         assert_eq!(current_y, 0);
@@ -143,7 +176,13 @@ mod tests {
         // Let's color exactly 3 lines and 42 pixels
         let pixels = (0..3 * fb.width as u32 + 42).collect::<Vec<_>>();
         let pixel_bytes: Vec<u8> = pixels.iter().flat_map(|p| p.to_le_bytes()).collect();
-        let (current_x, current_y) = fb.set_multi(x, y, &pixel_bytes);
+        let (current_x, current_y) = fb.set_multi(
+            x,
+            y,
+            &pixel_bytes,
+            #[cfg(feature = "count-pixels")]
+            &crate::NoopSetPixelsCallback,
+        );
 
         assert_eq!(current_x, 52);
         assert_eq!(current_y, 103);
@@ -175,7 +214,13 @@ mod tests {
     pub fn test_set_multi_does_nothing_when_too_long(fb: SimpleFrameBuffer) {
         let mut too_long = Vec::with_capacity(fb.width * fb.height * FB_BYTES_PER_PIXEL);
         too_long.fill_with(|| 42_u8);
-        let (current_x, current_y) = fb.set_multi(1, 0, &too_long);
+        let (current_x, current_y) = fb.set_multi(
+            1,
+            0,
+            &too_long,
+            #[cfg(feature = "count-pixels")]
+            &crate::NoopSetPixelsCallback,
+        );
 
         // Should be unchanged
         assert_eq!(current_x, 1);

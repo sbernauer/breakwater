@@ -110,11 +110,31 @@ fn invoke_benchmark(
     for parse_name in parser_names {
         c_group.bench_with_input(parse_name, &commands, |b, input| {
             b.iter(|| match parse_name {
-                "original" => OriginalParser::new(fb.clone()).parse(input, &mut Vec::new()),
-                "refactored" => RefactoredParser::new(fb.clone()).parse(input, &mut Vec::new()),
-                "memchr" => MemchrParser::new(fb.clone()).parse(input, &mut Vec::new()),
+                "original" => OriginalParser::new(fb.clone()).parse(
+                    input,
+                    &mut Vec::new(),
+                    #[cfg(feature = "count-pixels")]
+                    &breakwater_parser::NoopSetPixelsCallback,
+                ),
+                "refactored" => RefactoredParser::new(fb.clone()).parse(
+                    input,
+                    &mut Vec::new(),
+                    #[cfg(feature = "count-pixels")]
+                    &breakwater_parser::NoopSetPixelsCallback,
+                ),
+                "memchr" => MemchrParser::new(fb.clone()).parse(
+                    input,
+                    &mut Vec::new(),
+                    #[cfg(feature = "count-pixels")]
+                    &breakwater_parser::NoopSetPixelsCallback,
+                ),
                 #[cfg(target_arch = "x86_64")]
-                "assembler" => AssemblerParser::new(fb.clone()).parse(input, &mut Vec::new()),
+                "assembler" => AssemblerParser::new(fb.clone()).parse(
+                    input,
+                    &mut Vec::new(),
+                    #[cfg(feature = "count-pixels")]
+                    &breakwater_parser::NoopSetPixelsCallback,
+                ),
                 _ => panic!("Parser implementation {parse_name} not known"),
             });
         });

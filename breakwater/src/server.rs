@@ -142,6 +142,10 @@ pub async fn handle_connection<FB: FrameBuffer>(
 ) -> eyre::Result<()> {
     tracing::debug!("handling new connection");
 
+    #[cfg(feature = "count-pixels")]
+    let set_pixels_callback =
+        crate::statistics::StatisticsSetPixelsCallback::new(statistics_tx.clone(), ip);
+
     statistics_tx
         .send(StatisticsEvent::ConnectionCreated { ip })
         .await
@@ -209,8 +213,12 @@ pub async fn handle_connection<FB: FrameBuffer>(
                 *i = 0;
             }
 
-            let last_byte_parsed =
-                parser.parse(&buffer[..data_end + parser_lookahead], &mut response_buf);
+            let last_byte_parsed = parser.parse(
+                &buffer[..data_end + parser_lookahead],
+                &mut response_buf,
+                #[cfg(feature = "count-pixels")]
+                &set_pixels_callback,
+            );
 
             if !response_buf.is_empty() {
                 stream

@@ -124,6 +124,10 @@ As of writing the following features are supported:
 * `alpha` (disabled by default): Respect alpha values during `PX` commands. Disabled by default as this can cause performance degradation.
 * `binary-set-pixel` (disabled by default): Allows use of the `PB` command.
 * `binary-sync-pixels`(disabled by default): Allows use of the `PXMULTI` command.
+* `count-pixels` (disabled by default): Count the number of pixels each IP has set and expose it as Prometheus metric `breakwater_pixels`.
+  Turning this feature on has a big performance impact!
+* `count-pixels-approx` (disabled by default): Like `count-pixels`, but instead of actually counting the pixels, we just
+  divide the number of bytes by the average bytes for a pixel SET command to get a very rough estimate.
 
 To e.g. turn the VNC server off, build with
 

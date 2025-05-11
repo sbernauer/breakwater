@@ -36,6 +36,11 @@ pub enum StatisticsEvent {
         ip: IpAddr,
         bytes: u64,
     },
+    #[cfg(feature = "count-pixels")]
+    PixelSet {
+        ip: IpAddr,
+        pixels: u64,
+    },
     #[cfg(feature = "vnc")]
     VncFrameRendered,
 }
@@ -47,17 +52,21 @@ pub enum StatisticsSaveMode {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct StatisticsInformationEvent {
-    pub frame: u64,
     pub connections: u32,
     pub ips_v6: u32,
     pub ips_v4: u32,
     pub bytes: u64,
-    pub fps: u64,
     pub bytes_per_s: u64,
 
     pub connections_for_ip: HashMap<IpAddr, u32>,
     pub denied_connections_for_ip: HashMap<IpAddr, u32>,
     pub bytes_for_ip: HashMap<IpAddr, u64>,
+
+    #[cfg(feature = "vnc")]
+    pub vnc_frame: u64,
+
+    #[cfg(feature = "count-pixels")]
+    pub pixels_for_ip: HashMap<IpAddr, u64>,
 
     pub statistic_events: u64,
 }
@@ -67,13 +76,16 @@ pub struct Statistics {
     statistics_information_tx: broadcast::Sender<StatisticsInformationEvent>,
     statistic_events: u64,
 
-    frame: u64,
     connections_for_ip: HashMap<IpAddr, u32>,
     denied_connections_for_ip: HashMap<IpAddr, u32>,
     bytes_for_ip: HashMap<IpAddr, u64>,
-
     bytes_per_s_window: SingleSumSMA<u64, u64, STATS_SLIDING_WINDOW_SIZE>,
-    fps_window: SingleSumSMA<u64, u64, STATS_SLIDING_WINDOW_SIZE>,
+
+    #[cfg(feature = "vnc")]
+    vnc_frame: u64,
+
+    #[cfg(feature = "count-pixels")]
+    pixels_for_ip: HashMap<IpAddr, u64>,
 
     statistics_save_mode: StatisticsSaveMode,
 }
@@ -108,12 +120,14 @@ impl Statistics {
             statistics_rx,
             statistics_information_tx,
             statistic_events: 0,
-            frame: 0,
             connections_for_ip: HashMap::new(),
             denied_connections_for_ip: HashMap::new(),
             bytes_for_ip: HashMap::new(),
             bytes_per_s_window: SingleSumSMA::new(),
-            fps_window: SingleSumSMA::new(),
+            #[cfg(feature = "count-pixels")]
+            pixels_for_ip: HashMap::new(),
+            #[cfg(feature = "vnc")]
+            vnc_frame: 0,
             statistics_save_mode,
         };
 
@@ -121,7 +135,10 @@ impl Statistics {
             // There might not be a save point on first start
             if let Ok(save_point) = StatisticsInformationEvent::load_from_file(save_file) {
                 statistics.statistic_events = save_point.statistic_events;
-                statistics.frame = save_point.frame;
+                #[cfg(feature = "vnc")]
+                {
+                    statistics.vnc_frame = save_point.vnc_frame;
+                }
                 statistics.bytes_for_ip = save_point.bytes_for_ip;
             }
         }
@@ -198,8 +215,12 @@ impl Statistics {
             StatisticsEvent::BytesRead { ip, bytes } => {
                 *self.bytes_for_ip.entry(ip).or_insert(0) += bytes;
             }
+            #[cfg(feature = "count-pixels")]
+            StatisticsEvent::PixelSet { ip, pixels: count } => {
+                *self.pixels_for_ip.entry(ip).or_insert(0) += count;
+            }
             #[cfg(feature = "vnc")]
-            StatisticsEvent::VncFrameRendered => self.frame += 1,
+            StatisticsEvent::VncFrameRendered => self.vnc_frame += 1,
         }
     }
 
@@ -209,7 +230,8 @@ impl Statistics {
         elapsed: Duration,
     ) -> StatisticsInformationEvent {
         let elapsed_ms = max(1, elapsed.as_millis()) as u64;
-        let frame = self.frame;
+        #[cfg(feature = "vnc")]
+        let vnc_frame = self.vnc_frame;
         let connections = self.connections_for_ip.values().sum();
         let [ips_v6, ips_v4] = self
             .connections_for_ip
@@ -221,22 +243,65 @@ impl Statistics {
         let bytes = self.bytes_for_ip.values().sum();
         self.bytes_per_s_window
             .add_sample((bytes - prev.bytes) * 1000 / elapsed_ms);
-        self.fps_window
-            .add_sample((frame - prev.frame) * 1000 / elapsed_ms);
         let statistic_events = self.statistic_events;
 
         StatisticsInformationEvent {
-            frame,
             connections,
             ips_v6,
             ips_v4,
             bytes,
-            fps: self.fps_window.get_average(),
             bytes_per_s: self.bytes_per_s_window.get_average(),
             connections_for_ip: self.connections_for_ip.clone(),
             denied_connections_for_ip: self.denied_connections_for_ip.clone(),
             bytes_for_ip: self.bytes_for_ip.clone(),
+            #[cfg(feature = "vnc")]
+            vnc_frame,
+            #[cfg(feature = "count-pixels")]
+            pixels_for_ip: self.pixels_for_ip.clone(),
             statistic_events,
         }
+    }
+}
+
+#[cfg(feature = "count-pixels")]
+pub struct StatisticsSetPixelsCallback {
+    statistics_tx: mpsc::Sender<StatisticsEvent>,
+    ip: IpAddr,
+}
+
+#[cfg(feature = "count-pixels")]
+impl StatisticsSetPixelsCallback {
+    pub fn new(statistics_tx: mpsc::Sender<StatisticsEvent>, ip: IpAddr) -> Self {
+        Self { statistics_tx, ip }
+    }
+}
+
+#[cfg(feature = "count-pixels")]
+impl breakwater_parser::SetPixelsCallback for StatisticsSetPixelsCallback {
+    fn pixels_set(&self, pixels: u64) {
+        let tx = self.statistics_tx.clone();
+        let ip = self.ip;
+
+        // Yes I know, this is slow, I would love to see a more elegant solution.
+        //
+        // I don't want to use `try_send` (a synchronous function) here, as statistics events should
+        // not be dropped.
+        //
+        // `blocking_send` results in
+        // Cannot block the current thread from within a runtime. This happens because a function attempted to block the
+        // current thread while the thread is being used to drive asynchronous tasks.
+        //
+        // We could use `std::sync::mpsc`, but I don't want to sacrifice performance
+        // for non-pixel-counting scenarios, as they are more performance sensitive.
+        //
+        // I guess we could use a different `mpsc` implementation (tokio/std) based on the
+        // "count-pixels" feature, but that sounds a bit overkill to me for now.
+        tokio::spawn(async move {
+            if let Err(err) = tx.send(StatisticsEvent::PixelSet { ip, pixels }).await {
+                tracing::warn!(
+                    ip = %ip, pixels, err = &err as &dyn std::error::Error, "Failed to send statistics event for PixelSet"
+                );
+            }
+        });
     }
 }

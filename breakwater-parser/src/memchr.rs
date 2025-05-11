@@ -13,7 +13,12 @@ impl<FB: FrameBuffer> MemchrParser<FB> {
 }
 
 impl<FB: FrameBuffer> Parser for MemchrParser<FB> {
-    fn parse(&mut self, buffer: &[u8], _response: &mut Vec<u8>) -> usize {
+    fn parse(
+        &mut self,
+        buffer: &[u8],
+        _response: &mut Vec<u8>,
+        #[cfg(feature = "count-pixels")] set_pixels_callback: &impl crate::SetPixelsCallback,
+    ) -> usize {
         let mut last_char_after_newline = 0;
         for newline in memchr::memchr_iter(b'\n', buffer) {
             // TODO Use get_unchecked everywhere
@@ -53,7 +58,13 @@ impl<FB: FrameBuffer> Parser for MemchrParser<FB> {
                         .parse()
                         .expect("rgba was not a number");
 
-                    self.fb.set(x as usize, y as usize, rgba);
+                    self.fb.set(
+                        x as usize,
+                        y as usize,
+                        rgba,
+                        #[cfg(feature = "count-pixels")]
+                        set_pixels_callback,
+                    );
                 }
                 _ => {
                     continue;

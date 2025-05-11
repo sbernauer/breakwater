@@ -31,7 +31,13 @@ pub trait FrameBuffer {
     /// make sure x and y are in bounds
     unsafe fn get_unchecked(&self, x: usize, y: usize) -> u32;
 
-    fn set(&self, x: usize, y: usize, rgba: u32);
+    fn set(
+        &self,
+        x: usize,
+        y: usize,
+        rgba: u32,
+        #[cfg(feature = "count-pixels")] set_pixels_callback: &impl crate::SetPixelsCallback,
+    );
 
     /// We can *not* take an `&[u32]` for the pixel here, as `std::slice::from_raw_parts` requires the data to be
     /// aligned. As the data already is stored in a buffer we can not guarantee it's correctly aligned, so let's just
@@ -39,9 +45,20 @@ pub trait FrameBuffer {
     ///
     /// Returns the coordinates where we landed after filling
     #[inline(always)]
-    fn set_multi(&self, start_x: usize, start_y: usize, pixels: &[u8]) -> (usize, usize) {
+    fn set_multi(
+        &self,
+        start_x: usize,
+        start_y: usize,
+        pixels: &[u8],
+        #[cfg(feature = "count-pixels")] set_pixels_callback: &impl crate::SetPixelsCallback,
+    ) -> (usize, usize) {
         let starting_index = start_x + start_y * self.get_width();
-        let pixels_copied = self.set_multi_from_start_index(starting_index, pixels);
+        let pixels_copied = self.set_multi_from_start_index(
+            starting_index,
+            pixels,
+            #[cfg(feature = "count-pixels")]
+            set_pixels_callback,
+        );
 
         let new_x = (start_x + pixels_copied) % self.get_width();
         let new_y = start_y + (pixels_copied / self.get_width());
@@ -50,7 +67,12 @@ pub trait FrameBuffer {
     }
 
     /// Returns the number of pixels copied
-    fn set_multi_from_start_index(&self, starting_index: usize, pixels: &[u8]) -> usize;
+    fn set_multi_from_start_index(
+        &self,
+        starting_index: usize,
+        pixels: &[u8],
+        #[cfg(feature = "count-pixels")] set_pixels_callback: &impl crate::SetPixelsCallback,
+    ) -> usize;
 
     /// As the pixel memory doesn't necessarily need to be aligned (think of using shared memory for
     /// that), we can only return it as a list of bytes, not a list of pixels.
