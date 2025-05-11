@@ -8,7 +8,8 @@ All notable changes to this project will be documented in this file.
 
 - Added support for counting the number of pixels each IP has set and expose it as Prometheus metric
   `breakwater_pixels`. Pixels are only counted when the `count-pixels` feature is explicitly
-  enabled, as it has a big performance impact! ([#62])
+  enabled, as it has a big performance impact! The feature `count-pixels` has been added as well,
+  which does a very crude approximation of pixels set ([#62])
 
 ### Changed
 

@@ -22,7 +22,7 @@ pub struct PrometheusExporter {
     #[cfg(feature = "vnc")]
     metric_vnc_frame: IntGauge,
 
-    #[cfg(feature = "count-pixels")]
+    #[cfg(any(feature = "count-pixels", feature = "count-pixels-approx"))]
     metric_pixels_for_ip: IntGaugeVec,
 }
 
@@ -68,10 +68,14 @@ impl PrometheusExporter {
                 "breakwater_vnc_frame",
                 "Frame number of the VNC server"
             )?,
-            #[cfg(feature = "count-pixels")]
+            #[cfg(any(feature = "count-pixels", feature = "count-pixels-approx"))]
             metric_pixels_for_ip: register_int_gauge_vec!(
                 "breakwater_pixels",
-                "Number of pixels colored per IP address",
+                if cfg!(feature = "count-pixels") {
+                    "Number of pixels colored per IP address"
+                } else {
+                    "Number of pixels colored per IP address (approximated from the number oy bytes send)"
+                },
                 &["ip"],
             )?,
         })
@@ -117,10 +121,25 @@ impl PrometheusExporter {
             #[cfg(feature = "count-pixels")]
             {
                 self.metric_pixels_for_ip.reset();
-                event.pixels_for_ip.iter().for_each(|(ip, bytes)| {
+                event.pixels_for_ip.iter().for_each(|(ip, pixels)| {
                     self.metric_pixels_for_ip
                         .with_label_values(&[&ip.to_string()])
-                        .set(*bytes as i64)
+                        .set(*pixels as i64)
+                });
+            }
+
+            #[cfg(all(feature = "count-pixels-approx", not(feature = "count-pixels")))]
+            {
+                // TODO: We could do some better approximation. Maybe as const calculation? :)
+                // Or measure at a real event.
+                #[cfg(feature = "count-pixels-approx")]
+                const AVG_BYTES_PER_SET_COMMAND: f64 = "PX 123 123 rrggbb".len() as f64;
+
+                self.metric_pixels_for_ip.reset();
+                event.bytes_for_ip.iter().for_each(|(ip, bytes)| {
+                    self.metric_pixels_for_ip
+                        .with_label_values(&[&ip.to_string()])
+                        .set((*bytes as f64 / AVG_BYTES_PER_SET_COMMAND) as i64)
                 });
             }
         }
