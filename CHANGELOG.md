@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Relax shared memory size check. It now only warns when the shared memory is too big.
+  This e.g. might be the case when pixelflut-v6 crates the shared memory, as it also has statistics bytes after the framebuffer ([#63])
+
+[#63]: https://github.com/sbernauer/breakwater/pull/63
+
 ## [0.18.1] - 2025-05-02
 
 ### Fixed
