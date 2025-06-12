@@ -3,7 +3,7 @@ use std::{cell::UnsafeCell, pin::Pin};
 
 use color_eyre::eyre::{self, Context, bail};
 use shared_memory::{Shmem, ShmemConf, ShmemError};
-use tracing::{debug, info, instrument};
+use tracing::{debug, info, instrument, warn};
 
 use super::FrameBuffer;
 use crate::framebuffer::FB_BYTES_PER_PIXEL;
@@ -112,10 +112,15 @@ impl SharedMemoryFrameBuffer {
         shared_memory.set_owner(false);
 
         let actual_size = shared_memory.len();
-        if actual_size != target_size {
+        if actual_size < target_size {
             bail!(
-                "The shared memory had the wrong size! Expected {target_size} bytes, \
-                        but it has {actual_size} bytes."
+                "The shared memory is too small! Expected at least {target_size} bytes, \
+                        but it has {actual_size} bytes instead."
+            );
+        } else if actual_size > target_size {
+            warn!(
+                "The shared memory is too big! Expected at maximum {target_size} bytes, \
+                        but it has {actual_size} bytes instead."
             );
         }
 
