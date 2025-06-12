@@ -8,7 +8,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.18.0"
+version = "0.18.1"
 license = "Beerware"
 authors = ["Sebastian Bernauer <bernauerse@web.de>"]
 edition = "2024"
@@ -21,7 +21,7 @@ chrono = "0.4"
 clap = { version = "4.5", features = ["derive"] }
 color-eyre = "0.6"
 const_format = "0.2"
-criterion = { version = "0.5", features = ["async_tokio"] }
+criterion = { version = "0.6", features = ["async_tokio"] }
 eframe = { version = "0.31", default-features = false, features = ["glow", "default_fonts", "persistence", "wayland", "x11"] }
 egui = { version = "0.31" }
 libloading = { version = "0.8" }
@@ -48,9 +48,9 @@ vncserver = "0.2"
 winit = "0.30"
 
 # Uses the given path when used locally, and uses the specified version from crates.io when published.
-breakwater-core = { path = "breakwater-core", version = "0.18.0" }
-breakwater-parser = { path = "breakwater-parser", version = "0.18.0" }
-breakwater-egui-overlay = { path = "breakwater-egui-overlay", version = "0.18.0" }
+breakwater-core = { path = "breakwater-core", version = "0.18.1" }
+breakwater-parser = { path = "breakwater-parser", version = "0.18.1" }
+breakwater-egui-overlay = { path = "breakwater-egui-overlay", version = "0.18.1" }
 
 [profile.dev]
 opt-level = 3

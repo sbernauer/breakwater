@@ -14,13 +14,15 @@ static ORIGINAL_PARSER: OnceLock<Mutex<OriginalParser<SharedMemoryFrameBuffer>>>
 ///
 /// Function is thread safe (I guess).
 ///
-/// # Safety
-///
 /// Arguments:
 ///
 /// 1 `width` (`int`): The width of the canvas in pixels
 /// 2 `height`(`int`): The height of the canvas in pixels
 /// 3. `shared_memory_name_ptr` (`char []`): The name of the shared memory region to create/use.
+///
+/// # Safety
+///
+/// No special handling needed
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn breakwater_init_original_parser(
     width: c_int,
@@ -50,6 +52,10 @@ pub unsafe extern "C" fn breakwater_init_original_parser(
 /// Function is thread safe (I guess).
 ///
 /// Function has no arguments.
+///
+/// # Safety
+///
+/// Call [`breakwater_original_parser_parser_lookahead`] before.
 #[unsafe(no_mangle)]
 pub extern "C" fn breakwater_original_parser_parser_lookahead() -> size_t {
     let parser = ORIGINAL_PARSER
@@ -63,8 +69,6 @@ pub extern "C" fn breakwater_original_parser_parser_lookahead() -> size_t {
 ///
 /// Function is thread safe (I guess).
 ///
-/// # Safety
-///
 /// Arguments:
 ///
 /// 1. `buffer` (`const char*`): The bytes the user send.
@@ -74,6 +78,10 @@ pub extern "C" fn breakwater_original_parser_parser_lookahead() -> size_t {
 ///    forming the response to the client. **It's your responsibility to free the passed memory!**
 /// 4. `out_response_len` (`size_t*`): This number will be changed to the number of bytes the output
 ///    for the client has.
+///
+/// # Safety
+///
+/// Call [`breakwater_original_parser_parser_lookahead`] before.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn breakwater_original_parser_parse(
     buffer: *mut u8,

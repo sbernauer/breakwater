@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 #[cfg(target_arch = "x86_64")]
 use breakwater_parser::AssemblerParser;
 use breakwater_parser::{
-    MemchrParser, OriginalParser, Parser, RefactoredParser, SimpleFrameBuffer,
+    MemchrParser, OriginalParser, Parser, RefactoredParser, SharedMemoryFrameBuffer,
 };
 use criterion::{Criterion, criterion_group, criterion_main};
 use pixelbomber::image_handler::{self, ImageConfigBuilder};
@@ -97,10 +97,10 @@ fn invoke_benchmark(
 
     let mut c_group = c.benchmark_group(bench_name);
 
-    let fb = Arc::new(SimpleFrameBuffer::new(
-        FRAMEBUFFER_WIDTH,
-        FRAMEBUFFER_HEIGHT,
-    ));
+    let fb = Arc::new(
+        SharedMemoryFrameBuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT, None)
+            .expect("Failed to create shared memory framebuffer"),
+    );
 
     let parser_names = vec!["original", "refactored" /*"memchr"*/];
 

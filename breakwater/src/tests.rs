@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use breakwater_parser::{FrameBuffer, HELP_TEXT, SimpleFrameBuffer};
+use breakwater_parser::{FrameBuffer, HELP_TEXT, SharedMemoryFrameBuffer};
 use rstest::{fixture, rstest};
 use tokio::sync::mpsc;
 
@@ -20,9 +20,12 @@ fn ip() -> IpAddr {
 }
 
 #[fixture]
-fn fb() -> Arc<SimpleFrameBuffer> {
+fn fb() -> Arc<SharedMemoryFrameBuffer> {
     // We keep the framebuffer so small, so that we can easily test all pixels in a test run
-    Arc::new(SimpleFrameBuffer::new(640, 480))
+    Arc::new(
+        SharedMemoryFrameBuffer::new(640, 480, None)
+            .expect("Failed to create shared memory framebuffer"),
+    )
 }
 
 #[fixture]
