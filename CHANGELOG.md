@@ -4,12 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Added C bindings for the breakwater-parser.
+  They are rather minimal, but should be sufficient to use the parser from C code, such as f-stack or VPP.
+  Documentation is in `breakwater-parser-c-bindings/README.md` ([#64])
+
 ### Changed
 
 - Relax shared memory size check. It now only warns when the shared memory is too big.
   This e.g. might be the case when pixelflut-v6 crates the shared memory, as it also has statistics bytes after the framebuffer ([#63])
 
 [#63]: https://github.com/sbernauer/breakwater/pull/63
+[#64]: https://github.com/sbernauer/breakwater/pull/64
 
 ## [0.18.1] - 2025-05-02
 
