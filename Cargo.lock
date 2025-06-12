@@ -453,6 +453,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "breakwater-parser-c-bindings"
+version = "0.18.1"
+dependencies = [
+ "breakwater-parser",
+ "libc",
+]
+
+[[package]]
 name = "bufstream"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
