@@ -12,7 +12,7 @@ use crate::{
 #[cfg(feature = "egui")]
 pub mod egui;
 pub mod ffmpeg;
-#[cfg(feature = "native-display")]
+#[cfg(all(feature = "native-display", not(feature = "egui")))]
 pub mod native_display;
 #[cfg(feature = "vnc")]
 pub mod vnc;
