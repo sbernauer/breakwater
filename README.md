@@ -143,6 +143,11 @@ As `portable_simd` is a unstable feature, we configured this project to use nigh
 
 If the SIMD or nightly part causes any problems on your setup please reach out by [creating an Issue](https://github.com/sbernauer/breakwater/issues/new)!
 
+### SIMD paper
+
+[kleines Filmröllchen](https://github.com/kleinesfilmroellchen) wrote an awesome paper on [std::simd in Rust and C++ — A Practical Comparative Analysis](https://filmroellchen.eu/projects/academic/std%20simd%20paper%20kleines%20Filmr%C3%B6llchen.pdf).
+It touches on SIMD usage for Pixelflut.
+
 # Run in docker container
 This command will start the Pixelflut server in a docker container
 
