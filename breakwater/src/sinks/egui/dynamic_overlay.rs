@@ -4,7 +4,9 @@ use breakwater_egui_overlay::{DynamicOverlay, Versions};
 use color_eyre::eyre::{self, Context};
 use tracing::instrument;
 
+#[derive(Default)]
 pub enum UiOverlay {
+    #[default]
     BuiltIn,
     Dynamic {
         _lib: libloading::Library,
@@ -19,12 +21,6 @@ unsafe impl Send for UiOverlay {}
 /// Safety:
 /// UiOverlay never leaves the main thread but tokio does not know that :-)
 unsafe impl Sync for UiOverlay {}
-
-impl Default for UiOverlay {
-    fn default() -> Self {
-        Self::BuiltIn
-    }
-}
 
 impl UiOverlay {
     #[allow(clippy::too_many_arguments)]
