@@ -3,6 +3,10 @@ services:
     image: sbernauer/breakwater:0.18.1
     # build: ..
     restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 1000000
+        hard: 1000000
     entrypoint:
       - bash
       - -c
