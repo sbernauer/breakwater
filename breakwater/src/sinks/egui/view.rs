@@ -60,7 +60,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> EguiView<FB> {
     }
 
     fn draw_canvas(&self, ctx: &egui::Context, view_port_index: usize, view_port: ViewportConfig) {
-        let rect = ctx.screen_rect();
+        let rect = ctx.content_rect();
         let painter = ctx.layer_painter(egui::LayerId::background());
 
         let canvas_renderer = self.canvas_renderer.clone();
