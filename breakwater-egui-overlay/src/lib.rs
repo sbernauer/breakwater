@@ -133,7 +133,7 @@ extern "C" fn draw_ui(
 
     egui::Area::new(egui::Id::new("overlay_area"))
         .movable(true)
-        .fixed_pos(egui::pos2(20.0, 20.0)) // Initial position on the screen
+        .default_pos(egui::pos2(20.0, 20.0))
         .show(ctx, |ui| {
             stats_frame.show(ui, |ui| {
                 ui.label(
