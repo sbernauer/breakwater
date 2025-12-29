@@ -39,6 +39,9 @@ jobs:
         run: sudo apt update && sudo apt install -y libvncserver-dev
       - if: runner.os == 'macOS'
         run: brew install libvncserver
+
+      # Build without VNC support to keep the list of dynamically linked libraries minimal
+      # See https://github.com/sbernauer/breakwater/issues/72 for details.
       - if: runner.os != 'Windows'
         name: Build binary (non Windows)
         # We don't want to e.g. set "-C target-cpu=native", so that the binary should run everywhere
@@ -55,10 +58,24 @@ jobs:
         run: cargo build --release --target=${{ matrix.target }} --no-default-features --features egui
       - name: Rename binary file
         run: mv target/${{ matrix.target }}/release/breakwater${{ matrix.file-suffix }} breakwater-${{ matrix.target }}${{ matrix.file-suffix }}
+
+      # Also build with VNC support
+      - if: runner.os != 'Windows'
+        name: Build binary with VNC support (non Windows)
+        # We don't want to e.g. set "-C target-cpu=native", so that the binary should run everywhere
+        run: RUSTFLAGS='' cargo build --release --target=${{ matrix.target }} --no-default-features --features egui,vnc
+      - if: runner.os == 'Windows'
+        name: Build binary with VNC support (Windows)
+        run: cargo build --release --target=${{ matrix.target }} --no-default-features --features egui,vnc
+      - name: Rename binary file with VNC support
+        run: mv target/${{ matrix.target }}/release/breakwater${{ matrix.file-suffix }} breakwater-with-vnc-support-${{ matrix.target }}${{ matrix.file-suffix }}
+
       - name: Upload Release binaries
         uses: softprops/action-gh-release@v1
         with:
-          files: breakwater-${{ matrix.target }}${{ matrix.file-suffix }}
+          files: |
+            breakwater-${{ matrix.target }}${{ matrix.file-suffix }}
+            breakwater-with-vnc-support-${{ matrix.target }}${{ matrix.file-suffix }}
 
   push_docker_image:
     name: Push Docker image to Docker Hub
