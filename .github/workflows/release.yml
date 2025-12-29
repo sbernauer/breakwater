@@ -58,24 +58,23 @@ jobs:
         run: cargo build --release --target=${{ matrix.target }} --no-default-features --features egui
       - name: Rename binary file
         run: mv target/${{ matrix.target }}/release/breakwater${{ matrix.file-suffix }} breakwater-${{ matrix.target }}${{ matrix.file-suffix }}
-
-      # Also build with VNC support
-      - if: runner.os != 'Windows'
-        name: Build binary with VNC support (non Windows)
-        # We don't want to e.g. set "-C target-cpu=native", so that the binary should run everywhere
-        run: RUSTFLAGS='' cargo build --release --target=${{ matrix.target }} --no-default-features --features egui,vnc
-      - if: runner.os == 'Windows'
-        name: Build binary with VNC support (Windows)
-        run: cargo build --release --target=${{ matrix.target }} --no-default-features --features egui,vnc
-      - name: Rename binary file with VNC support
-        run: mv target/${{ matrix.target }}/release/breakwater${{ matrix.file-suffix }} breakwater-with-vnc-support-${{ matrix.target }}${{ matrix.file-suffix }}
-
       - name: Upload Release binaries
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            breakwater-${{ matrix.target }}${{ matrix.file-suffix }}
-            breakwater-with-vnc-support-${{ matrix.target }}${{ matrix.file-suffix }}
+          files: breakwater-${{ matrix.target }}${{ matrix.file-suffix }}
+
+      # Also build with VNC support, but only on Linux (as it is a pain to get it working on Windows
+      # and Max)
+      - if: runner.os == 'Linux'
+        name: Build binary with VNC support (Linux)
+        # We don't want to e.g. set "-C target-cpu=native", so that the binary should run everywhere
+        run: RUSTFLAGS='' cargo build --release --target=${{ matrix.target }} --no-default-features --features egui,vnc
+      - name: Rename binary file with VNC support
+        run: mv target/${{ matrix.target }}/release/breakwater${{ matrix.file-suffix }} breakwater-with-vnc-support-${{ matrix.target }}${{ matrix.file-suffix }}
+      - name: Upload Release binaries
+        uses: softprops/action-gh-release@v1
+        with:
+          files: breakwater-with-vnc-support-${{ matrix.target }}${{ matrix.file-suffix }}
 
   push_docker_image:
     name: Push Docker image to Docker Hub

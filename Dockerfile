@@ -9,6 +9,7 @@ RUN rustup toolchain install nightly
 
 WORKDIR /breakwater
 COPY breakwater-parser/ breakwater-parser/
+COPY breakwater-parser-c-bindings/ breakwater-parser-c-bindings/
 COPY breakwater-egui-overlay/ breakwater-egui-overlay/
 COPY breakwater/ breakwater/
 COPY Cargo.toml .
