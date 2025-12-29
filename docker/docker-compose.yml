@@ -1,6 +1,6 @@
 services:
   pixelflut:
-    image: sbernauer/breakwater:0.18.1
+    image: sbernauer/breakwater:0.19.0
     # build: ..
     restart: unless-stopped
     ulimits:

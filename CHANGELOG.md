@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.19.0] - 2025-12-29
+
 ### Added
 
 - Added C bindings for the breakwater-parser.
@@ -15,8 +17,13 @@ All notable changes to this project will be documented in this file.
 - Relax shared memory size check. It now only warns when the shared memory is too big.
   This e.g. might be the case when pixelflut-v6 crates the shared memory, as it also has statistics bytes after the framebuffer ([#63])
 
+### Fixed
+
+- Make egui overlay movable ([#71])
+
 [#63]: https://github.com/sbernauer/breakwater/pull/63
 [#64]: https://github.com/sbernauer/breakwater/pull/64
+[#71]: https://github.com/sbernauer/breakwater/pull/71
 
 ## [0.18.1] - 2025-05-02
 
