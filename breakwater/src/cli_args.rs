@@ -9,8 +9,9 @@ pub const DEFAULT_NETWORK_BUFFER_SIZE_STR: &str = formatcp!("{}", DEFAULT_NETWOR
 pub struct CliArgs {
     /// Listen address to bind to.
     /// The default value will listen on all interfaces for IPv4 and IPv6 packets.
+    /// You can add multiple arguments
     #[clap(short, long, default_value = "[::]:1234")]
-    pub listen_address: String,
+    pub listen_address: Vec<String>,
 
     /// Width of the drawing surface.
     #[clap(long, default_value_t = 1280)]

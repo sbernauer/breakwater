@@ -107,7 +107,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
         let mut advertised_endpoints = cli_args.advertised_endpoints.clone();
         if advertised_endpoints.is_empty() {
             let port = cli_args
-                .listen_address
+                .listen_address.iter().next().expect("FIXME: avertised_endpoints is empty and no bind addr is specified")
                 .to_socket_addrs()
                 .unwrap()
                 .next()
