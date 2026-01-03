@@ -9,8 +9,9 @@ pub const DEFAULT_NETWORK_BUFFER_SIZE_STR: &str = formatcp!("{}", DEFAULT_NETWOR
 pub struct CliArgs {
     /// Listen address to bind to.
     /// The default value will listen on all interfaces for IPv4 and IPv6 packets.
+    /// You can add multiple arguments
     #[clap(short, long, default_value = "[::]:1234")]
-    pub listen_address: String,
+    pub listen_address: Vec<String>,
 
     /// Width of the drawing surface.
     #[clap(long, default_value_t = 1280)]
@@ -73,15 +74,11 @@ pub struct CliArgs {
     #[clap(short, long)]
     pub connections_per_ip: Option<u64>,
 
-    /// Enabled a VNC server
+    /// If at least one address is given, a VNC server is started on those addresses
+    /// CAVEAT: If you specify multiple addresses of the same version, the last one wins
     #[cfg(feature = "vnc")]
     #[clap(long)]
-    pub vnc: bool,
-
-    /// Port of the VNC server.
-    #[cfg(feature = "vnc")]
-    #[clap(short, long, default_value_t = 5900)]
-    pub vnc_port: u16,
+    pub vnc_address: Vec<String>,
 
     /// Enable native display output. This requires some form of graphical system (so will probably not work on your
     /// server).
