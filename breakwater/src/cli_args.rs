@@ -73,15 +73,11 @@ pub struct CliArgs {
     #[clap(short, long)]
     pub connections_per_ip: Option<u64>,
 
-    /// Enabled a VNC server
+    /// If at least one address is given, a VNC server is started on those addresses
+    /// CAVEAT: If you specify multiple addresses of the same version, the last one wins
     #[cfg(feature = "vnc")]
     #[clap(long)]
-    pub vnc: bool,
-
-    /// Port of the VNC server.
-    #[cfg(feature = "vnc")]
-    #[clap(short, long, default_value_t = 5900)]
-    pub vnc_port: u16,
+    pub vnc_address: Vec<String>,
 
     /// Enable native display output. This requires some form of graphical system (so will probably not work on your
     /// server).

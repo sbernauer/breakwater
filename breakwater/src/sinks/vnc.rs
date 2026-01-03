@@ -1,5 +1,5 @@
 use core::slice;
-use std::{sync::Arc, time::Duration};
+use std::{ffi::CString, net::SocketAddr, str::FromStr, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use breakwater_parser::{FB_BYTES_PER_PIXEL, FrameBuffer};
@@ -49,9 +49,9 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
     ) -> eyre::Result<Option<Self>> {
-        if !cli_args.vnc {
+        if cli_args.vnc_address.is_empty() {
             return Ok(None);
-        }
+        };
 
         let font = match cli_args.font.as_str() {
             // We ship our own copy of Arial.ttf, so that users don't need to download and provide it
@@ -75,15 +75,48 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
             (*screen).bitsPerPixel = 32;
             (*screen).depth = 24;
             (*screen).serverFormat.depth = 24;
+            (*screen).autoPort = 0;
+            (*screen).port = -1;
+            (*screen).ipv6port = -1;
         }
-        unsafe {
-            (*screen).port = cli_args.vnc_port as i32;
-            (*screen).ipv6port = cli_args.vnc_port as i32;
+
+        let socket_addrs = &cli_args
+            .vnc_address
+            .iter()
+            .map(|addr| std::net::SocketAddr::from_str(addr).context("failed to parse vnc address"))
+            .collect::<eyre::Result<Vec<_>>>()?;
+
+        for socket_addr in socket_addrs {
+            match socket_addr {
+                SocketAddr::V4(v4) => unsafe {
+                    (*screen).listenInterface = v4.ip().to_bits().to_be();
+                    (*screen).port = v4.port() as i32;
+                },
+                SocketAddr::V6(v6) => {
+                    let c_ipv6_str = CString::from_str(v6.ip().to_string().as_str())?;
+                    unsafe {
+                        // When multiple IPv6 addresses are set, we are dropping the previous one
+                        if !(*screen).listen6Interface.is_null() {
+                            let _ = CString::from_raw((*screen).listen6Interface);
+                        }
+
+                        (*screen).listen6Interface = c_ipv6_str.into_raw();
+                        (*screen).ipv6port = v6.port() as i32;
+                    }
+                }
+            };
         }
 
         rfb_framebuffer_malloc(screen, (fb.get_size() * 4/* bytes per pixel */) as u64);
         rfb_init_server(screen);
         rfb_run_event_loop(screen, 1, 1);
+
+        unsafe {
+            // drop out allocated string
+            if !(*screen).listen6Interface.is_null() {
+                let _ = CString::from_raw((*screen).listen6Interface);
+            }
+        }
 
         // FIXME: Only return Some in case VNC is enabled
         Ok(Some(Self {
