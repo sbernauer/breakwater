@@ -31,7 +31,7 @@ const CONNECTION_DENIED_TEXT: &[u8] = b"Connection denied as connection limit is
 const STATISTICS_REPORT_INTERVAL: Duration = Duration::from_millis(250);
 
 pub struct Server<FB: FrameBuffer> {
-    incoming_connections: SelectAll<tokio_stream::wrappers::TcpListenerStream>,
+    incoming_connections: SelectAll<TcpListenerStream>,
     fb: Arc<FB>,
     statistics_tx: mpsc::Sender<StatisticsEvent>,
     network_buffer_size: usize,
