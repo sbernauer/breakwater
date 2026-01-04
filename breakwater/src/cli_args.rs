@@ -76,10 +76,10 @@ pub struct CliArgs {
     pub connections_per_ip: Option<u64>,
 
     /// If at least one address is given, a VNC server is started on those addresses
-    /// CAVEAT: If you specify multiple addresses of the same version, the last one wins
+    /// Only one address of each IP version can be specified
     #[cfg(feature = "vnc")]
-    #[clap(long)]
-    pub vnc_address: Vec<String>,
+    #[clap(long = "vnc-address")]
+    pub vnc_addresses: Vec<SocketAddr>,
 
     /// Enable native display output. This requires some form of graphical system (so will probably not work on your
     /// server).
@@ -113,4 +113,23 @@ pub struct CliArgs {
     /// used to persist the canvas across restarts.
     #[clap(long)]
     pub shared_memory_name: Option<String>,
+}
+
+impl CliArgs {
+    // validates if parsed arguments are ok
+    pub fn validate(&self) -> Result<(), String> {
+        // Counting the number of IP versions in the parsed vector
+        let (v4_count, v6_count) =
+            self.vnc_addresses
+                .iter()
+                .fold((0, 0), |(v4, v6), addr| match addr.ip() {
+                    IpAddr::V4(_) => (v4 + 1, v6),
+                    IpAddr::V6(_) => (v4, v6 + 1),
+                });
+
+        if v4_count > 1 || v6_count > 1 {
+            return Err("Cannot have more than one addresses of the same IP version".to_string());
+        }
+        Ok(())
+    }
 }

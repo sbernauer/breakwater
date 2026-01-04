@@ -40,6 +40,13 @@ async fn main() -> eyre::Result<()> {
 
     let args = CliArgs::parse();
 
+    if let Err(e) = args.validate() {
+        // This makes the error look like a native Clap error
+        use clap::CommandFactory;
+        let mut cmd = CliArgs::command();
+        cmd.error(clap::error::ErrorKind::InvalidValue, e).exit();
+    }
+
     // Not using dynamic dispatch here for performance reasons
     let fb = Arc::new(
         SharedMemoryFrameBuffer::new(args.width, args.height, args.shared_memory_name.as_deref())
