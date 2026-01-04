@@ -35,7 +35,7 @@ You may need to install some additional packages with `sudo apt install clang pk
 Then you can directly run the server with
 
 ```bash
-cargo run --release -- --vnc-address
+cargo run --release -- --vnc-listen-address 0.0.0.0:5900 --vnc-listen-address '[::]:5900'
 ```
 The default settings should provide you with a ready-to-use server.
 
