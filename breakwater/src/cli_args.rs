@@ -1,6 +1,10 @@
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
+#[cfg(feature = "vnc")]
+use std::net::{SocketAddrV4, SocketAddrV6};
 
 use clap::Parser;
+#[cfg(feature = "vnc")]
+use color_eyre::eyre::{self, ensure};
 use const_format::formatcp;
 
 pub const DEFAULT_NETWORK_BUFFER_SIZE: usize = 256 * 1024;
@@ -75,11 +79,11 @@ pub struct CliArgs {
     #[clap(short, long)]
     pub connections_per_ip: Option<u64>,
 
-    /// If at least one address is given, a VNC server is started on those addresses
+    /// Listen address to bind to (multiple can be specified)
     /// Only one address of each IP version can be specified
     #[cfg(feature = "vnc")]
     #[clap(long = "vnc-address")]
-    pub vnc_addresses: Vec<SocketAddr>,
+    pub vnc_listen_addresses: Vec<SocketAddr>,
 
     /// Enable native display output. This requires some form of graphical system (so will probably not work on your
     /// server).
@@ -116,20 +120,31 @@ pub struct CliArgs {
 }
 
 impl CliArgs {
-    // validates if parsed arguments are ok
-    pub fn validate(&self) -> Result<(), String> {
-        // Counting the number of IP versions in the parsed vector
-        let (v4_count, v6_count) =
-            self.vnc_addresses
-                .iter()
-                .fold((0, 0), |(v4, v6), addr| match addr.ip() {
-                    IpAddr::V4(_) => (v4 + 1, v6),
-                    IpAddr::V6(_) => (v4, v6 + 1),
-                });
-
-        if v4_count > 1 || v6_count > 1 {
-            return Err("Cannot have more than one addresses of the same IP version".to_string());
-        }
-        Ok(())
+    /// Checks that at most one IP per version (v4/v6) is configured.
+    /// Returns the (optional) v4 address and (optional) v6 address.
+    #[cfg(feature = "vnc")]
+    pub fn get_vnc_listen_addresses(
+        &self,
+    ) -> eyre::Result<(Option<&SocketAddrV4>, Option<&SocketAddrV6>)> {
+        self.vnc_listen_addresses
+            .iter()
+            .try_fold((None, None), |(v4, v6), addr| match addr {
+                SocketAddr::V4(new) => {
+                    // Fail if an IPv4 was already encountered
+                    ensure!(
+                        v4.is_none(),
+                        "You can only specify one IPv4 VNC listen address"
+                    );
+                    Ok((Some(new), v6))
+                }
+                SocketAddr::V6(new) => {
+                    // Fail if an IPv6 was already encountered
+                    ensure!(
+                        v6.is_none(),
+                        "You can only specify one IPv6 VNC listen address"
+                    );
+                    Ok((v4, Some(new)))
+                }
+            })
     }
 }

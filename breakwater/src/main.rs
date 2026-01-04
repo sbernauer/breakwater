@@ -40,10 +40,12 @@ async fn main() -> eyre::Result<()> {
 
     let args = CliArgs::parse();
 
-    if let Err(e) = args.validate() {
-        // This makes the error look like a native Clap error
+    // Give the user quick feedback on invalid VNC arguments
+    #[cfg(feature = "vnc")]
+    if let Err(e) = args.get_vnc_listen_addresses() {
         use clap::CommandFactory;
-        let mut cmd = CliArgs::command();
+        let mut cmd = <CliArgs as CommandFactory>::command();
+        // Displays error in the standard 'clap' format and exits
         cmd.error(clap::error::ErrorKind::InvalidValue, e).exit();
     }
 

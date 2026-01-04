@@ -1,5 +1,5 @@
 use core::slice;
-use std::{ffi::CString, net::SocketAddr, str::FromStr, sync::Arc, time::Duration};
+use std::{ffi::CString, str::FromStr, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use breakwater_parser::{FB_BYTES_PER_PIXEL, FrameBuffer};
@@ -49,7 +49,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
     ) -> eyre::Result<Option<Self>> {
-        if cli_args.vnc_addresses.is_empty() {
+        if cli_args.vnc_listen_addresses.is_empty() {
             tracing::debug!("VNC sink not enabled as no vnc addresses are specified");
             return Ok(None);
         };
@@ -81,25 +81,21 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
             (*screen).ipv6port = -1;
         }
 
-        for socket_addr in &cli_args.vnc_addresses {
-            match socket_addr {
-                SocketAddr::V4(v4) => unsafe {
-                    (*screen).listenInterface = v4.ip().to_bits().to_be();
-                    (*screen).port = v4.port() as i32;
-                },
-                SocketAddr::V6(v6) => {
-                    let c_ipv6_str = CString::from_str(v6.ip().to_string().as_str())?;
-                    unsafe {
-                        // When multiple IPv6 addresses are set, we are dropping the previous one
-                        if !(*screen).listen6Interface.is_null() {
-                            let _ = CString::from_raw((*screen).listen6Interface);
-                        }
+        let (v4, v6) = cli_args.get_vnc_listen_addresses()?;
 
-                        (*screen).listen6Interface = c_ipv6_str.into_raw();
-                        (*screen).ipv6port = v6.port() as i32;
-                    }
-                }
-            };
+        if let Some(v4) = v4 {
+            unsafe {
+                (*screen).listenInterface = v4.ip().to_bits().to_be();
+                (*screen).port = v4.port() as i32;
+            }
+        }
+
+        if let Some(v6) = v6 {
+            let c_ipv6_str = CString::from_str(v6.ip().to_string().as_str())?;
+            unsafe {
+                (*screen).listen6Interface = c_ipv6_str.into_raw();
+                (*screen).ipv6port = v6.port() as i32;
+            }
         }
 
         rfb_framebuffer_malloc(screen, (fb.get_size() * 4/* bytes per pixel */) as u64);
