@@ -158,7 +158,7 @@ docker run --rm --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 sbernauer/break
 If you want to permanently save statistics (to keep them between restarts) you can use the following command:
 
 ```bash
-mkdir -p pixelflut && docker run --rm -u 1000:1000 --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 -v "$(pwd)/pixelflut:/pixelflut" sbernauer/breakwater --vnc-address --statistics-save-file /pixelflut/statistics.json
+mkdir -p pixelflut && docker run --rm -u 1000:1000 --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 -v "$(pwd)/pixelflut:/pixelflut" sbernauer/breakwater --vnc-listen-address 0.0.0.0:5900 --statistics-save-file /pixelflut/statistics.json
 ```
 
 # Ready to use Docker compose setup
