@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING** Removed `--vnc` & `--vnc-port` in favor of `--vnc-address` which can be set multiple times. 
+  This improves the control over where the VNC server is listening.
+  Due to a limitation on how the vnc server is construced only one bind address per IP version is permitted.
+- `-l` & `--listen-address` can now be set multiple times to listen on specific addresses
+
 ## [0.19.0] - 2025-12-29
 
 ### Added
