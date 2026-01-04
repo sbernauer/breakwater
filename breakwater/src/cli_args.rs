@@ -79,7 +79,7 @@ pub struct CliArgs {
     #[clap(short, long)]
     pub connections_per_ip: Option<u64>,
 
-    /// Listen address to bind to (multiple can be specified)
+    /// VNC server listen address to bind to (multiple can be specified).
     /// Only one address of each IP version can be specified
     #[cfg(feature = "vnc")]
     #[clap(long = "vnc-address")]

@@ -61,9 +61,8 @@ Pixelflut server
 Usage: breakwater [OPTIONS]
 
 Options:
-  -l, --listen-address <LISTEN_ADDRESS>
-          Listen address to bind to (multiple can be specified).
-          The default value will listen on all interfaces for IPv4 and IPv6 packets. [default: [::]:1234]
+  -l, --listener-address <LISTEN_ADDRESSES>
+          Listen address to bind to (multiple can be specified). The default value will listen on all interfaces for IPv4 and IPv6 packets [default: [::]:1234]
       --width <WIDTH>
           Width of the drawing surface [default: 1280]
       --height <HEIGHT>
@@ -90,9 +89,8 @@ Options:
           Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4`
   -c, --connections-per-ip <CONNECTIONS_PER_IP>
           Allow only a certain number of connections per ip address
-      --vnc-address
-          Listen address to bind to (multiple can be specified)
-          Only one address of each IP version can be specified
+      --vnc-address <VNC_LISTEN_ADDRESSES>
+          VNC server listen address to bind to (multiple can be specified). Only one address of each IP version can be specified
       --native-display
           Enable native display output. This requires some form of graphical system (so will probably not work on your server)
       --viewport <VIEWPORT>
