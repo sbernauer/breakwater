@@ -107,7 +107,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
         let advertised_endpoints = if !cli_args.advertised_endpoints.is_empty() {
             cli_args.advertised_endpoints.clone()
         } else {
-            // In case no advertised endpoint to display is given, we calculate the most likely
+            // In case no advertised endpoints to display are given, we calculate the most likely
             // endpoint(s) to display.
             match &cli_args.listen_addresses[..] {
                 // No listeners given, so also no endpoints to advertise
