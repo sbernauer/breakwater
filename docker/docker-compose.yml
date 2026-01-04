@@ -10,7 +10,7 @@ services:
     entrypoint:
       - bash
       - -c
-      - breakwater --width 1280 --height 720 --vnc-address
+      - breakwater --width 1280 --height 720 --vnc-listen-address 0.0.0.0:5900
       # To also stream to owncast (disabled by default as it consumes lots of CPU)
       # Yes we use the default streaming key, I don't know how to change it in owncast
       # - echo "Waiting for owncast to be ready" && sleep 5 && breakwater --width 1920 --height 1080 --vnc-address --rtmp-address rtmp://owncast:1935/live/abc123
