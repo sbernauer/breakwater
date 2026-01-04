@@ -103,7 +103,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
         rfb_run_event_loop(screen, 1, 1);
 
         unsafe {
-            // drop out allocated string
+            // Drop out allocated string
             if !(*screen).listen6Interface.is_null() {
                 let _ = CString::from_raw((*screen).listen6Interface);
             }
