@@ -49,7 +49,8 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
     ) -> eyre::Result<Option<Self>> {
-        if cli_args.vnc_address.is_empty() {
+        if cli_args.vnc_addresses.is_empty() {
+            tracing::debug!("VNC sink not enabled as no vnc addresses are specified");
             return Ok(None);
         };
 
@@ -80,13 +81,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
             (*screen).ipv6port = -1;
         }
 
-        let socket_addrs = &cli_args
-            .vnc_address
-            .iter()
-            .map(|addr| std::net::SocketAddr::from_str(addr).context("failed to parse vnc address"))
-            .collect::<eyre::Result<Vec<_>>>()?;
-
-        for socket_addr in socket_addrs {
+        for socket_addr in &cli_args.vnc_addresses {
             match socket_addr {
                 SocketAddr::V4(v4) => unsafe {
                     (*screen).listenInterface = v4.ip().to_bits().to_be();

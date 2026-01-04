@@ -1,6 +1,7 @@
 use std::{
     cmp::min,
     collections::{HashMap, hash_map::Entry},
+    fmt::{Debug, Display},
     net::IpAddr,
     sync::Arc,
     time::Duration,
@@ -12,10 +13,11 @@ use futures::{StreamExt, stream::SelectAll};
 use memadvise::Advice;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpListener,
+    net::{TcpListener, ToSocketAddrs},
     sync::mpsc,
     time::Instant,
 };
+use tokio_stream::wrappers::TcpListenerStream;
 use tracing::instrument;
 
 use crate::{
@@ -29,7 +31,7 @@ const CONNECTION_DENIED_TEXT: &[u8] = b"Connection denied as connection limit is
 const STATISTICS_REPORT_INTERVAL: Duration = Duration::from_millis(250);
 
 pub struct Server<FB: FrameBuffer> {
-    stream: SelectAll<tokio_stream::wrappers::TcpListenerStream>,
+    incoming_connections: SelectAll<tokio_stream::wrappers::TcpListenerStream>,
     fb: Arc<FB>,
     statistics_tx: mpsc::Sender<StatisticsEvent>,
     network_buffer_size: usize,
@@ -40,27 +42,27 @@ pub struct Server<FB: FrameBuffer> {
 impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
     #[instrument(skip(fb, statistics_tx), err)]
     pub async fn new(
-        listen_address: Vec<&str>,
+        listen_addresses: &[impl ToSocketAddrs + Debug + Display],
         fb: Arc<FB>,
         statistics_tx: mpsc::Sender<StatisticsEvent>,
         network_buffer_size: usize,
         max_connections_per_ip: Option<u64>,
     ) -> eyre::Result<Self> {
-        let mut listeners = vec![];
-        for addr_str in listen_address {
-            let l = tokio_stream::wrappers::TcpListenerStream::new(
-                TcpListener::bind(addr_str)
-                    .await
-                    .with_context(|| format!("failed to bind to {addr_str}"))?,
-            );
-            listeners.push(l);
+        let mut listener_streams = Vec::with_capacity(listen_addresses.len());
+        for addr in listen_addresses {
+            let listener = TcpListener::bind(addr)
+                .await
+                .with_context(|| format!("failed to bind to {addr}"))?;
+            let listener_stream = TcpListenerStream::new(listener);
+            listener_streams.push(listener_stream);
         }
+
+        let incoming_connections = futures::stream::select_all(listener_streams);
+
         tracing::info!("started Pixelflut server");
 
-        let combined = futures::stream::select_all(listeners);
-
         Ok(Self {
-            stream: combined,
+            incoming_connections,
             fb,
             statistics_tx,
             network_buffer_size,
@@ -74,69 +76,73 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
             mpsc::unbounded_channel::<IpAddr>();
         let connection_dropped_tx = self.max_connections_per_ip.map(|_| connection_dropped_tx);
 
-        while let Some(conn) = self.stream.next().await {
-            match conn {
-                Ok(mut stream) => {
-                    // If connections are unlimited, will execute one try_recv per new connection
-                    while let Ok(ip) = connection_dropped_rx.try_recv() {
-                        if let Entry::Occupied(mut o) = self.connections_per_ip.entry(ip) {
-                            let connections = o.get_mut();
-                            *connections -= 1;
-                            if *connections == 0 {
-                                o.remove_entry();
-                            }
-                        }
-                    }
-
-                    // If you connect via IPv4 you often show up as embedded inside an IPv6 address
-                    // Extracting the embedded information here, so we get the real (TM) address
-                    let ip = stream.peer_addr().context("failed to get ip from socket")?.ip().to_canonical();
-
-                    if let Some(limit) = self.max_connections_per_ip {
-                        let current_connections = self.connections_per_ip.entry(ip).or_default();
-                        if *current_connections < limit {
-                            *current_connections += 1;
-                        } else {
-                            self.statistics_tx
-                                .send(StatisticsEvent::ConnectionDenied { ip })
-                                .await
-                                .context(STATISTICS_SEND_ERR)?;
-
-                            // Only best effort, it's ok if this message get's missed
-                            let _ = stream.write_all(CONNECTION_DENIED_TEXT).await;
-                            // This can error if a connection is dropped prematurely, which is totally fine
-                            let _ = stream.shutdown().await;
-                            continue;
-                        }
-                    };
-
-                    let fb_for_thread = Arc::clone(&self.fb);
-                    let statistics_tx_for_thread = self.statistics_tx.clone();
-                    let network_buffer_size = self.network_buffer_size;
-                    let connection_dropped_tx_clone = connection_dropped_tx.clone();
-                    tokio::spawn(async move {
-                        if let Err(error) = handle_connection(
-                            stream,
-                            ip,
-                            fb_for_thread,
-                            statistics_tx_for_thread,
-                            network_buffer_size,
-                            connection_dropped_tx_clone,
-                        )
-                        .await
-                        {
-                            tracing::error!(?error, %ip, "failed to handle connection");
-                        }
-                    });
-                }
+        while let Some(connection) = self.incoming_connections.next().await {
+            let mut stream = match connection {
+                Ok(connection) => connection,
                 Err(err) => {
-                    tracing::error!(?err, "failed to handle connection from stream");
+                    tracing::error!(?err, "failed to accept new client connection");
+                    continue;
+                }
+            };
+
+            // If connections are unlimited, will execute one try_recv per new connection
+            while let Ok(ip) = connection_dropped_rx.try_recv() {
+                if let Entry::Occupied(mut o) = self.connections_per_ip.entry(ip) {
+                    let connections = o.get_mut();
+                    *connections -= 1;
+                    if *connections == 0 {
+                        o.remove_entry();
+                    }
                 }
             }
+
+            // If you connect via IPv4 you often show up as embedded inside an IPv6 address
+            // Extracting the embedded information here, so we get the real (TM) address
+            let ip = stream
+                .peer_addr()
+                .context("failed to get ip from socket")?
+                .ip()
+                .to_canonical();
+
+            if let Some(limit) = self.max_connections_per_ip {
+                let current_connections = self.connections_per_ip.entry(ip).or_default();
+                if *current_connections < limit {
+                    *current_connections += 1;
+                } else {
+                    self.statistics_tx
+                        .send(StatisticsEvent::ConnectionDenied { ip })
+                        .await
+                        .context(STATISTICS_SEND_ERR)?;
+
+                    // Only best effort, it's ok if this message get's missed
+                    let _ = stream.write_all(CONNECTION_DENIED_TEXT).await;
+                    // This can error if a connection is dropped prematurely, which is totally fine
+                    let _ = stream.shutdown().await;
+                    continue;
+                }
+            };
+
+            let fb_for_thread = Arc::clone(&self.fb);
+            let statistics_tx_for_thread = self.statistics_tx.clone();
+            let network_buffer_size = self.network_buffer_size;
+            let connection_dropped_tx_clone = connection_dropped_tx.clone();
+            tokio::spawn(async move {
+                if let Err(error) = handle_connection(
+                    stream,
+                    ip,
+                    fb_for_thread,
+                    statistics_tx_for_thread,
+                    network_buffer_size,
+                    connection_dropped_tx_clone,
+                )
+                .await
+                {
+                    tracing::error!(?error, %ip, "failed to handle connection");
+                }
+            });
         }
 
         Ok(())
-
     }
 }
 

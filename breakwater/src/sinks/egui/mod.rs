@@ -1,4 +1,4 @@
-use std::{fmt::Display, net::ToSocketAddrs, str::FromStr, sync::Arc};
+use std::{fmt::Display, str::FromStr, sync::Arc};
 
 use async_trait::async_trait;
 use breakwater_parser::FrameBuffer;
@@ -104,22 +104,29 @@ impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
             }
         });
 
-        let mut advertised_endpoints = cli_args.advertised_endpoints.clone();
-        if advertised_endpoints.is_empty() {
-            let port = cli_args
-                .listen_address.iter().next().expect("FIXME: avertised_endpoints is empty and no bind addr is specified")
-                .to_socket_addrs()
-                .unwrap()
-                .next()
-                .unwrap()
-                .port();
-            if let Ok(local_ip) = local_ip_address::local_ip() {
-                advertised_endpoints.push(format!("{local_ip}:{port}"));
+        let advertised_endpoints = if !cli_args.advertised_endpoints.is_empty() {
+            cli_args.advertised_endpoints.clone()
+        } else {
+            // In case no advertised endpoint to display is given, we calculate the most likely
+            // endpoint(s) to display.
+            match &cli_args.listen_addresses[..] {
+                // No listeners given, so also no endpoints to advertise
+                [] => vec![],
+                // In case of a single listener we get the local IPs (v4 + v6) and concat them with
+                // the port
+                [single_listener] => {
+                    let port = single_listener.port();
+
+                    [local_ip_address::local_ip(), local_ip_address::local_ipv6()]
+                        .into_iter()
+                        .filter_map(|sa| sa.ok())
+                        .map(|ip| format!("{ip}:{port}"))
+                        .collect()
+                }
+                // If multiple listeners are used it's complicated, so we just print them
+                multiple_listeners => multiple_listeners.iter().map(ToString::to_string).collect(),
             }
-            if let Ok(local_ip) = local_ip_address::local_ipv6() {
-                advertised_endpoints.push(format!("[{local_ip}]:{port}"));
-            }
-        }
+        };
 
         Ok(Some(Self {
             framebuffer: fb,

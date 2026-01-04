@@ -1,3 +1,5 @@
+use std::net::{IpAddr, SocketAddr};
+
 use clap::Parser;
 use const_format::formatcp;
 
@@ -7,11 +9,10 @@ pub const DEFAULT_NETWORK_BUFFER_SIZE_STR: &str = formatcp!("{}", DEFAULT_NETWOR
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 pub struct CliArgs {
-    /// Listen address to bind to.
+    /// Listen address to bind to (multiple can be specified).
     /// The default value will listen on all interfaces for IPv4 and IPv6 packets.
-    /// You can add multiple arguments
-    #[clap(short, long, default_value = "[::]:1234")]
-    pub listen_address: Vec<String>,
+    #[clap(short, long = "listener-address", default_value = "[::]:1234")]
+    pub listen_addresses: Vec<SocketAddr>,
 
     /// Width of the drawing surface.
     #[clap(long, default_value_t = 1280)]

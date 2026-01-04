@@ -68,7 +68,7 @@ async fn main() -> eyre::Result<()> {
     );
 
     let mut server = Server::new(
-        args.listen_address.iter().map(|s| s.as_str()).collect(), // das is dreck 
+        &args.listen_addresses,
         fb.clone(),
         statistics_tx.clone(),
         args.network_buffer_size
