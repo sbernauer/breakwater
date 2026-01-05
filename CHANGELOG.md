@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-01-05
+
 ### Changed
 
 - **BREAKING**: Removed `--vnc` & `--vnc-port` CLI arguments in favor of `--vnc-listen-address`, which can be set multiple times. 
