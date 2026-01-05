@@ -1,5 +1,5 @@
 use core::slice;
-use std::{sync::Arc, time::Duration};
+use std::{ffi::CString, str::FromStr, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use breakwater_parser::{FB_BYTES_PER_PIXEL, FrameBuffer};
@@ -49,9 +49,10 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
     ) -> eyre::Result<Option<Self>> {
-        if !cli_args.vnc {
+        if cli_args.vnc_listen_addresses.is_empty() {
+            tracing::debug!("VNC sink not enabled as no vnc addresses are specified");
             return Ok(None);
-        }
+        };
 
         let font = match cli_args.font.as_str() {
             // We ship our own copy of Arial.ttf, so that users don't need to download and provide it
@@ -75,15 +76,38 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
             (*screen).bitsPerPixel = 32;
             (*screen).depth = 24;
             (*screen).serverFormat.depth = 24;
+            (*screen).autoPort = 0;
+            (*screen).port = -1;
+            (*screen).ipv6port = -1;
         }
-        unsafe {
-            (*screen).port = cli_args.vnc_port as i32;
-            (*screen).ipv6port = cli_args.vnc_port as i32;
+
+        let (v4, v6) = cli_args.get_vnc_listen_addresses()?;
+
+        if let Some(v4) = v4 {
+            unsafe {
+                (*screen).listenInterface = v4.ip().to_bits().to_be();
+                (*screen).port = v4.port() as i32;
+            }
+        }
+
+        if let Some(v6) = v6 {
+            let c_ipv6_str = CString::from_str(v6.ip().to_string().as_str())?;
+            unsafe {
+                (*screen).listen6Interface = c_ipv6_str.into_raw();
+                (*screen).ipv6port = v6.port() as i32;
+            }
         }
 
         rfb_framebuffer_malloc(screen, (fb.get_size() * 4/* bytes per pixel */) as u64);
         rfb_init_server(screen);
         rfb_run_event_loop(screen, 1, 1);
+
+        unsafe {
+            // Drop out allocated string
+            if !(*screen).listen6Interface.is_null() {
+                let _ = CString::from_raw((*screen).listen6Interface);
+            }
+        }
 
         // FIXME: Only return Some in case VNC is enabled
         Ok(Some(Self {

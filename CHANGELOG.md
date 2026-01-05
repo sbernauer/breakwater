@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING**: Removed `--vnc` & `--vnc-port` CLI arguments in favor of `--vnc-listen-address`, which can be set multiple times. 
+  This improves the control over where the VNC server is listening.
+  Due to a limitation on how the VNC server is constructed, only one bind address per IP version is supported.
+  Use `--vnc-listen-address 0.0.0.0:5900 --vnc-listen-address '[::]:5900'` to restore the old behavior ([#74]).
+- `-l` & `--listen-address` can now be set multiple times to listen on specific addresses ([#74])
+
+[#74]: https://github.com/sbernauer/breakwater/pull/74
+
 ## [0.19.0] - 2025-12-29
 
 ### Added

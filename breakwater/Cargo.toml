@@ -40,6 +40,8 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 vncserver = { workspace = true, optional = true }
 winit = { workspace = true, optional = true }
+tokio-stream.workspace = true
+futures.workspace = true
 
 [dev-dependencies]
 rstest.workspace = true

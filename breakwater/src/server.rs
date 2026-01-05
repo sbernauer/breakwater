@@ -1,6 +1,7 @@
 use std::{
     cmp::min,
     collections::{HashMap, hash_map::Entry},
+    fmt::{Debug, Display},
     net::IpAddr,
     sync::Arc,
     time::Duration,
@@ -8,13 +9,15 @@ use std::{
 
 use breakwater_parser::{FrameBuffer, OriginalParser, Parser};
 use color_eyre::eyre::{self, Context};
+use futures::{StreamExt, stream::SelectAll};
 use memadvise::Advice;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpListener,
+    net::{TcpListener, ToSocketAddrs},
     sync::mpsc,
     time::Instant,
 };
+use tokio_stream::wrappers::TcpListenerStream;
 use tracing::instrument;
 
 use crate::{
@@ -28,8 +31,7 @@ const CONNECTION_DENIED_TEXT: &[u8] = b"Connection denied as connection limit is
 const STATISTICS_REPORT_INTERVAL: Duration = Duration::from_millis(250);
 
 pub struct Server<FB: FrameBuffer> {
-    // listen_address: String,
-    listener: TcpListener,
+    incoming_connections: SelectAll<TcpListenerStream>,
     fb: Arc<FB>,
     statistics_tx: mpsc::Sender<StatisticsEvent>,
     network_buffer_size: usize,
@@ -40,19 +42,27 @@ pub struct Server<FB: FrameBuffer> {
 impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
     #[instrument(skip(fb, statistics_tx), err)]
     pub async fn new(
-        listen_address: &str,
+        listen_addresses: &[impl ToSocketAddrs + Debug + Display],
         fb: Arc<FB>,
         statistics_tx: mpsc::Sender<StatisticsEvent>,
         network_buffer_size: usize,
         max_connections_per_ip: Option<u64>,
     ) -> eyre::Result<Self> {
-        let listener = TcpListener::bind(listen_address)
-            .await
-            .with_context(|| format!("failed to bind to {listen_address}"))?;
+        let mut listener_streams = Vec::with_capacity(listen_addresses.len());
+        for addr in listen_addresses {
+            let listener = TcpListener::bind(addr)
+                .await
+                .with_context(|| format!("failed to bind to {addr}"))?;
+            let listener_stream = TcpListenerStream::new(listener);
+            listener_streams.push(listener_stream);
+        }
+
+        let incoming_connections = futures::stream::select_all(listener_streams);
+
         tracing::info!("started Pixelflut server");
 
         Ok(Self {
-            listener,
+            incoming_connections,
             fb,
             statistics_tx,
             network_buffer_size,
@@ -66,12 +76,14 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
             mpsc::unbounded_channel::<IpAddr>();
         let connection_dropped_tx = self.max_connections_per_ip.map(|_| connection_dropped_tx);
 
-        loop {
-            let (mut socket, socket_addr) = self
-                .listener
-                .accept()
-                .await
-                .context("failed to accept new client connection")?;
+        while let Some(connection) = self.incoming_connections.next().await {
+            let mut stream = match connection {
+                Ok(connection) => connection,
+                Err(err) => {
+                    tracing::error!(?err, "failed to accept new client connection");
+                    continue;
+                }
+            };
 
             // If connections are unlimited, will execute one try_recv per new connection
             while let Ok(ip) = connection_dropped_rx.try_recv() {
@@ -86,7 +98,11 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
 
             // If you connect via IPv4 you often show up as embedded inside an IPv6 address
             // Extracting the embedded information here, so we get the real (TM) address
-            let ip = socket_addr.ip().to_canonical();
+            let ip = stream
+                .peer_addr()
+                .context("failed to get ip from socket")?
+                .ip()
+                .to_canonical();
 
             if let Some(limit) = self.max_connections_per_ip {
                 let current_connections = self.connections_per_ip.entry(ip).or_default();
@@ -99,9 +115,9 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
                         .context(STATISTICS_SEND_ERR)?;
 
                     // Only best effort, it's ok if this message get's missed
-                    let _ = socket.write_all(CONNECTION_DENIED_TEXT).await;
+                    let _ = stream.write_all(CONNECTION_DENIED_TEXT).await;
                     // This can error if a connection is dropped prematurely, which is totally fine
-                    let _ = socket.shutdown().await;
+                    let _ = stream.shutdown().await;
                     continue;
                 }
             };
@@ -112,7 +128,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
             let connection_dropped_tx_clone = connection_dropped_tx.clone();
             tokio::spawn(async move {
                 if let Err(error) = handle_connection(
-                    socket,
+                    stream,
                     ip,
                     fb_for_thread,
                     statistics_tx_for_thread,
@@ -125,6 +141,8 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
                 }
             });
         }
+
+        Ok(())
     }
 }
 
