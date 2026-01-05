@@ -82,7 +82,7 @@ pub struct CliArgs {
     /// VNC server listen address to bind to (multiple can be specified).
     /// Only one address of each IP version can be specified
     #[cfg(feature = "vnc")]
-    #[clap(long = "vnc-address")]
+    #[clap(long = "vnc-listen-address")]
     pub vnc_listen_addresses: Vec<SocketAddr>,
 
     /// Enable native display output. This requires some form of graphical system (so will probably not work on your
