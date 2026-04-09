@@ -132,7 +132,8 @@ fn calc_new_vertices(
 }
 
 impl<FB: FrameBuffer + Send + Sync + 'static> eframe::App for EguiView<FB> {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx();
         match self.terminate_rx.try_recv() {
             Err(broadcast::error::TryRecvError::Empty) => {}
             _ => {
