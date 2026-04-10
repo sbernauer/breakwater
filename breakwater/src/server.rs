@@ -183,16 +183,12 @@ pub async fn handle_connection<FB: FrameBuffer>(
     let mut last_statistics = Instant::now();
     let mut statistics_bytes_read: u64 = 0;
 
-    loop {
-        // Fill the buffer up with new data from the socket
-        // If there are any bytes left over from the previous loop iteration leave them as is and put the new data behind
-        let Ok(bytes_read) = stream
-            .read(&mut buffer[leftover_bytes_in_buffer..network_buffer_size - parser_lookahead])
-            .await
-        else {
-            break;
-        };
-
+    // Fill the buffer up with new data from the socket
+    // If there are any bytes left over from the previous loop iteration leave them as is and put the new data behind
+    while let Ok(bytes_read) = stream
+        .read(&mut buffer[leftover_bytes_in_buffer..network_buffer_size - parser_lookahead])
+        .await
+    {
         statistics_bytes_read += bytes_read as u64;
         if last_statistics.elapsed() > STATISTICS_REPORT_INTERVAL {
             statistics_tx
