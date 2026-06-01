@@ -40,8 +40,8 @@ impl FromStr for ViewportConfig {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts: Result<Vec<_>, _> = s
-            .split(",")
-            .flat_map(|s| s.split("x"))
+            .split(',')
+            .flat_map(|s| s.split('x'))
             .map(usize::from_str)
             .collect();
 
@@ -104,9 +104,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
             }
         });
 
-        let advertised_endpoints = if !cli_args.advertised_endpoints.is_empty() {
-            cli_args.advertised_endpoints.clone()
-        } else {
+        let advertised_endpoints = if cli_args.advertised_endpoints.is_empty() {
             // In case no advertised endpoints to display are given, we calculate the most likely
             // endpoint(s) to display.
             match &cli_args.listen_addresses[..] {
@@ -119,13 +117,15 @@ impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
 
                     [local_ip_address::local_ip(), local_ip_address::local_ipv6()]
                         .into_iter()
-                        .filter_map(|sa| sa.ok())
+                        .filter_map(Result::ok)
                         .map(|ip| format!("{ip}:{port}"))
                         .collect()
                 }
                 // If multiple listeners are used it's complicated, so we just print them
                 multiple_listeners => multiple_listeners.iter().map(ToString::to_string).collect(),
             }
+        } else {
+            cli_args.advertised_endpoints.clone()
         };
 
         Ok(Some(Self {

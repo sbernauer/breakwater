@@ -134,13 +134,14 @@ fn calc_new_vertices(
 impl<FB: FrameBuffer + Send + Sync + 'static> eframe::App for EguiView<FB> {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx();
+        #[allow(clippy::single_match_else)]
         match self.terminate_rx.try_recv() {
             Err(broadcast::error::TryRecvError::Empty) => {}
             _ => {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 return;
             }
-        };
+        }
 
         loop {
             match self.stats_rx.try_recv() {
@@ -152,7 +153,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> eframe::App for EguiView<FB> {
                 Err(broadcast::error::TryRecvError::Closed) => {
                     unreachable!("where stats?");
                 }
-                Err(broadcast::error::TryRecvError::Lagged(_)) => continue,
+                Err(broadcast::error::TryRecvError::Lagged(_)) => {}
             }
         }
 

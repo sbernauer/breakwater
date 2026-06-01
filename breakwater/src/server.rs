@@ -120,7 +120,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
                     let _ = stream.shutdown().await;
                     continue;
                 }
-            };
+            }
 
             let fb_for_thread = Arc::clone(&self.fb);
             let statistics_tx_for_thread = self.statistics_tx.clone();

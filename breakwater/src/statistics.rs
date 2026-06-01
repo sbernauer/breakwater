@@ -14,7 +14,7 @@ use tokio::{
     time::interval,
 };
 
-pub const STATS_REPORT_INTERVAL: Duration = Duration::from_millis(1000);
+pub const STATS_REPORT_INTERVAL: Duration = Duration::from_secs(1);
 pub const STATS_SLIDING_WINDOW_SIZE: usize = 5;
 pub const STATISTICS_SEND_ERR: &str = "failed to send on statistics channel";
 pub const STATISTICS_INFO_SEND_ERR: &str = "failed to send on statistics information channel";
@@ -62,6 +62,7 @@ pub struct StatisticsInformationEvent {
     pub statistic_events: u64,
 }
 
+#[allow(clippy::struct_field_names)]
 pub struct Statistics {
     statistics_rx: mpsc::Receiver<StatisticsEvent>,
     statistics_information_tx: broadcast::Sender<StatisticsInformationEvent>,
@@ -152,7 +153,7 @@ impl Statistics {
                         // `self.statistics_rx` is closed, program is terminating
                         return Ok(());
                     };
-                    self.process_statistics_event(event);
+                    self.process_statistics_event(&event);
                 },
                 // Cancellation safety: This method is cancellation safe. If tick is used as the branch in a tokio::select!
                 // and another branch completes first, then no tick has been consumed.
@@ -177,14 +178,14 @@ impl Statistics {
         }
     }
 
-    fn process_statistics_event(&mut self, event: StatisticsEvent) {
+    fn process_statistics_event(&mut self, event: &StatisticsEvent) {
         self.statistic_events += 1;
         match event {
             StatisticsEvent::ConnectionCreated { ip } => {
-                *self.connections_for_ip.entry(ip).or_insert(0) += 1;
+                *self.connections_for_ip.entry(*ip).or_insert(0) += 1;
             }
             StatisticsEvent::ConnectionClosed { ip } => {
-                if let Entry::Occupied(mut o) = self.connections_for_ip.entry(ip) {
+                if let Entry::Occupied(mut o) = self.connections_for_ip.entry(*ip) {
                     let connections = o.get_mut();
                     *connections -= 1;
                     if *connections == 0 {
@@ -193,10 +194,10 @@ impl Statistics {
                 }
             }
             StatisticsEvent::ConnectionDenied { ip } => {
-                *self.denied_connections_for_ip.entry(ip).or_insert(0) += 1;
+                *self.denied_connections_for_ip.entry(*ip).or_insert(0) += 1;
             }
             StatisticsEvent::BytesRead { ip, bytes } => {
-                *self.bytes_for_ip.entry(ip).or_insert(0) += bytes;
+                *self.bytes_for_ip.entry(*ip).or_insert(0) += bytes;
             }
             #[cfg(feature = "vnc")]
             StatisticsEvent::VncFrameRendered => self.frame += 1,

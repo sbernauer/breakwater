@@ -45,6 +45,7 @@ impl<FB: FrameBuffer> OriginalParser<FB> {
 }
 
 impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
+    #[allow(clippy::too_many_lines)]
     fn parse(&mut self, buffer: &[u8], response: &mut Vec<u8>) -> usize {
         let mut last_byte_parsed = 0;
         let mut help_count = 0;
@@ -332,14 +333,14 @@ pub(crate) fn simd_unhex(value: *const u8) -> u32 {
     // Feel free to find a better, but fast, way, to cast all integers as u32
     let input = unsafe {
         u32x8::from_array([
-            *value as u32,
-            *value.add(1) as u32,
-            *value.add(2) as u32,
-            *value.add(3) as u32,
-            *value.add(4) as u32,
-            *value.add(5) as u32,
-            *value.add(6) as u32,
-            *value.add(7) as u32,
+            u32::from(*value),
+            u32::from(*value.add(1)),
+            u32::from(*value.add(2)),
+            u32::from(*value.add(3)),
+            u32::from(*value.add(4)),
+            u32::from(*value.add(5)),
+            u32::from(*value.add(6)),
+            u32::from(*value.add(7)),
         ])
     };
     // Heavily inspired by https://github.com/nervosnetwork/faster-hex/blob/a4c06b387ddeeea311c9e84a3adcaf01015cf40e/src/decode.rs#L80

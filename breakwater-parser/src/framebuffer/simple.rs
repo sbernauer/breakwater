@@ -47,7 +47,7 @@ impl FrameBuffer for SimpleFrameBuffer {
         // In the end we did *not* go with this change.
         if x < self.width && y < self.height {
             unsafe {
-                let ptr = self.buffer.as_ptr().add(x + y * self.width) as *mut u32;
+                let ptr: *mut u32 = self.buffer.as_ptr().add(x + y * self.width).cast_mut();
                 *ptr = rgba;
             }
         }
@@ -98,9 +98,9 @@ mod tests {
 
     #[rstest]
     #[case(0, 0, 0)]
-    #[case(0, 0, 0xff0000)]
-    #[case(0, 0, 0x0000ff)]
-    #[case(0, 0, 0x12345678)]
+    #[case(0, 0, 0xff_0000)]
+    #[case(0, 0, 0x00_00ff)]
+    #[case(0, 0, 0x1234_5678)]
     pub fn test_roundtrip(
         fb: SimpleFrameBuffer,
         #[case] x: usize,

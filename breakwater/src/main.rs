@@ -26,6 +26,7 @@ mod test_helpers;
 mod tests;
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
 async fn main() -> eyre::Result<()> {
     color_eyre::install()?;
 

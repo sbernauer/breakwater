@@ -55,8 +55,8 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
             .collect();
 
         match &self.rtmp_address {
-            Some(rtmp_address) => match &self.video_save_folder {
-                Some(video_save_folder) => {
+            Some(rtmp_address) => {
+                if let Some(video_save_folder) = &self.video_save_folder {
                     // Write to rtmp and file
                     ffmpeg_args.extend(
                         self.ffmpeg_rtmp_sink_args()
@@ -81,8 +81,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
                     todo!(
                         "Writing to file and rtmp sink simultaneously currently not supported, sorry!"
                     );
-                }
-                None => {
+                } else {
                     // Only write to rtmp
                     ffmpeg_args.extend(
                         self.ffmpeg_rtmp_sink_args()
@@ -90,13 +89,13 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
                             .flat_map(|(arg, value)| [format!("-{arg}"), value])
                             .collect::<Vec<_>>(),
                     );
-                    ffmpeg_args.extend(["-f".to_string(), "flv".to_string(), rtmp_address.clone()])
+                    ffmpeg_args.extend(["-f".to_string(), "flv".to_string(), rtmp_address.clone()]);
                 }
-            },
+            }
             None => match &self.video_save_folder {
                 // Only write to file
                 Some(video_save_folder) => {
-                    ffmpeg_args.extend([Self::video_file(video_save_folder)])
+                    ffmpeg_args.extend([Self::video_file(video_save_folder)]);
                 }
                 None => unreachable!(
                     "FfmpegSink can only be created when either rtmp or video file is activated"

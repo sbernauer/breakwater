@@ -52,21 +52,17 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
         if cli_args.vnc_listen_addresses.is_empty() {
             tracing::debug!("VNC sink not enabled as no vnc addresses are specified");
             return Ok(None);
-        };
+        }
 
-        let font = match cli_args.font.as_str() {
-            // We ship our own copy of Arial.ttf, so that users don't need to download and provide it
-            "Arial.ttf" => {
-                let font_bytes = include_bytes!("../../../Arial.ttf");
-                Font::try_from_bytes(font_bytes).context("failed to load default font")?
-            }
-            _ => {
-                let font_bytes = std::fs::read(&cli_args.font)
-                    .with_context(|| format!("failed to read font from file {}", cli_args.font))?;
-                Font::try_from_vec(font_bytes).with_context(|| {
-                    format!("failed to construct font from file {}", cli_args.font)
-                })?
-            }
+        // We ship our own copy of Arial.ttf, so that users don't need to download and provide it
+        let font = if cli_args.font.as_str() == "Arial.ttf" {
+            let font_bytes = include_bytes!("../../../Arial.ttf");
+            Font::try_from_bytes(font_bytes).context("failed to load default font")?
+        } else {
+            let font_bytes = std::fs::read(&cli_args.font)
+                .with_context(|| format!("failed to read font from file {}", cli_args.font))?;
+            Font::try_from_vec(font_bytes)
+                .with_context(|| format!("failed to construct font from file {}", cli_args.font))?
         };
 
         let screen = rfb_get_screen(fb.get_width() as i32, fb.get_height() as i32, 8, 3, 4);
@@ -86,7 +82,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
         if let Some(v4) = v4 {
             unsafe {
                 (*screen).listenInterface = v4.ip().to_bits().to_be();
-                (*screen).port = v4.port() as i32;
+                (*screen).port = i32::from(v4.port());
             }
         }
 
@@ -94,7 +90,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
             let c_ipv6_str = CString::from_str(v6.ip().to_string().as_str())?;
             unsafe {
                 (*screen).listen6Interface = c_ipv6_str.into_raw();
-                (*screen).ipv6port = v6.port() as i32;
+                (*screen).ipv6port = i32::from(v6.port());
             }
         }
 
@@ -134,8 +130,9 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
         let height_up_to_stats_text = self.fb.get_height() - STATS_HEIGHT - 1;
         let fb_size_up_to_stats_text = self.fb.get_width() * height_up_to_stats_text;
 
-        let mut interval =
-            time::interval(Duration::from_micros(1_000_000 / self.target_fps as u64));
+        let mut interval = time::interval(Duration::from_micros(
+            1_000_000 / u64::from(self.target_fps),
+        ));
         loop {
             if self.terminate_signal_rx.try_recv().is_ok() {
                 return Ok(());
@@ -165,7 +162,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
                     .statistics_information_rx
                     .try_recv()
                     .context(STATISTICS_INFO_RECV_ERR)?;
-                self.display_stats(statistics_information_event);
+                self.display_stats(&statistics_information_event);
             }
 
             interval.tick().await;
@@ -174,7 +171,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
 }
 
 impl<FB: FrameBuffer> VncSink<'_, FB> {
-    fn display_stats(&mut self, stats: StatisticsInformationEvent) {
+    fn display_stats(&mut self, stats: &StatisticsInformationEvent) {
         self.draw_rect(
             0,
             self.fb.get_height() - STATS_HEIGHT,
@@ -227,7 +224,7 @@ impl<FB: FrameBuffer> VncSink<'_, FB> {
                             x as usize + bounding_box.min.x as usize,
                             y as usize + bounding_box.min.y as usize,
                             text_rgba,
-                        )
+                        );
                     }
                 });
             }
