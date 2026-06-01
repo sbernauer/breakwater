@@ -59,6 +59,7 @@ fn compare_implementations(c: &mut Criterion) {
     );
 }
 
+#[allow(clippy::fn_params_excessive_bools)]
 fn invoke_benchmark(
     c: &mut Criterion,
     bench_name: &str,
@@ -114,7 +115,7 @@ fn invoke_benchmark(
                 "refactored" => RefactoredParser::new(fb.clone()).parse(input, &mut Vec::new()),
                 "memchr" => MemchrParser::new(fb.clone()).parse(input, &mut Vec::new()),
                 #[cfg(target_arch = "x86_64")]
-                "assembler" => AssemblerParser::new(fb.clone()).parse(input, &mut Vec::new()),
+                "assembler" => AssemblerParser::default().parse(input, &mut Vec::new()),
                 _ => panic!("Parser implementation {parse_name} not known"),
             });
         });

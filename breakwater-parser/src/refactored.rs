@@ -119,7 +119,7 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
     }
 
     #[inline(always)]
-    fn handle_help(&self, response: &mut Vec<u8>) {
+    fn handle_help(response: &mut Vec<u8>) {
         response.extend_from_slice(HELP_TEXT);
     }
 
@@ -217,7 +217,7 @@ impl<FB: FrameBuffer> Parser for RefactoredParser<FB> {
             } else if current_command & 0xffff_ffff == HELP_PATTERN {
                 i += 4;
                 last_byte_parsed = i;
-                self.handle_help(response);
+                Self::handle_help(response);
             } else {
                 i += 1;
             }

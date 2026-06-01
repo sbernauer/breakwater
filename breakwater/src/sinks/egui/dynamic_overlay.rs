@@ -103,8 +103,8 @@ pub fn load_and_check(dylib_path: impl AsRef<Path> + std::fmt::Debug) -> eyre::R
         let overlay = dylib_new();
 
         if !overlay.new.is_null() {
-            (*overlay.new)(overlay.data)
-        };
+            (*overlay.new)(overlay.data);
+        }
 
         Ok(UiOverlay::Dynamic {
             _lib: dylib,

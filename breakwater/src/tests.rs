@@ -1,6 +1,7 @@
 #![allow(clippy::octal_escapes)]
 
 use std::{
+    fmt::Write,
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
 };
@@ -16,7 +17,7 @@ use crate::{
 
 #[fixture]
 fn ip() -> IpAddr {
-    IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))
+    IpAddr::V4(Ipv4Addr::LOCALHOST)
 }
 
 #[fixture]
@@ -125,7 +126,7 @@ async fn test_safe<FB: FrameBuffer>(
     .unwrap();
 
     // Test if it panics
-    assert_eq!(fb.get(0, 0).unwrap() & 0x00ff_ffff, 0xaaaaaa);
+    assert_eq!(fb.get(0, 0).unwrap() & 0x00ff_ffff, 0xaa_aaaa);
 }
 
 #[rstest]
@@ -169,18 +170,18 @@ async fn test_drawing_rect<FB: FrameBuffer>(
         for y in 0..fb.get_height() {
             // Inside the rect
             if x >= offset_x && x <= offset_x + width && y >= offset_y && y <= offset_y + height {
-                fill_commands += &format!("PX {x} {y} {color:06x}\n");
-                read_commands += &format!("PX {x} {y}\n");
+                let _ = writeln!(fill_commands, "PX {x} {y} {color:06x}");
+                let _ = writeln!(read_commands, "PX {x} {y}");
 
                 color += 1; // Use another color for the next test case
-                combined_commands += &format!("PX {x} {y} {color:06x}\nPX {x} {y}\n");
-                combined_commands_expected += &format!("PX {x} {y} {color:06x}\n");
+                let _ = writeln!(combined_commands, "PX {x} {y} {color:06x}\nPX {x} {y}");
+                let _ = writeln!(combined_commands_expected, "PX {x} {y} {color:06x}");
 
                 color += 1;
             } else {
                 // Non touched pixels must remain black
-                read_other_pixels_commands += &format!("PX {x} {y}\n");
-                read_other_pixels_commands_expected += &format!("PX {x} {y} 000000\n");
+                let _ = writeln!(read_other_pixels_commands, "PX {x} {y}");
+                let _ = writeln!(read_other_pixels_commands_expected, "PX {x} {y} 000000");
             }
         }
     }

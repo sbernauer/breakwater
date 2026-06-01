@@ -20,44 +20,40 @@ impl<FB: FrameBuffer> Parser for MemchrParser<FB> {
             let line = &buffer[last_char_after_newline..newline.saturating_sub(1)];
             last_char_after_newline = newline + 1;
 
-            if line.is_empty() {
-                panic!("Line is empty, we probably should handle this");
-            }
+            assert!(
+                !line.is_empty(),
+                "Line is empty, we probably should handle this"
+            );
 
             let mut spaces = memchr::memchr_iter(b' ', line);
             let Some(first_space) = spaces.next() else {
                 continue;
             };
 
-            match &line[0..first_space] {
-                b"PX" => {
-                    let Some(second_space) = spaces.next() else {
-                        continue;
-                    };
-                    let Some(third_space) = spaces.next() else {
-                        continue;
-                    };
-                    let Some(fourth_space) = spaces.next() else {
-                        continue;
-                    };
-                    let x: u16 = std::str::from_utf8(&line[first_space + 1..second_space])
-                        .expect("Not utf-8")
-                        .parse()
-                        .expect("x was not a number");
-                    let y: u16 = std::str::from_utf8(&line[second_space + 1..third_space])
-                        .expect("Not utf-8")
-                        .parse()
-                        .expect("y was not a number");
-                    let rgba: u32 = std::str::from_utf8(&line[third_space + 1..fourth_space])
-                        .expect("Not utf-8")
-                        .parse()
-                        .expect("rgba was not a number");
-
-                    self.fb.set(x as usize, y as usize, rgba);
-                }
-                _ => {
+            if &line[0..first_space] == b"PX" {
+                let Some(second_space) = spaces.next() else {
                     continue;
-                }
+                };
+                let Some(third_space) = spaces.next() else {
+                    continue;
+                };
+                let Some(fourth_space) = spaces.next() else {
+                    continue;
+                };
+                let x: u16 = std::str::from_utf8(&line[first_space + 1..second_space])
+                    .expect("Not utf-8")
+                    .parse()
+                    .expect("x was not a number");
+                let y: u16 = std::str::from_utf8(&line[second_space + 1..third_space])
+                    .expect("Not utf-8")
+                    .parse()
+                    .expect("y was not a number");
+                let rgba: u32 = std::str::from_utf8(&line[third_space + 1..fourth_space])
+                    .expect("Not utf-8")
+                    .parse()
+                    .expect("rgba was not a number");
+
+                self.fb.set(x as usize, y as usize, rgba);
             }
         }
 

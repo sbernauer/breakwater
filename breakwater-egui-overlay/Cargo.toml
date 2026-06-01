@@ -10,3 +10,6 @@ repository.workspace = true
 [dependencies]
 eframe = { workspace = true, features = [] }
 egui = { workspace = true, features = [] }
+
+[lints]
+workspace = true

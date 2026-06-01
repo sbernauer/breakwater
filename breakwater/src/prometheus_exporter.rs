@@ -67,8 +67,8 @@ impl PrometheusExporter {
 
     pub async fn run(&mut self) {
         while let Ok(event) = self.statistics_information_rx.recv().await {
-            self.metric_ips_v6.set(event.ips_v6 as i64);
-            self.metric_ips_v4.set(event.ips_v4 as i64);
+            self.metric_ips_v6.set(i64::from(event.ips_v6));
+            self.metric_ips_v4.set(i64::from(event.ips_v4));
             self.metric_frame.set(event.frame as i64);
             self.metric_statistic_events
                 .set(event.statistic_events as i64);
@@ -82,7 +82,7 @@ impl PrometheusExporter {
                 .for_each(|(ip, connections)| {
                     self.metric_connections_for_ip
                         .with_label_values(&[&ip.to_string()])
-                        .set(*connections as i64)
+                        .set(i64::from(*connections));
                 });
             self.metric_denied_connections_for_ip.reset();
             event
@@ -91,13 +91,13 @@ impl PrometheusExporter {
                 .for_each(|(ip, denied)| {
                     self.metric_denied_connections_for_ip
                         .with_label_values(&[&ip.to_string()])
-                        .set(*denied as i64)
+                        .set(i64::from(*denied));
                 });
             self.metric_bytes_for_ip.reset();
             event.bytes_for_ip.iter().for_each(|(ip, bytes)| {
                 self.metric_bytes_for_ip
                     .with_label_values(&[&ip.to_string()])
-                    .set(*bytes as i64)
+                    .set(*bytes as i64);
             });
         }
     }

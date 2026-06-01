@@ -219,7 +219,7 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
 
     #[inline(always)]
     fn as_bytes(&self) -> &[u8] {
-        let base_ptr = self.buffer.as_ptr() as *const u8;
-        unsafe { slice::from_raw_parts(base_ptr as *mut u8, self.bytes) }
+        let base_ptr: *const u8 = self.buffer.as_ptr().cast();
+        unsafe { slice::from_raw_parts(base_ptr, self.bytes) }
     }
 }

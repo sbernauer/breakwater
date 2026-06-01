@@ -56,3 +56,6 @@ binary-sync-pixels = ["breakwater-parser/binary-sync-pixels"]
 egui = ["dep:breakwater-egui-overlay", "dep:bytemuck", "dep:eframe", "dep:egui", "dep:libloading"]
 native-display = ["dep:softbuffer", "dep:winit"]
 vnc = ["dep:vncserver"]
+
+[lints]
+workspace = true

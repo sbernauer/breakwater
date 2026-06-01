@@ -199,35 +199,32 @@ unsafe fn init_shaders(gl: &glow::Context) -> glow::Program {
         gl.shader_source(vertex_shader, include_str!("./canvas.vert"));
         gl.compile_shader(vertex_shader);
 
-        if !gl.get_shader_compile_status(vertex_shader) {
-            panic!(
-                "vertex_shader compilation failed: {}",
-                gl.get_shader_info_log(vertex_shader)
-            );
-        }
+        assert!(
+            gl.get_shader_compile_status(vertex_shader),
+            "vertex_shader compilation failed: {}",
+            gl.get_shader_info_log(vertex_shader)
+        );
 
         let fragment_shader = gl.create_shader(glow::FRAGMENT_SHADER).unwrap();
         gl.shader_source(fragment_shader, include_str!("./canvas.frag"));
         gl.compile_shader(fragment_shader);
 
-        if !gl.get_shader_compile_status(fragment_shader) {
-            panic!(
-                "fragment_shader compilation failed: {}",
-                gl.get_shader_info_log(fragment_shader)
-            );
-        }
+        assert!(
+            gl.get_shader_compile_status(fragment_shader),
+            "fragment_shader compilation failed: {}",
+            gl.get_shader_info_log(fragment_shader)
+        );
 
         let program = gl.create_program().unwrap();
         gl.attach_shader(program, vertex_shader);
         gl.attach_shader(program, fragment_shader);
         gl.link_program(program);
 
-        if !gl.get_program_link_status(program) {
-            panic!(
-                "Shader program linking failed: {}",
-                gl.get_program_info_log(program)
-            );
-        }
+        assert!(
+            gl.get_program_link_status(program),
+            "Shader program linking failed: {}",
+            gl.get_program_info_log(program)
+        );
 
         gl.delete_shader(vertex_shader);
         gl.delete_shader(fragment_shader);

@@ -29,3 +29,6 @@ binary-set-pixel = []
 binary-sync-pixels = []
 
 default = []
+
+[lints]
+workspace = true

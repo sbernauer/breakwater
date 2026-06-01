@@ -2,6 +2,8 @@ pub use eframe;
 pub use egui;
 use egui::Margin;
 
+use crate::colors::{COLOR_BACKGROUND, COLOR_HIGHLIGHT, COLOR_PRIMARY};
+
 /// rustc version that compiled this crate
 //
 // Currently it's not supported to read the rust version from a cargo env,
@@ -11,10 +13,11 @@ const RUSTC_VERSION: *const std::ffi::c_char = concat!(
     include_str!(concat!(env!("OUT_DIR"), "/RUSTC_VERSION.txt")),
     "\0"
 )
-.as_ptr() as _;
+.as_ptr()
+.cast();
 
 const BREAKWATER_VERSION: *const std::ffi::c_char =
-    concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr() as _;
+    concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr().cast();
 
 #[repr(C)]
 #[derive(Clone)]
@@ -115,8 +118,6 @@ extern "C" fn draw_ui(
     ips_v4: u32,
     bytes_per_s: u64,
 ) {
-    use colors::*;
-
     // only display on first viewport
     if viewport_idx > 0 {
         return;
@@ -124,7 +125,7 @@ extern "C" fn draw_ui(
 
     let stats_frame = egui::Frame {
         fill: COLOR_BACKGROUND.gamma_multiply(0.7),
-        stroke: egui::Stroke::new(1.0, COLOR_PRIMARY),
+        stroke: egui::Stroke::new(1.0_f32, COLOR_PRIMARY),
         corner_radius: egui::CornerRadius::same(10),
         shadow: eframe::epaint::Shadow::default(),
         inner_margin: Margin::same(12),
