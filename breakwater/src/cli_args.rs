@@ -118,6 +118,11 @@ pub struct CliArgs {
     #[clap(long)]
     pub web_listen_address: Option<SocketAddr>,
 
+    /// Maximum number of chat messages a single IP address may send per minute in the WebUI.
+    #[cfg(feature = "web")]
+    #[clap(long, default_value_t = 10)]
+    pub chat_messages_per_minute: u32,
+
     /// Create (or use an existing) shared memory region for the framebuffer.
     /// This enables other applications to read and write Pixel values to the framebuffer or can be
     /// used to persist the canvas across restarts.

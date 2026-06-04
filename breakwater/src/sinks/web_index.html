@@ -260,17 +260,20 @@
       scrollbar-color: var(--border) transparent;
     }
     .msg { font-size: 13px; line-height: 1.35; word-wrap: break-word; }
-    .msg .author { font-weight: 600; margin-right: 6px; }
+    .msg-head { display: flex; align-items: baseline; gap: 6px; }
+    .msg .author { font-weight: 600; }
+    .msg-ip { color: var(--text-dim); font-size: 11px; font-family: monospace; }
+    .msg-text { word-wrap: break-word; overflow-wrap: anywhere; }
     .msg.system { color: var(--text-dim); font-style: italic; }
 
     .chat-input {
       display: flex;
+      flex-direction: column;
       gap: 8px;
       padding: 10px 0 14px;
       border-top: 1px solid var(--border);
     }
     .chat-input input {
-      flex: 1;
       background: var(--panel-2);
       border: 1px solid var(--border);
       border-radius: 18px;
@@ -280,6 +283,11 @@
       outline: none;
     }
     .chat-input input:focus { border-color: var(--accent); }
+    .chat-send-row {
+      display: flex;
+      gap: 8px;
+    }
+    .chat-send-row input { flex: 1; min-width: 0; }
     .chat-input button {
       background: var(--accent);
       color: #000;
@@ -292,17 +300,6 @@
     }
     .chat-input button:disabled { opacity: .4; cursor: default; }
 
-    .mock-tag {
-      font-size: 10px;
-      color: var(--text-dim);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 1px 5px;
-      margin-left: 6px;
-      vertical-align: middle;
-      text-transform: uppercase;
-      letter-spacing: .04em;
-    }
 
     /* ---------- Responsive ---------- */
     @media (max-width: 820px) {
@@ -391,11 +388,14 @@
       </section>
 
       <section class="chat">
-        <h2>Chat <span class="mock-tag">mock</span></h2>
+        <h2>Chat</h2>
         <div class="chat-messages" id="chat-messages"></div>
         <form class="chat-input" id="chat-form" autocomplete="off">
-          <input id="chat-text" placeholder="Say something…" maxlength="200" />
-          <button type="submit">Send</button>
+          <input id="chat-name" placeholder="Your name" maxlength="20" />
+          <div class="chat-send-row">
+            <input id="chat-text" placeholder="Say something…" maxlength="256" />
+            <button type="submit">Send</button>
+          </div>
         </form>
       </section>
     </aside>
@@ -417,6 +417,7 @@
     let latest = null;    // most recent compressed frame (ArrayBuffer); older ones are dropped
     let inflating = false;
     let framesThisSecond = 0;
+    let activeSocket = null; // current WebSocket, used to send chat messages
 
     // Decompress a zlib (deflate) frame using only the browser-native DecompressionStream.
     // No third-party JavaScript required.
@@ -429,6 +430,7 @@
       const proto = location.protocol === "https:" ? "wss" : "ws";
       const ws = new WebSocket(`${proto}://${location.host}/ws`);
       ws.binaryType = "arraybuffer";
+      activeSocket = ws;
 
       ws.onmessage = (event) => {
         if (typeof event.data === "string") {
@@ -442,6 +444,10 @@
             renderEndpoints(msg.advertised_endpoints);
           } else if (msg.type === "stats") {
             updateStats(msg);
+          } else if (msg.type === "chat") {
+            addMessage(msg.name, msg.text, false, msg.ip);
+          } else if (msg.type === "chat_error") {
+            addMessage("", msg.text, true);
           }
         } else {
           // Keep only the newest frame; if we're behind, intermediate frames are skipped.
@@ -450,6 +456,7 @@
       };
 
       ws.onclose = () => {
+        activeSocket = null;
         fpsEl.textContent = "disconnected";
         setTimeout(connect, 1000);
       };
@@ -648,7 +655,7 @@
         .slice(0, 5);
 
       if (top.length === 0) {
-        topTraffic.innerHTML = '<li class="empty">no traffic yet</li>';
+        topTraffic.innerHTML = '<li class="empty">no traffic currently</li>';
         return;
       }
 
@@ -672,28 +679,48 @@
     }
 
     // =====================================================================
-    // Chat (MOCK — local only, replace with a real chat channel later)
+    // Chat
     // =====================================================================
     const chatMessages = document.getElementById("chat-messages");
     const chatForm = document.getElementById("chat-form");
+    const chatName = document.getElementById("chat-name");
     const chatText = document.getElementById("chat-text");
 
-    function addMessage(author, text, system = false) {
+    // Remember the chosen name across reloads; it can be changed at any time.
+    chatName.value = localStorage.getItem("chatName") || "";
+    chatName.addEventListener("input", () => {
+      localStorage.setItem("chatName", chatName.value.trim());
+    });
+
+    function addMessage(author, text, system = false, ip = null) {
       const el = document.createElement("div");
       el.className = system ? "msg system" : "msg";
       if (system) {
         el.textContent = text;
       } else {
+        // First line: author name + originating IP (so name spoofing is easy to spot).
+        const head = document.createElement("div");
+        head.className = "msg-head";
         const a = document.createElement("span");
         a.className = "author";
-        a.textContent = author + ":";
+        a.textContent = author;
         a.style.color = colorFor(author);
-        el.appendChild(a);
-        el.appendChild(document.createTextNode(text));
+        head.appendChild(a);
+        if (ip) {
+          const ipEl = document.createElement("span");
+          ipEl.className = "msg-ip";
+          ipEl.textContent = ip;
+          head.appendChild(ipEl);
+        }
+        // Second line: the message text.
+        const body = document.createElement("div");
+        body.className = "msg-text";
+        body.textContent = text;
+        el.appendChild(head);
+        el.appendChild(body);
       }
-      const atBottom = chatMessages.scrollTop + chatMessages.clientHeight >= chatMessages.scrollHeight - 20;
       chatMessages.appendChild(el);
-      if (atBottom) chatMessages.scrollTop = chatMessages.scrollHeight;
+      chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
     function colorFor(name) {
@@ -704,13 +731,22 @@
 
     chatForm.addEventListener("submit", (e) => {
       e.preventDefault();
+      const name = chatName.value.trim();
       const text = chatText.value.trim();
+      if (!name) {
+        addMessage("", "Please enter your name above before chatting.", true);
+        chatName.focus();
+        return;
+      }
       if (!text) return;
-      addMessage("you", text);
+      if (!activeSocket || activeSocket.readyState !== WebSocket.OPEN) {
+        addMessage("", "Not connected — please wait a moment and try again.", true);
+        return;
+      }
+      // The server echoes the message back to everyone (including us), so we don't add it locally.
+      activeSocket.send(JSON.stringify({ type: "chat", name, text }));
       chatText.value = "";
     });
-
-    addMessage("developer", "Psssst it's a mock. Need more Tschunk :)");
   </script>
 </body>
 </html>
