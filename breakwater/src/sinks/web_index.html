@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pixelflut viewer</title>
+  <style>
+    :root {
+      --bg: #0f0f0f;
+      --panel: #1a1a1a;
+      --panel-2: #212121;
+      --border: #303030;
+      --text: #f1f1f1;
+      --text-dim: #aaa;
+      --accent: #3ea6ff;
+      --live: #ff4444;
+      --sidebar-w: 340px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Roboto", system-ui, -apple-system, Segoe UI, sans-serif;
+      overflow: hidden;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 1fr var(--sidebar-w);
+      height: 100vh;
+    }
+
+    /* ---------- Player ---------- */
+    .player {
+      position: relative;
+      background: #000;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    #canvas {
+      width: 100%;
+      height: 100%;
+      /* Scale to fill the player area in both directions, preserving aspect ratio (letterboxed) */
+      object-fit: contain;
+      /* Keep pixel art crisp instead of blurry when scaled up */
+      image-rendering: pixelated;
+    }
+
+    #fps {
+      position: absolute;
+      top: 12px;
+      right: 14px;
+      font: 13px/1.2 monospace;
+      color: #0f0;
+      background: rgba(0, 0, 0, .45);
+      padding: 4px 8px;
+      border-radius: 4px;
+      user-select: none;
+    }
+
+    #coord-readout {
+      position: fixed;
+      z-index: 10;
+      pointer-events: none;
+      display: none;
+      font: 12px/1 monospace;
+      color: #fff;
+      background: rgba(0, 0, 0, .7);
+      padding: 3px 6px;
+      border-radius: 4px;
+    }
+
+    .controls {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      background: linear-gradient(to top, rgba(0, 0, 0, .65), rgba(0, 0, 0, 0));
+      opacity: 0;
+      transition: opacity .2s;
+    }
+    .player:hover .controls,
+    .player:focus-within .controls { opacity: 1; }
+
+    .controls .title { font-size: 14px; font-weight: 500; }
+    .controls .spacer { flex: 1; }
+    .icon-btn {
+      background: none;
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 4px;
+      line-height: 0;
+      display: inline-flex;
+    }
+    .icon-btn:hover { background: rgba(255, 255, 255, .15); }
+    .icon-btn svg { width: 22px; height: 22px; fill: currentColor; }
+
+    /* ---------- Sidebar ---------- */
+    .sidebar {
+      display: grid;
+      grid-template-rows: auto auto auto 1fr;
+      min-height: 0;
+      background: var(--panel);
+      border-left: 1px solid var(--border);
+    }
+
+    .overlay-controls {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+    }
+    .toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .toggle input { cursor: pointer; accent-color: var(--accent); }
+
+    .endpoints,
+    .stats {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .endpoint-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .endpoint-list li {
+      font-family: monospace;
+      font-size: 13px;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 9px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .endpoint-list .empty { color: var(--text-dim); font-style: italic; }
+    .endpoints h2,
+    .stats h2,
+    .chat h2 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--text-dim);
+    }
+    .endpoints .view-head { margin-top: 14px; }
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .stat {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+    }
+    .stat .label {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .stat .value {
+      font-size: 18px;
+      font-weight: 600;
+      margin-top: 2px;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat .value small { font-size: 12px; font-weight: 400; color: var(--text-dim); }
+    .stat .sub { margin-top: 2px; font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+
+    .subhead {
+      margin: 16px 0 8px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--text-dim);
+    }
+    .top-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .top-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 13px;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 9px;
+    }
+    .top-list .rank { width: 1.2em; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+    .top-list .entry { flex: 1; min-width: 0; }
+    .top-list .ip {
+      font-family: monospace;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .top-list .meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 2px;
+      font-variant-numeric: tabular-nums;
+    }
+    .top-list .rate { color: var(--accent); font-weight: 600; }
+    .top-list .conns { color: var(--text-dim); }
+    .top-list .total { color: var(--text-dim); }
+    .top-list .empty { justify-content: center; color: var(--text-dim); font-style: italic; }
+
+    /* ---------- Chat ---------- */
+    .chat {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      padding: 14px 16px 0;
+    }
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-bottom: 12px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    .msg { font-size: 13px; line-height: 1.35; word-wrap: break-word; }
+    .msg .author { font-weight: 600; margin-right: 6px; }
+    .msg.system { color: var(--text-dim); font-style: italic; }
+
+    .chat-input {
+      display: flex;
+      gap: 8px;
+      padding: 10px 0 14px;
+      border-top: 1px solid var(--border);
+    }
+    .chat-input input {
+      flex: 1;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      color: var(--text);
+      padding: 8px 14px;
+      font-size: 13px;
+      outline: none;
+    }
+    .chat-input input:focus { border-color: var(--accent); }
+    .chat-input button {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      border-radius: 18px;
+      padding: 0 16px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .chat-input button:disabled { opacity: .4; cursor: default; }
+
+    .mock-tag {
+      font-size: 10px;
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      margin-left: 6px;
+      vertical-align: middle;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    /* ---------- Responsive ---------- */
+    @media (max-width: 820px) {
+      .app {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+      }
+      .sidebar { border-left: none; border-top: 1px solid var(--border); }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- ---------- Player ---------- -->
+    <div class="player" id="player" tabindex="0">
+      <canvas id="canvas"></canvas>
+      <div id="coord-readout"></div>
+
+      <div id="fps">connecting…</div>
+
+      <div class="controls">
+        <span class="title">Pixelflut canvas (breakwater)</span>
+        <span class="spacer"></span>
+        <button class="icon-btn" id="fullscreen" title="Fullscreen" aria-label="Fullscreen">
+          <svg id="fs-enter" viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+          <svg id="fs-exit" viewBox="0 0 24 24" style="display:none"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- ---------- Sidebar ---------- -->
+    <aside class="sidebar">
+      <section class="endpoints">
+        <h2>Connect</h2>
+        <ul class="endpoint-list" id="endpoints">
+          <li class="empty">…</li>
+        </ul>
+
+        <h2 class="view-head">View</h2>
+        <ul class="endpoint-list">
+          <li id="view-url">…</li>
+        </ul>
+      </section>
+
+      <section class="overlay-controls">
+        <label class="toggle">
+          <input type="checkbox" id="toggle-coords" checked />
+          <span>Show cursor coordinates</span>
+        </label>
+      </section>
+
+      <section class="stats">
+        <h2>Stats</h2>
+        <div class="stat-grid">
+          <div class="stat">
+            <div class="label">Unique IPs</div>
+            <div class="value" id="st-ips">—</div>
+            <div class="sub" id="st-ips-split">—</div>
+          </div>
+          <div class="stat">
+            <div class="label">Traffic</div>
+            <div class="value" id="st-traffic">—</div>
+          </div>
+          <div class="stat">
+            <div class="label">Total</div>
+            <div class="value" id="st-total">—</div>
+          </div>
+          <div class="stat">
+            <div class="label">Connections</div>
+            <div class="value" id="st-conns">—</div>
+          </div>
+          <div class="stat">
+            <div class="label">Resolution</div>
+            <div class="value" id="st-res">—</div>
+          </div>
+          <div class="stat">
+            <div class="label">Your FPS</div>
+            <div class="value" id="st-fps">—</div>
+          </div>
+        </div>
+
+        <h3 class="subhead">Top traffic</h3>
+        <ol class="top-list" id="top-traffic">
+          <li class="empty">waiting for data…</li>
+        </ol>
+      </section>
+
+      <section class="chat">
+        <h2>Chat <span class="mock-tag">mock</span></h2>
+        <div class="chat-messages" id="chat-messages"></div>
+        <form class="chat-input" id="chat-form" autocomplete="off">
+          <input id="chat-text" placeholder="Say something…" maxlength="200" />
+          <button type="submit">Send</button>
+        </form>
+      </section>
+    </aside>
+  </div>
+
+  <script>
+    "use strict";
+
+    // =====================================================================
+    // Live canvas stream (real)
+    // =====================================================================
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const fpsEl = document.getElementById("fps");
+    const stFps = document.getElementById("st-fps");
+    const stRes = document.getElementById("st-res");
+
+    let imageData = null; // reused ImageData sized to the canvas
+    let latest = null;    // most recent compressed frame (ArrayBuffer); older ones are dropped
+    let inflating = false;
+    let framesThisSecond = 0;
+
+    // Decompress a zlib (deflate) frame using only the browser-native DecompressionStream.
+    // No third-party JavaScript required.
+    async function inflate(buffer) {
+      const stream = new Response(buffer).body.pipeThrough(new DecompressionStream("deflate"));
+      return new Uint8Array(await new Response(stream).arrayBuffer());
+    }
+
+    function connect() {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const ws = new WebSocket(`${proto}://${location.host}/ws`);
+      ws.binaryType = "arraybuffer";
+
+      ws.onmessage = (event) => {
+        if (typeof event.data === "string") {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "hello") {
+            // Sent once on connect: canvas dimensions and the endpoints to advertise.
+            canvas.width = msg.width;
+            canvas.height = msg.height;
+            imageData = ctx.createImageData(msg.width, msg.height);
+            stRes.textContent = `${msg.width}×${msg.height}`;
+            renderEndpoints(msg.advertised_endpoints);
+          } else if (msg.type === "stats") {
+            updateStats(msg);
+          }
+        } else {
+          // Keep only the newest frame; if we're behind, intermediate frames are skipped.
+          latest = event.data;
+        }
+      };
+
+      ws.onclose = () => {
+        fpsEl.textContent = "disconnected";
+        setTimeout(connect, 1000);
+      };
+      ws.onerror = () => ws.close();
+    }
+
+    // Render loop decoupled from the network: draws the latest available frame.
+    // If decoding can't keep up, frames are dropped rather than queued, keeping latency low.
+    async function render() {
+      if (latest && imageData && !inflating) {
+        inflating = true;
+        const buffer = latest;
+        latest = null;
+        try {
+          const rgba = await inflate(buffer);
+          imageData.data.set(rgba);
+          ctx.putImageData(imageData, 0, 0);
+          framesThisSecond++;
+          updateCoordReadout();
+        } catch (e) {
+          // Ignore a corrupt/partial frame and wait for the next one.
+        }
+        inflating = false;
+      }
+      requestAnimationFrame(render);
+    }
+
+    setInterval(() => {
+      fpsEl.textContent = `${framesThisSecond} fps`;
+      stFps.textContent = `${framesThisSecond} fps`;
+      framesThisSecond = 0;
+    }, 1000);
+
+    connect();
+    requestAnimationFrame(render);
+
+    // =====================================================================
+    // Fullscreen (real)
+    // =====================================================================
+    const player = document.getElementById("player");
+    const fsEnter = document.getElementById("fs-enter");
+    const fsExit = document.getElementById("fs-exit");
+
+    function toggleFullscreen() {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else {
+        player.requestFullscreen?.();
+      }
+    }
+    document.getElementById("fullscreen").addEventListener("click", toggleFullscreen);
+    document.addEventListener("fullscreenchange", () => {
+      const fs = !!document.fullscreenElement;
+      fsEnter.style.display = fs ? "none" : "";
+      fsExit.style.display = fs ? "" : "none";
+    });
+
+    // =====================================================================
+    // Cursor coordinate + color readout (on by default)
+    // =====================================================================
+    let showCoords = true;
+    let cursorX = null; // last cursor position over the player, in client coordinates
+    let cursorY = null;
+    const coordReadout = document.getElementById("coord-readout");
+
+    document.getElementById("toggle-coords").addEventListener("change", (e) => {
+      showCoords = e.target.checked;
+      updateCoordReadout();
+    });
+
+    // Map the cursor over the letterboxed (object-fit: contain) canvas to a pixel coordinate and
+    // show it (plus the pixel's color) just below the cursor. Re-run on every frame so the color
+    // stays live even when the cursor doesn't move.
+    function updateCoordReadout() {
+      if (!showCoords || !imageData || cursorX === null) {
+        coordReadout.style.display = "none";
+        return;
+      }
+      const rect = canvas.getBoundingClientRect();
+      const scale = Math.min(rect.width / canvas.width, rect.height / canvas.height);
+      const dispW = canvas.width * scale;
+      const dispH = canvas.height * scale;
+      const x = cursorX - rect.left - (rect.width - dispW) / 2;
+      const y = cursorY - rect.top - (rect.height - dispH) / 2;
+      if (x < 0 || y < 0 || x >= dispW || y >= dispH) {
+        coordReadout.style.display = "none";
+        return;
+      }
+      const px = Math.floor(x / scale);
+      const py = Math.floor(y / scale);
+      const i = (py * canvas.width + px) * 4;
+      const d = imageData.data;
+      const hex = [d[i], d[i + 1], d[i + 2]]
+        .map((c) => c.toString(16).padStart(2, "0"))
+        .join("");
+      coordReadout.textContent = `${px}, ${py} #${hex}`;
+      coordReadout.style.left = `${cursorX + 12}px`;
+      coordReadout.style.top = `${cursorY + 16}px`;
+      coordReadout.style.display = "block";
+    }
+
+    player.addEventListener("mousemove", (e) => {
+      cursorX = e.clientX;
+      cursorY = e.clientY;
+      updateCoordReadout();
+    });
+    player.addEventListener("mouseleave", () => {
+      cursorX = cursorY = null;
+      coordReadout.style.display = "none";
+    });
+
+    // =====================================================================
+    // Advertised endpoints (real — sent once in the hello message)
+    // =====================================================================
+    const endpointsEl = document.getElementById("endpoints");
+
+    // The URL this viewer is reachable at (per-viewer, e.g. localhost vs the public host).
+    const viewUrl = document.getElementById("view-url");
+    viewUrl.textContent = location.origin;
+    viewUrl.title = location.origin;
+
+    function renderEndpoints(endpoints) {
+      endpointsEl.innerHTML = "";
+      if (!endpoints || endpoints.length === 0) {
+        const li = document.createElement("li");
+        li.className = "empty";
+        li.textContent = "unknown";
+        endpointsEl.appendChild(li);
+        return;
+      }
+      // Build with textContent (not innerHTML) since endpoints can be operator-supplied strings.
+      for (const endpoint of endpoints) {
+        const li = document.createElement("li");
+        li.textContent = endpoint;
+        li.title = endpoint;
+        endpointsEl.appendChild(li);
+      }
+    }
+
+    // =====================================================================
+    // Stats (real — pushed by the server over the same WebSocket)
+    // =====================================================================
+    const stIps = document.getElementById("st-ips");
+    const stIpsSplit = document.getElementById("st-ips-split");
+    const stTraffic = document.getElementById("st-traffic");
+    const stTotal = document.getElementById("st-total");
+    const stConns = document.getElementById("st-conns");
+    const topTraffic = document.getElementById("top-traffic");
+
+    // Format a number with decimal SI prefixes (matches the server's number formatting).
+    function fmtSI(n, unit) {
+      const prefixes = ["", "k", "M", "G", "T", "P", "E"];
+      let i = 0;
+      while (n >= 1000 && i < prefixes.length - 1) { n /= 1000; i++; }
+      const value = i === 0 ? n.toString() : n.toFixed(1);
+      return `${value} <small>${prefixes[i]}${unit}</small>`;
+    }
+
+    // The server only sends cumulative byte counts; we derive the current per-IP rate by diffing
+    // consecutive snapshots here, which keeps the Rust side minimal.
+    let prevBytesForIp = null;
+    let prevStatsTime = 0;
+
+    function updateStats(s) {
+      const v4 = s.ips_v4 || 0;
+      const v6 = s.ips_v6 || 0;
+      stIps.textContent = v4 + v6;
+      stIpsSplit.textContent = `${v4} v4 · ${v6} v6`;
+      stConns.textContent = s.connections;
+      stTraffic.innerHTML = fmtSI(s.bytes_per_s * 8, "bit/s");
+      stTotal.innerHTML = fmtSI(s.bytes, "B");
+
+      const totals = s.bytes_for_ip || {};
+      const now = performance.now();
+      const elapsed = prevStatsTime ? (now - prevStatsTime) / 1000 : 0;
+      const rates = {};
+      if (elapsed > 0 && prevBytesForIp) {
+        for (const ip in totals) {
+          const delta = totals[ip] - (prevBytesForIp[ip] || 0);
+          if (delta > 0) rates[ip] = delta / elapsed;
+        }
+      }
+      prevBytesForIp = totals;
+      prevStatsTime = now;
+
+      renderTopTraffic(rates, totals, s.connections_for_ip || {});
+      // Also available for future views:
+      //   s.ips_v4, s.ips_v6, s.fps, s.denied_connections_for_ip
+    }
+
+    // Top 5 IPs by current send rate. `bytes_for_ip` already contains both IPv4 and IPv6
+    // addresses, so they are ranked together in a single list.
+    function renderTopTraffic(rates, totals, conns) {
+      const top = Object.entries(rates)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+
+      if (top.length === 0) {
+        topTraffic.innerHTML = '<li class="empty">no traffic yet</li>';
+        return;
+      }
+
+      topTraffic.innerHTML = top
+        .map(([ip, rate], i) =>
+          `<li>` +
+            `<span class="rank">${i + 1}</span>` +
+            `<div class="entry">` +
+              `<div class="ip" title="${ip}">${ip}</div>` +
+              `<div class="meta">` +
+                `<span>` +
+                  `<span class="rate">${fmtSI(rate * 8, "bit/s")}</span> ` +
+                  `<span class="conns">(${conns[ip] || 0} conn)</span>` +
+                `</span>` +
+                `<span class="total">${fmtSI(totals[ip] || 0, "B")} total</span>` +
+              `</div>` +
+            `</div>` +
+          `</li>`
+        )
+        .join("");
+    }
+
+    // =====================================================================
+    // Chat (MOCK — local only, replace with a real chat channel later)
+    // =====================================================================
+    const chatMessages = document.getElementById("chat-messages");
+    const chatForm = document.getElementById("chat-form");
+    const chatText = document.getElementById("chat-text");
+
+    function addMessage(author, text, system = false) {
+      const el = document.createElement("div");
+      el.className = system ? "msg system" : "msg";
+      if (system) {
+        el.textContent = text;
+      } else {
+        const a = document.createElement("span");
+        a.className = "author";
+        a.textContent = author + ":";
+        a.style.color = colorFor(author);
+        el.appendChild(a);
+        el.appendChild(document.createTextNode(text));
+      }
+      const atBottom = chatMessages.scrollTop + chatMessages.clientHeight >= chatMessages.scrollHeight - 20;
+      chatMessages.appendChild(el);
+      if (atBottom) chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function colorFor(name) {
+      let h = 0;
+      for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360;
+      return `hsl(${h} 70% 65%)`;
+    }
+
+    chatForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const text = chatText.value.trim();
+      if (!text) return;
+      addMessage("you", text);
+      chatText.value = "";
+    });
+
+    addMessage("developer", "Psssst it's a mock. Need more Tschunk :)");
+  </script>
+</body>
+</html>

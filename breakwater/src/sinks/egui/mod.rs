@@ -104,29 +104,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
             }
         });
 
-        let advertised_endpoints = if cli_args.advertised_endpoints.is_empty() {
-            // In case no advertised endpoints to display are given, we calculate the most likely
-            // endpoint(s) to display.
-            match &cli_args.listen_addresses[..] {
-                // No listeners given, so also no endpoints to advertise
-                [] => vec![],
-                // In case of a single listener we get the local IPs (v4 + v6) and concat them with
-                // the port
-                [single_listener] => {
-                    let port = single_listener.port();
-
-                    [local_ip_address::local_ip(), local_ip_address::local_ipv6()]
-                        .into_iter()
-                        .filter_map(Result::ok)
-                        .map(|ip| format!("{ip}:{port}"))
-                        .collect()
-                }
-                // If multiple listeners are used it's complicated, so we just print them
-                multiple_listeners => multiple_listeners.iter().map(ToString::to_string).collect(),
-            }
-        } else {
-            cli_args.advertised_endpoints.clone()
-        };
+        let advertised_endpoints = cli_args.resolve_advertised_endpoints();
 
         Ok(Some(Self {
             framebuffer: fb,

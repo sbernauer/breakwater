@@ -140,6 +140,24 @@ async fn main() -> eyre::Result<()> {
         }
     }
 
+    #[cfg(feature = "web")]
+    {
+        use crate::sinks::web::WebSink;
+
+        if let Some(web_sink) = WebSink::new(
+            fb.clone(),
+            &args,
+            statistics_tx.clone(),
+            statistics_information_rx.resubscribe(),
+            terminate_signal_rx.resubscribe(),
+        )
+        .await
+        .context("failed to create web sink")?
+        {
+            display_sinks.push(Box::new(web_sink));
+        }
+    }
+
     let mut ffmpeg_thread_present = false;
     if let Some(ffmpeg_sink) = FfmpegSink::new(
         fb.clone(),
