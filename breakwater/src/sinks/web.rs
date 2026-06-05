@@ -21,6 +21,7 @@ use bytes::Bytes;
 use color_eyre::eyre::{self, Context};
 use flate2::{Compression, write::ZlibEncoder};
 use futures::{SinkExt, StreamExt, stream::SplitSink};
+use simple_moving_average::{SMA, SingleSumSMA};
 use tokio::{
     sync::{broadcast, mpsc},
     time,
@@ -34,6 +35,18 @@ use crate::{
 };
 
 const INDEX_HTML: &str = include_str!("web_index.html");
+
+/// Number of independently-compressed chunks per frame. The framebuffer is split into this many
+/// contiguous byte ranges that are zlib-compressed in parallel, drastically cutting the wall-clock
+/// time spent compressing a single frame. All chunks are packed into one websocket message (see
+/// [`WebSink::encode_frame`]), so a client never renders a partially-updated frame.
+///
+/// Note: If you change this value, the frontend adapts automatically as the chunk count is encoded
+/// in the message header.
+const FRAME_COMPRESSION_CHUNKS: usize = 16;
+
+/// Number of recent frames over which the average compression duration is computed for logging.
+const COMPRESSION_TIME_WINDOW_SIZE: usize = 100;
 
 /// Number of compressed frames buffered for each connected client. Kept small on purpose:
 /// a client that can't drain the buffer in time receives a [`broadcast::error::RecvError::Lagged`]
@@ -94,6 +107,10 @@ pub struct WebSink<FB: FrameBuffer> {
 
     /// Reused scratch buffer holding one RGBA frame, so we don't reallocate every tick.
     frame_buf: Vec<u8>,
+
+    /// Rolling average of the per-frame compression duration (in microseconds), logged alongside
+    /// the instantaneous duration to give a more stable picture.
+    compression_time_window: SingleSumSMA<u64, u64, COMPRESSION_TIME_WINDOW_SIZE>,
 }
 
 #[async_trait]
@@ -135,6 +152,7 @@ impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for WebSink<FB> {
             fps: cli_args.fps,
             state,
             frame_buf,
+            compression_time_window: SingleSumSMA::new(),
         }))
     }
 
@@ -204,6 +222,9 @@ impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for WebSink<FB> {
         // connected client. The expensive work (copy + compress) happens a single time regardless
         // of the number of viewers.
         let mut interval = time::interval(Duration::from_micros(1_000_000 / u64::from(self.fps)));
+        // In case we delayed a frame, there is no point in trying to get the following frames
+        // quicker as a compensation.
+        interval.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
         loop {
             if self.terminate_signal_rx.try_recv().is_ok() {
                 break;
@@ -211,7 +232,7 @@ impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for WebSink<FB> {
 
             // No point spending CPU on compression while nobody is watching.
             if self.state.frame_tx.receiver_count() > 0 {
-                let frame = self.encode_frame()?;
+                let frame = self.encode_frame().await?;
                 // Ignore the error: it only means all receivers disconnected between the check above
                 // and here.
                 let _ = self.state.frame_tx.send(frame);
@@ -230,32 +251,103 @@ impl<FB: FrameBuffer> WebSink<FB> {
     /// Copies the current framebuffer into the scratch buffer, forces the alpha channel to opaque
     /// (the framebuffer stores `rgb0`, but the browser's `ImageData` expects a meaningful alpha),
     /// and zlib-compresses the result.
-    fn encode_frame(&mut self) -> eyre::Result<Bytes> {
+    ///
+    /// Compression is the single most expensive part of serving the web UI, so the buffer is split
+    /// into [`FRAME_COMPRESSION_CHUNKS`] contiguous byte ranges that are compressed in parallel.
+    /// The compressed chunks are concatenated into one message, prefixed with a small header so the
+    /// client can split them apart again:
+    ///
+    /// ```text
+    /// u32le  chunk_count
+    /// u32le  compressed_len   × chunk_count
+    /// bytes  compressed chunk data, back-to-back, in order
+    /// ```
+    ///
+    /// Because the chunks are simply consecutive slices of the framebuffer, the client reproduces
+    /// the full frame by decompressing each chunk and concatenating the output in order. Keeping
+    /// everything in a single websocket message guarantees a client never renders a half-updated
+    /// frame (which would show as a visible tear/artefact).
+    async fn encode_frame(&mut self) -> eyre::Result<Bytes> {
         self.frame_buf.copy_from_slice(self.fb.as_bytes());
         for pixel in self.frame_buf.chunks_exact_mut(FB_BYTES_PER_PIXEL) {
             pixel[3] = 0xff;
         }
 
-        // `Compression::fast()` (level 1) keeps CPU usage low; Pixelflut battles are high-entropy,
-        // so a higher level would mostly burn CPU for little gain.
         let start = Instant::now();
-        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
-        encoder
-            .write_all(&self.frame_buf)
-            .context("failed to compress frame")?;
-        let compressed = encoder.finish().context("failed to finish compression")?;
+
+        let len = self.frame_buf.len();
+        // Round up so we never end up with more than `FRAME_COMPRESSION_CHUNKS` chunks. The exact
+        // split points don't matter for correctness as the client reassembles the chunks in order.
+        let chunk_size = len.div_ceil(FRAME_COMPRESSION_CHUNKS).max(1);
+
+        // Compress each chunk on Tokio's blocking thread pool. `spawn_blocking` requires `'static`
+        // closures, so we temporarily move the scratch buffer into an `Arc` that every task shares;
+        // it is reclaimed below to keep reusing the same allocation across frames.
+        let frame = Arc::new(std::mem::take(&mut self.frame_buf));
+        let mut tasks = Vec::with_capacity(FRAME_COMPRESSION_CHUNKS);
+        let mut offset = 0;
+        while offset < len {
+            let end = (offset + chunk_size).min(len);
+            let frame = Arc::clone(&frame);
+            tasks.push(tokio::task::spawn_blocking(move || {
+                compress_chunk(&frame[offset..end])
+            }));
+            offset = end;
+        }
+
+        // Collect in spawn order, so the chunks stay in framebuffer order.
+        let mut compressed_chunks: Vec<Vec<u8>> = Vec::with_capacity(tasks.len());
+        for task in tasks {
+            compressed_chunks.push(task.await.context("compression task panicked")??);
+        }
+
+        // All tasks have finished, so we are the sole owner again: reclaim the buffer for reuse.
+        self.frame_buf =
+            Arc::try_unwrap(frame).expect("frame buffer still shared after compression");
+
         let compression_time = start.elapsed();
+        self.compression_time_window
+            .add_sample(compression_time.as_micros() as u64);
+        let avg_compression_time =
+            Duration::from_micros(self.compression_time_window.get_average());
+
+        // Assemble the framed message: header (chunk count + per-chunk lengths) followed by the
+        // compressed bytes.
+        let compressed_bytes: usize = compressed_chunks.iter().map(Vec::len).sum();
+        let header_len = (1 + compressed_chunks.len()) * size_of::<u32>();
+        let mut message = Vec::with_capacity(header_len + compressed_bytes);
+        message.extend_from_slice(&(compressed_chunks.len() as u32).to_le_bytes());
+        for chunk in &compressed_chunks {
+            message.extend_from_slice(&(chunk.len() as u32).to_le_bytes());
+        }
+        for chunk in &compressed_chunks {
+            message.extend_from_slice(chunk);
+        }
 
         trace!(
             raw_bytes = self.frame_buf.len(),
-            compressed_bytes = compressed.len(),
-            compression_factor = self.frame_buf.len() as f64 / compressed.len() as f64,
+            compressed_bytes,
+            chunks = compressed_chunks.len(),
+            compression_factor = self.frame_buf.len() as f64 / compressed_bytes as f64,
             ?compression_time,
+            ?avg_compression_time,
             "encoded web frame"
         );
 
-        Ok(Bytes::from(compressed))
+        Ok(Bytes::from(message))
     }
+}
+
+/// Zlib-compresses a single chunk of the framebuffer.
+///
+/// `Compression::fast()` (level 1) keeps CPU usage low; Pixelflut battles are high-entropy, so a
+/// higher level would mostly burn CPU for little gain.
+fn compress_chunk(data: &[u8]) -> eyre::Result<Vec<u8>> {
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+    encoder
+        .write_all(data)
+        .context("failed to compress frame chunk")?;
+    encoder.finish().context("failed to finish compression")
 }
 
 async fn index() -> Html<&'static str> {

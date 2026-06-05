@@ -419,11 +419,37 @@
     let framesThisSecond = 0;
     let activeSocket = null; // current WebSocket, used to send chat messages
 
-    // Decompress a zlib (deflate) frame using only the browser-native DecompressionStream.
+    // Decompress a single zlib (deflate) chunk using only the browser-native DecompressionStream.
     // No third-party JavaScript required.
     async function inflate(buffer) {
       const stream = new Response(buffer).body.pipeThrough(new DecompressionStream("deflate"));
       return new Uint8Array(await new Response(stream).arrayBuffer());
+    }
+
+    // A frame arrives as several zlib-compressed chunks packed into one message, so the server can
+    // compress them in parallel. Layout (little-endian):
+    //   u32  chunkCount
+    //   u32  compressedLen   × chunkCount
+    //   compressed bytes     (chunks back-to-back, in order)
+    // Decompressing each chunk and concatenating the output in order reproduces the full RGBA
+    // framebuffer. Returns the decompressed chunks (Uint8Array[]) in order.
+    async function inflateFrame(buffer) {
+      const view = new DataView(buffer);
+      const chunkCount = view.getUint32(0, true);
+      let offset = 4;
+      const slices = [];
+      for (let i = 0; i < chunkCount; i++) {
+        const len = view.getUint32(offset, true);
+        offset += 4;
+        slices.push(len);
+      }
+      let dataOffset = offset;
+      // Decompress all chunks concurrently; the browser can run these off the main thread.
+      return Promise.all(slices.map((len) => {
+        const slice = buffer.slice(dataOffset, dataOffset + len);
+        dataOffset += len;
+        return inflate(slice);
+      }));
     }
 
     function connect() {
@@ -471,8 +497,12 @@
         const buffer = latest;
         latest = null;
         try {
-          const rgba = await inflate(buffer);
-          imageData.data.set(rgba);
+          const chunks = await inflateFrame(buffer);
+          let dataOffset = 0;
+          for (const rgba of chunks) {
+            imageData.data.set(rgba, dataOffset);
+            dataOffset += rgba.length;
+          }
           ctx.putImageData(imageData, 0, 0);
           framesThisSecond++;
           updateCoordReadout();
