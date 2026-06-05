@@ -238,15 +238,19 @@ impl<FB: FrameBuffer> WebSink<FB> {
 
         // `Compression::fast()` (level 1) keeps CPU usage low; Pixelflut battles are high-entropy,
         // so a higher level would mostly burn CPU for little gain.
+        let start = Instant::now();
         let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
         encoder
             .write_all(&self.frame_buf)
             .context("failed to compress frame")?;
         let compressed = encoder.finish().context("failed to finish compression")?;
+        let compression_time = start.elapsed();
 
         trace!(
             raw_bytes = self.frame_buf.len(),
             compressed_bytes = compressed.len(),
+            compression_factor = self.frame_buf.len() as f64 / compressed.len() as f64,
+            ?compression_time,
             "encoded web frame"
         );
 
