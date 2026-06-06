@@ -645,11 +645,6 @@
       return `${value} <small>${prefixes[i]}${unit}</small>`;
     }
 
-    // The server only sends cumulative byte counts; we derive the current per-IP rate by diffing
-    // consecutive snapshots here, which keeps the Rust side minimal.
-    let prevBytesForIp = null;
-    let prevStatsTime = 0;
-
     function updateStats(s) {
       const v4 = s.ips_v4 || 0;
       const v6 = s.ips_v6 || 0;
@@ -659,20 +654,10 @@
       stTraffic.innerHTML = fmtSI(s.bytes_per_s * 8, "bit/s");
       stTotal.innerHTML = fmtSI(s.bytes, "B");
 
-      const totals = s.bytes_for_ip || {};
-      const now = performance.now();
-      const elapsed = prevStatsTime ? (now - prevStatsTime) / 1000 : 0;
-      const rates = {};
-      if (elapsed > 0 && prevBytesForIp) {
-        for (const ip in totals) {
-          const delta = totals[ip] - (prevBytesForIp[ip] || 0);
-          if (delta > 0) rates[ip] = delta / elapsed;
-        }
-      }
-      prevBytesForIp = totals;
-      prevStatsTime = now;
-
-      renderTopTraffic(rates, totals, s.connections_for_ip || {});
+      // Per-IP rates are computed server-side (`bytes_per_s_for_ip`). Diffing the cumulative
+      // `bytes_for_ip` against wall-clock time on the client produced bogus spikes (TBit/s) when
+      // the tab is throttled, e.g. on mobile running at <= 1 fps.
+      renderTopTraffic(s.bytes_per_s_for_ip || {}, s.bytes_for_ip || {}, s.connections_for_ip || {});
       // Also available for future views:
       //   s.ips_v4, s.ips_v6, s.fps, s.denied_connections_for_ip
     }

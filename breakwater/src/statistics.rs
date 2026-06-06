@@ -58,6 +58,7 @@ pub struct StatisticsInformationEvent {
     pub connections_for_ip: HashMap<IpAddr, u32>,
     pub denied_connections_for_ip: HashMap<IpAddr, u32>,
     pub bytes_for_ip: HashMap<IpAddr, u64>,
+    pub bytes_per_s_for_ip: HashMap<IpAddr, u64>,
 
     pub statistic_events: u64,
 }
@@ -74,6 +75,7 @@ pub struct Statistics {
     bytes_for_ip: HashMap<IpAddr, u64>,
 
     bytes_per_s_window: SingleSumSMA<u64, u64, STATS_SLIDING_WINDOW_SIZE>,
+    bytes_per_s_for_ip_window: HashMap<IpAddr, SingleSumSMA<u64, u64, STATS_SLIDING_WINDOW_SIZE>>,
     fps_window: SingleSumSMA<u64, u64, STATS_SLIDING_WINDOW_SIZE>,
 
     statistics_save_mode: StatisticsSaveMode,
@@ -114,6 +116,7 @@ impl Statistics {
             denied_connections_for_ip: HashMap::new(),
             bytes_for_ip: HashMap::new(),
             bytes_per_s_window: SingleSumSMA::new(),
+            bytes_per_s_for_ip_window: HashMap::new(),
             fps_window: SingleSumSMA::new(),
             statistics_save_mode,
         };
@@ -222,6 +225,19 @@ impl Statistics {
         let bytes = self.bytes_for_ip.values().sum();
         self.bytes_per_s_window
             .add_sample((bytes - prev.bytes) * 1000 / elapsed_ms);
+        for (ip, bytes) in &self.bytes_for_ip {
+            if let Some(prev_bytes) = prev.bytes_for_ip.get(ip) {
+                self.bytes_per_s_for_ip_window
+                    .entry(*ip)
+                    .or_insert_with(SingleSumSMA::new)
+                    .add_sample((bytes - prev_bytes) * 1000 / elapsed_ms);
+            }
+        }
+        // Drop windows that have decayed to zero, so the map — and the JSON we broadcast every
+        // second — stays bounded to recently-active IPs rather than every IP ever seen.
+        self.bytes_per_s_for_ip_window
+            .retain(|_, window| window.get_average() > 0);
+
         self.fps_window
             .add_sample((frame - prev.frame) * 1000 / elapsed_ms);
         let statistic_events = self.statistic_events;
@@ -237,6 +253,11 @@ impl Statistics {
             connections_for_ip: self.connections_for_ip.clone(),
             denied_connections_for_ip: self.denied_connections_for_ip.clone(),
             bytes_for_ip: self.bytes_for_ip.clone(),
+            bytes_per_s_for_ip: self
+                .bytes_per_s_for_ip_window
+                .iter()
+                .map(|(ip, bytes_per_s)| (*ip, bytes_per_s.get_average()))
+                .collect(),
             statistic_events,
         }
     }
