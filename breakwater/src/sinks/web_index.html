@@ -65,6 +65,34 @@
       user-select: none;
     }
 
+    /* Connection-state pill (top-left of the player). Hidden while connected; shown with a pulsing
+       dot while (re)connecting, so a dropped websocket is obvious — important on flaky mobile links
+       where the canvas would otherwise just silently freeze on its last frame. */
+    #conn-status {
+      position: absolute;
+      top: 12px;
+      left: 14px;
+      display: none;
+      align-items: center;
+      gap: 7px;
+      font: 13px/1.2 system-ui, -apple-system, sans-serif;
+      color: #fff;
+      background: rgba(0, 0, 0, .55);
+      padding: 5px 10px;
+      border-radius: 4px;
+      user-select: none;
+    }
+    #conn-status.show { display: inline-flex; }
+    #conn-status::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--live);
+      animation: conn-pulse 1s ease-in-out infinite;
+    }
+    @keyframes conn-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+
     #coord-readout {
       position: fixed;
       z-index: 10;
@@ -172,6 +200,23 @@
       overflow-wrap: anywhere;
     }
     .endpoint-list .empty { color: var(--text-dim); font-style: italic; }
+    /* Click-to-copy affordance for endpoints. The transient `.copied` flash overlays a small badge
+       on the right; it covers the tail of a (wrapped) address only for ~1s, which is acceptable. */
+    .endpoint-list li.copyable { cursor: pointer; position: relative; }
+    .endpoint-list li.copyable:hover { border-color: var(--accent); }
+    .endpoint-list li.copied::after {
+      content: "copied ✓";
+      position: absolute;
+      top: 50%;
+      right: 8px;
+      transform: translateY(-50%);
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 11px;
+      color: #000;
+      background: var(--accent);
+      padding: 2px 7px;
+      border-radius: 4px;
+    }
     .endpoints h2,
     .stats h2,
     .chat h2 {
@@ -358,6 +403,7 @@
       <canvas id="canvas"></canvas>
       <div id="coord-readout"></div>
 
+      <div id="conn-status" class="show">Connecting…</div>
       <div id="fps">connecting…</div>
 
       <div class="controls">
@@ -426,6 +472,7 @@
           <div class="seg" role="group" aria-label="Rank top clients by">
             <button type="button" class="seg-btn active" data-mode="traffic">Traffic</button>
             <button type="button" class="seg-btn" data-mode="total">Total</button>
+            <button type="button" class="seg-btn" data-mode="denied">Denied</button>
           </div>
         </div>
         <ol class="top-list" id="top-traffic">
@@ -498,11 +545,30 @@
       }));
     }
 
+    // Connection-state pill. `everConnected` distinguishes the first connect ("Connecting…") from a
+    // later drop ("Reconnecting…"); the pill is hidden entirely once the socket is open.
+    const connStatusEl = document.getElementById("conn-status");
+    let everConnected = false;
+    function setConnState(connected) {
+      if (connected) {
+        connStatusEl.classList.remove("show");
+      } else {
+        connStatusEl.textContent = everConnected ? "Reconnecting…" : "Connecting…";
+        connStatusEl.classList.add("show");
+      }
+    }
+
     function connect() {
+      setConnState(false);
       const proto = location.protocol === "https:" ? "wss" : "ws";
       const ws = new WebSocket(`${proto}://${location.host}/ws`);
       ws.binaryType = "arraybuffer";
       activeSocket = ws;
+
+      ws.onopen = () => {
+        everConnected = true;
+        setConnState(true);
+      };
 
       ws.onmessage = (event) => {
         if (typeof event.data === "string") {
@@ -529,7 +595,7 @@
 
       ws.onclose = () => {
         activeSocket = null;
-        fpsEl.textContent = "disconnected";
+        setConnState(false);
         setTimeout(connect, 1000);
       };
       ws.onerror = () => ws.close();
@@ -593,13 +659,17 @@
     // =====================================================================
     // Cursor coordinate + color readout (on by default)
     // =====================================================================
-    let showCoords = true;
+    // Restore the saved preference (defaults to on when never set).
+    let showCoords = localStorage.getItem("showCoords") !== "false";
     let cursorX = null; // last cursor position over the player, in client coordinates
     let cursorY = null;
     const coordReadout = document.getElementById("coord-readout");
 
-    document.getElementById("toggle-coords").addEventListener("change", (e) => {
+    const toggleCoordsEl = document.getElementById("toggle-coords");
+    toggleCoordsEl.checked = showCoords;
+    toggleCoordsEl.addEventListener("change", (e) => {
       showCoords = e.target.checked;
+      localStorage.setItem("showCoords", showCoords);
       updateCoordReadout();
     });
 
@@ -649,10 +719,48 @@
     // =====================================================================
     const endpointsEl = document.getElementById("endpoints");
 
+    // Copy `text` to the clipboard. The async Clipboard API only works in secure contexts (https or
+    // localhost); breakwater is often viewed over plain http on a LAN, so fall back to the legacy
+    // textarea + execCommand path there. Returns whether the copy succeeded.
+    async function copyText(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        try {
+          await navigator.clipboard.writeText(text);
+          return true;
+        } catch (e) { /* fall through to the legacy path */ }
+      }
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+        return ok;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    // Turn an endpoint <li> into a click-to-copy control with a brief "copied ✓" flash.
+    function makeCopyable(li, text) {
+      li.classList.add("copyable");
+      li.title = `Click to copy: ${text}`;
+      li.addEventListener("click", async () => {
+        if (await copyText(text)) {
+          li.classList.add("copied");
+          clearTimeout(li._copiedTimer);
+          li._copiedTimer = setTimeout(() => li.classList.remove("copied"), 1200);
+        }
+      });
+    }
+
     // The URL this viewer is reachable at (per-viewer, e.g. localhost vs the public host).
     const viewUrl = document.getElementById("view-url");
     viewUrl.textContent = location.origin;
-    viewUrl.title = location.origin;
+    makeCopyable(viewUrl, location.origin);
 
     function renderEndpoints(endpoints) {
       endpointsEl.innerHTML = "";
@@ -667,7 +775,7 @@
       for (const endpoint of endpoints) {
         const li = document.createElement("li");
         li.textContent = endpoint;
-        li.title = endpoint;
+        makeCopyable(li, endpoint);
         endpointsEl.appendChild(li);
       }
     }
@@ -706,13 +814,17 @@
       latestStats = s;
       renderTopList();
       // Also available for future views:
-      //   s.ips_v4, s.ips_v6, s.fps, s.denied_connections_for_ip
+      //   s.ips_v4, s.ips_v6, s.fps
     }
 
     // How the "Top" list is ranked: "traffic" = current send rate (bytes/s), "total" = cumulative
-    // bytes. Defaults to traffic. The latest stats snapshot is cached so toggling re-renders the
-    // list immediately instead of waiting for the next (~1/s) stats message.
-    let topSortMode = "traffic";
+    // bytes, "denied" = denied connection count. Defaults to traffic. The latest stats snapshot is
+    // cached so toggling re-renders the list immediately instead of waiting for the next (~1/s)
+    // stats message.
+    const TOP_SORT_MODES = ["traffic", "total", "denied"];
+    let topSortMode = TOP_SORT_MODES.includes(localStorage.getItem("topSortMode"))
+      ? localStorage.getItem("topSortMode")
+      : "traffic";
     let latestStats = null;
 
     // Top 10 IPs ranked by the selected mode. `bytes_for_ip` already contains both IPv4 and IPv6
@@ -723,48 +835,75 @@
       const rates = latestStats.bytes_per_s_for_ip || {};
       const totals = latestStats.bytes_for_ip || {};
       const conns = latestStats.connections_for_ip || {};
+      const denied = latestStats.denied_connections_for_ip || {};
 
-      const rankBy = topSortMode === "total" ? totals : rates;
+      const rankBy = topSortMode === "total" ? totals
+        : topSortMode === "denied" ? denied
+        : rates;
       const top = Object.entries(rankBy)
         .filter(([, value]) => value > 0)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 10);
 
       if (top.length === 0) {
-        topTraffic.innerHTML = `<li class="empty">${topSortMode === "total" ? "no data yet" : "no traffic currently"}</li>`;
+        const empty = topSortMode === "denied" ? "no denied connections"
+          : topSortMode === "total" ? "no data yet"
+          : "no traffic currently";
+        topTraffic.innerHTML = `<li class="empty">${empty}</li>`;
         return;
       }
 
+      // The accented primary metric reflects the active ranking; the right column shows a
+      // complementary figure so each row still carries both traffic and size context in every mode.
       topTraffic.innerHTML = top
-        .map(([ip], i) =>
-          `<li>` +
+        .map(([ip], i) => {
+          const rate = fmtSI((rates[ip] || 0) * 8, "bit/s");
+          const total = fmtSI(totals[ip] || 0, "B");
+          let primary, right;
+          if (topSortMode === "denied") {
+            primary = `${denied[ip] || 0} <small>denied</small>`;
+            right = `${total} total`;
+          } else if (topSortMode === "total") {
+            primary = total;
+            right = rate;
+          } else {
+            primary = rate;
+            right = `${total} total`;
+          }
+          return `<li>` +
             `<span class="rank">${i + 1}</span>` +
             `<div class="entry">` +
               `<div class="ip" title="${ip}">${ip}</div>` +
               `<div class="meta">` +
                 `<span>` +
-                  `<span class="rate">${fmtSI((rates[ip] || 0) * 8, "bit/s")}</span> ` +
+                  `<span class="rate">${primary}</span> ` +
                   `<span class="conns">(${conns[ip] || 0} conn)</span>` +
                 `</span>` +
-                `<span class="total">${fmtSI(totals[ip] || 0, "B")} total</span>` +
+                `<span class="total">${right}</span>` +
               `</div>` +
             `</div>` +
-          `</li>`
-        )
+          `</li>`;
+        })
         .join("");
     }
 
-    // Wire up the traffic/total switch: update the mode, the active button, the heading label, and
-    // re-render straight away from the cached snapshot.
+    // Wire up the traffic/total switch: persist the mode, update the active button + heading label,
+    // and re-render straight away from the cached snapshot.
     const topSortLabel = document.getElementById("top-sort-label");
-    document.querySelectorAll(".seg-btn").forEach((btn) => {
+    const segBtns = document.querySelectorAll(".seg-btn");
+    function applyTopSortMode() {
+      segBtns.forEach((b) => b.classList.toggle("active", b.dataset.mode === topSortMode));
+      topSortLabel.textContent = topSortMode; // "traffic" | "total" | "denied"
+    }
+    segBtns.forEach((btn) => {
       btn.addEventListener("click", () => {
         topSortMode = btn.dataset.mode;
-        document.querySelectorAll(".seg-btn").forEach((b) => b.classList.toggle("active", b === btn));
-        topSortLabel.textContent = topSortMode === "total" ? "total" : "traffic";
+        localStorage.setItem("topSortMode", topSortMode);
+        applyTopSortMode();
         renderTopList();
       });
     });
+    applyTopSortMode(); // reflect the restored preference on load
 
     // =====================================================================
     // Chat
