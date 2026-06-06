@@ -111,8 +111,17 @@
     /* ---------- Sidebar ---------- */
     .sidebar {
       display: grid;
-      grid-template-rows: auto auto auto 1fr;
+      /* `minmax(220px, 1fr)` keeps the chat usable: on tall screens it fills the leftover space
+         (and `.chat-messages` scrolls internally); on short screens it stops shrinking at 220px so
+         the sections above (connect/stats) no longer get squeezed off-screen — instead the whole
+         sidebar overflows and `overflow-y: auto` makes every section reachable by scrolling. */
+      grid-template-rows: auto auto auto minmax(440px, 1fr);
       min-height: 0;
+      /* Vertical scroll only — `overflow-x: hidden` stops a stray nowrap element (e.g. a long IP)
+         or the scrollbar gutter from triggering an annoying little horizontal scroll. */
+      overflow: hidden auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
       background: var(--panel);
       border-left: 1px solid var(--border);
     }
@@ -662,12 +671,12 @@
       //   s.ips_v4, s.ips_v6, s.fps, s.denied_connections_for_ip
     }
 
-    // Top 5 IPs by current send rate. `bytes_for_ip` already contains both IPv4 and IPv6
+    // Top 10 IPs by current send rate. `bytes_for_ip` already contains both IPv4 and IPv6
     // addresses, so they are ranked together in a single list.
     function renderTopTraffic(rates, totals, conns) {
       const top = Object.entries(rates)
         .sort((a, b) => b[1] - a[1])
-        .slice(0, 5);
+        .slice(0, 10);
 
       if (top.length === 0) {
         topTraffic.innerHTML = '<li class="empty">no traffic currently</li>';
