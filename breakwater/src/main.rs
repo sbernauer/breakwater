@@ -75,7 +75,7 @@ async fn main() -> eyre::Result<()> {
         statistics_rx,
         statistics_information_tx,
         statistics_save_mode,
-    );
+    )?;
 
     let mut server = Server::new(
         &args.listen_addresses,
