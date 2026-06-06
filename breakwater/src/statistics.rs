@@ -2,6 +2,7 @@ use std::{
     cmp::max,
     collections::{HashMap, hash_map::Entry},
     fs::File,
+    io,
     net::IpAddr,
     time::Duration,
 };
@@ -86,16 +87,31 @@ impl StatisticsInformationEvent {
         let file = File::create(file_name)
             .with_context(|| format!("failed to create statistics save file at {file_name}"))?;
         serde_json::to_writer(file, &self)
-            .context("failed to write statistics to file at {file_name}")?;
+            .with_context(|| format!("failed to write statistics to file at {file_name}"))?;
 
         Ok(())
     }
 
-    fn load_from_file(file_name: &str) -> eyre::Result<Self> {
-        let file = File::open(file_name)
-            .with_context(|| format!("failed to load statistic from file '{file_name}'"))?;
-        serde_json::from_reader(file)
-            .with_context(|| format!("failed to deserialize statistics from file '{file_name}'"))
+    /// Loads a save point from the given file.
+    ///
+    /// Returns `Ok(None)` if the file does not exist (e.g. on first start), but raises an error if
+    /// the file exists but can not be read or parsed. Otherwise a corrupted or outdated save file
+    /// (e.g. after adding a new mandatory field) would be silently ignored and subsequently
+    /// overwritten, losing all previously collected statistics.
+    fn load_from_file(file_name: &str) -> eyre::Result<Option<Self>> {
+        let file = match File::open(file_name) {
+            Ok(file) => file,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => {
+                return Err(e)
+                    .with_context(|| format!("failed to load statistics from file '{file_name}'"));
+            }
+        };
+        let save_point = serde_json::from_reader(file)
+            .with_context(|| format!("failed to deserialize statistics from file '{file_name}'. \
+            It could totally be the case that it was written by an older version of breakwater and is therefore missing new required fields. \
+            Please either delete the statistics file (in case you don't care about it) or manually migrate it to the new version."))?;
+        Ok(Some(save_point))
     }
 }
 
@@ -104,7 +120,7 @@ impl Statistics {
         statistics_rx: mpsc::Receiver<StatisticsEvent>,
         statistics_information_tx: broadcast::Sender<StatisticsInformationEvent>,
         statistics_save_mode: StatisticsSaveMode,
-    ) -> Self {
+    ) -> eyre::Result<Self> {
         let mut statistics = Statistics {
             statistics_rx,
             statistics_information_tx,
@@ -119,15 +135,17 @@ impl Statistics {
         };
 
         if let StatisticsSaveMode::Enabled { save_file, .. } = &statistics.statistics_save_mode {
-            // There might not be a save point on first start
-            if let Ok(save_point) = StatisticsInformationEvent::load_from_file(save_file) {
+            // There might not be a save point on first start, in which case `None` is returned.
+            // A failure to read or parse an existing save file is raised, so we don't silently
+            // discard (and subsequently overwrite) previously collected statistics.
+            if let Some(save_point) = StatisticsInformationEvent::load_from_file(save_file)? {
                 statistics.statistic_events = save_point.statistic_events;
                 statistics.frame = save_point.frame;
                 statistics.bytes_for_ip = save_point.bytes_for_ip;
             }
         }
 
-        statistics
+        Ok(statistics)
     }
 
     pub async fn run(&mut self) -> eyre::Result<()> {
