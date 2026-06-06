@@ -14,7 +14,7 @@
       --text-dim: #aaa;
       --accent: #3ea6ff;
       --live: #ff4444;
-      --sidebar-w: 340px;
+      --sidebar-w: 380px;
     }
 
     * { box-sizing: border-box; }
@@ -116,6 +116,10 @@
          the sections above (connect/stats) no longer get squeezed off-screen — instead the whole
          sidebar overflows and `overflow-y: auto` makes every section reachable by scrolling. */
       grid-template-rows: auto auto auto minmax(440px, 1fr);
+      /* Pin the single column to the panel width (`minmax(0, …)` lets it shrink below its content's
+         intrinsic size) so wide content — e.g. a long IPv6 endpoint set to `white-space: nowrap` —
+         gets ellipsized inside the panel instead of widening it and being clipped on the right. */
+      grid-template-columns: minmax(0, 1fr);
       min-height: 0;
       /* Vertical scroll only — `overflow-x: hidden` stops a stray nowrap element (e.g. a long IP)
          or the scrollbar gutter from triggering an annoying little horizontal scroll. */
@@ -163,9 +167,9 @@
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 6px 9px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      /* Wrap long endpoints (e.g. IPv6 addresses) across lines instead of truncating them, so the
+         full address is always readable. `anywhere` lets the break fall mid-token when needed. */
+      overflow-wrap: anywhere;
     }
     .endpoint-list .empty { color: var(--text-dim); font-style: italic; }
     .endpoints h2,
@@ -213,6 +217,35 @@
       letter-spacing: .06em;
       color: var(--text-dim);
     }
+    /* Heading row holding the "Top …" title and the traffic/total switch. */
+    .top-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin: 16px 0 8px;
+    }
+    .top-head .subhead { margin: 0; }
+    .seg {
+      display: inline-flex;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .seg-btn {
+      background: var(--panel-2);
+      color: var(--text-dim);
+      border: none;
+      padding: 4px 9px;
+      font: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      cursor: pointer;
+    }
+    .seg-btn + .seg-btn { border-left: 1px solid var(--border); }
+    .seg-btn.active { background: var(--accent); color: #000; }
     .top-list {
       list-style: none;
       margin: 0;
@@ -235,9 +268,7 @@
     .top-list .entry { flex: 1; min-width: 0; }
     .top-list .ip {
       font-family: monospace;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      overflow-wrap: anywhere;
     }
     .top-list .meta {
       display: flex;
@@ -390,7 +421,13 @@
           </div>
         </div>
 
-        <h3 class="subhead">Top traffic</h3>
+        <div class="top-head">
+          <h3 class="subhead">Top <span id="top-sort-label">traffic</span></h3>
+          <div class="seg" role="group" aria-label="Rank top clients by">
+            <button type="button" class="seg-btn active" data-mode="traffic">Traffic</button>
+            <button type="button" class="seg-btn" data-mode="total">Total</button>
+          </div>
+        </div>
         <ol class="top-list" id="top-traffic">
           <li class="empty">waiting for data…</li>
         </ol>
@@ -666,32 +703,47 @@
       // Per-IP rates are computed server-side (`bytes_per_s_for_ip`). Diffing the cumulative
       // `bytes_for_ip` against wall-clock time on the client produced bogus spikes (TBit/s) when
       // the tab is throttled, e.g. on mobile running at <= 1 fps.
-      renderTopTraffic(s.bytes_per_s_for_ip || {}, s.bytes_for_ip || {}, s.connections_for_ip || {});
+      latestStats = s;
+      renderTopList();
       // Also available for future views:
       //   s.ips_v4, s.ips_v6, s.fps, s.denied_connections_for_ip
     }
 
-    // Top 10 IPs by current send rate. `bytes_for_ip` already contains both IPv4 and IPv6
-    // addresses, so they are ranked together in a single list.
-    function renderTopTraffic(rates, totals, conns) {
-      const top = Object.entries(rates)
+    // How the "Top" list is ranked: "traffic" = current send rate (bytes/s), "total" = cumulative
+    // bytes. Defaults to traffic. The latest stats snapshot is cached so toggling re-renders the
+    // list immediately instead of waiting for the next (~1/s) stats message.
+    let topSortMode = "traffic";
+    let latestStats = null;
+
+    // Top 10 IPs ranked by the selected mode. `bytes_for_ip` already contains both IPv4 and IPv6
+    // addresses, so they are ranked together in a single list. The per-row metrics shown (rate,
+    // connections, total) stay the same regardless of mode — only the ranking key changes.
+    function renderTopList() {
+      if (!latestStats) return;
+      const rates = latestStats.bytes_per_s_for_ip || {};
+      const totals = latestStats.bytes_for_ip || {};
+      const conns = latestStats.connections_for_ip || {};
+
+      const rankBy = topSortMode === "total" ? totals : rates;
+      const top = Object.entries(rankBy)
+        .filter(([, value]) => value > 0)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 10);
 
       if (top.length === 0) {
-        topTraffic.innerHTML = '<li class="empty">no traffic currently</li>';
+        topTraffic.innerHTML = `<li class="empty">${topSortMode === "total" ? "no data yet" : "no traffic currently"}</li>`;
         return;
       }
 
       topTraffic.innerHTML = top
-        .map(([ip, rate], i) =>
+        .map(([ip], i) =>
           `<li>` +
             `<span class="rank">${i + 1}</span>` +
             `<div class="entry">` +
               `<div class="ip" title="${ip}">${ip}</div>` +
               `<div class="meta">` +
                 `<span>` +
-                  `<span class="rate">${fmtSI(rate * 8, "bit/s")}</span> ` +
+                  `<span class="rate">${fmtSI((rates[ip] || 0) * 8, "bit/s")}</span> ` +
                   `<span class="conns">(${conns[ip] || 0} conn)</span>` +
                 `</span>` +
                 `<span class="total">${fmtSI(totals[ip] || 0, "B")} total</span>` +
@@ -701,6 +753,18 @@
         )
         .join("");
     }
+
+    // Wire up the traffic/total switch: update the mode, the active button, the heading label, and
+    // re-render straight away from the cached snapshot.
+    const topSortLabel = document.getElementById("top-sort-label");
+    document.querySelectorAll(".seg-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        topSortMode = btn.dataset.mode;
+        document.querySelectorAll(".seg-btn").forEach((b) => b.classList.toggle("active", b === btn));
+        topSortLabel.textContent = topSortMode === "total" ? "total" : "traffic";
+        renderTopList();
+      });
+    });
 
     // =====================================================================
     // Chat
