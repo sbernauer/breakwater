@@ -7,9 +7,9 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Raise an error in case the `statistics.json` is written by an older version and can not be deserialized any more.
-  Previously, we would ignore such an error, which results in all statistics being lost ([#XX]).
+  Previously, we would ignore such an error, which results in all statistics being lost ([#77]).
 
-[#XX]: https://github.com/sbernauer/breakwater/pull/XX
+[#77]: https://github.com/sbernauer/breakwater/pull/77
 
 ## [0.20.0] - 2026-01-05
 
