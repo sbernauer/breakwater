@@ -16,13 +16,16 @@ breakwater-parser.workspace = true
 breakwater-egui-overlay = { workspace = true, optional = true }
 
 async-trait.workspace = true
+axum = { workspace = true, optional = true }
 bytemuck = { workspace = true, optional = true }
+bytes = { workspace = true, optional = true }
 chrono.workspace = true
 clap.workspace = true
 color-eyre.workspace = true
 const_format.workspace = true
 eframe = { workspace = true, optional = true }
 egui = { workspace = true, optional = true }
+flate2 = { workspace = true, optional = true }
 libloading = { workspace = true, optional = true }
 local-ip-address.workspace = true
 memadvise.workspace = true
@@ -48,7 +51,7 @@ rstest.workspace = true
 
 [features]
 # We don't enable binary-sync-pixels and binary-set-pixel by default to make it a bit harder for clients ;)
-default = ["egui", "vnc"]
+default = ["egui", "vnc", "web"]
 
 alpha = ["breakwater-parser/alpha"]
 binary-set-pixel = ["breakwater-parser/binary-set-pixel"]
@@ -56,6 +59,7 @@ binary-sync-pixels = ["breakwater-parser/binary-sync-pixels"]
 egui = ["dep:breakwater-egui-overlay", "dep:bytemuck", "dep:eframe", "dep:egui", "dep:libloading"]
 native-display = ["dep:softbuffer", "dep:winit"]
 vnc = ["dep:vncserver"]
+web = ["dep:axum", "dep:bytes", "dep:flate2"]
 
 [lints]
 workspace = true

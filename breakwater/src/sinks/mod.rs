@@ -16,6 +16,8 @@ pub mod ffmpeg;
 pub mod native_display;
 #[cfg(feature = "vnc")]
 pub mod vnc;
+#[cfg(feature = "web")]
+pub mod web;
 
 // The stabilization of async functions in traits in Rust 1.75 did not include support for using traits containing async
 // functions as dyn Trait, so we still need to use async_trait here.

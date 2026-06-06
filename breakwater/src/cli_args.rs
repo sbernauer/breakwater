@@ -100,7 +100,7 @@ pub struct CliArgs {
     pub viewport: Vec<crate::sinks::egui::ViewportConfig>,
 
     /// Specify one or more pixelflut endpoints to display.
-    #[cfg(feature = "egui")]
+    #[cfg(any(feature = "egui", feature = "web"))]
     #[clap(long)]
     pub advertised_endpoints: Vec<String>,
 
@@ -112,6 +112,17 @@ pub struct CliArgs {
     #[clap(long)]
     pub ui: Option<std::path::PathBuf>,
 
+    /// Listen address for the WebUI, e.g. `[::]:8080`.
+    /// Serves a small website that streams the canvas to web browsers over a WebSocket.
+    #[cfg(feature = "web")]
+    #[clap(long)]
+    pub web_listen_address: Option<SocketAddr>,
+
+    /// Maximum number of chat messages a single IP address may send per minute in the WebUI.
+    #[cfg(feature = "web")]
+    #[clap(long, default_value_t = 10)]
+    pub chat_messages_per_minute: u32,
+
     /// Create (or use an existing) shared memory region for the framebuffer.
     /// This enables other applications to read and write Pixel values to the framebuffer or can be
     /// used to persist the canvas across restarts.
@@ -120,6 +131,36 @@ pub struct CliArgs {
 }
 
 impl CliArgs {
+    /// Resolves the Pixelflut endpoints to advertise to users (so they know where to connect).
+    ///
+    /// If `--advertised-endpoints` is set, those are returned verbatim. Otherwise we make a best
+    /// effort to guess: for a single listener we resolve the local v4 + v6 IPs and append the port,
+    /// for multiple listeners we just list them.
+    #[cfg(any(feature = "egui", feature = "web"))]
+    pub fn resolve_advertised_endpoints(&self) -> Vec<String> {
+        if !self.advertised_endpoints.is_empty() {
+            return self.advertised_endpoints.clone();
+        }
+
+        match &self.listen_addresses[..] {
+            // No listeners given, so also no endpoints to advertise
+            [] => vec![],
+            // In case of a single listener we get the local IPs (v4 + v6) and concat them with the
+            // port
+            [single_listener] => {
+                let port = single_listener.port();
+
+                [local_ip_address::local_ip(), local_ip_address::local_ipv6()]
+                    .into_iter()
+                    .filter_map(Result::ok)
+                    .map(|ip| format!("{ip}:{port}"))
+                    .collect()
+            }
+            // If multiple listeners are used it's complicated, so we just print them
+            multiple_listeners => multiple_listeners.iter().map(ToString::to_string).collect(),
+        }
+    }
+
     /// Checks that at most one IP per version (v4/v6) is configured.
     /// Returns the (optional) v4 address and (optional) v6 address.
     #[cfg(feature = "vnc")]
