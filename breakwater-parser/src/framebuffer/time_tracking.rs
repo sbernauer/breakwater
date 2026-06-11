@@ -1,6 +1,9 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    sync::atomic::{AtomicU64, Ordering},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::FrameBuffer;
 
@@ -8,7 +11,11 @@ pub struct TimeTrackingFrameBuffer {
     width: usize,
     height: usize,
     buffer: Vec<TimeTrackingPixel>,
-    base_ns_since_unix_epoch: u64,
+    /// All per-pixel timestamps are stored relative to this base. A background task re-bases it
+    /// (to the current time) at a fixed rate, which keeps `ns_since_base` small enough to fit in
+    /// our 3 bytes. Read on the hot write path and written by the re-basing task, hence atomic.
+    /// A `Relaxed` load compiles to a plain `mov` on x86_64, so it doesn't cost us anything.
+    base_ns_since_unix_epoch: AtomicU64,
 }
 
 /// Number of low bits we drop from `ns_since_base` before storing it. We only have 3 bytes
@@ -64,13 +71,25 @@ impl TimeTrackingFrameBuffer {
             width,
             height,
             buffer,
-            base_ns_since_unix_epoch,
+            base_ns_since_unix_epoch: AtomicU64::new(base_ns_since_unix_epoch),
         }
     }
 
     #[inline(always)]
     fn pixel_index(&self, x: usize, y: usize) -> usize {
         x + y * self.width
+    }
+
+    /// Re-base all future per-pixel timestamps to `base_ns_since_unix_epoch`. Call this
+    /// regularly (faster than the ~536 ms window) so `ns_since_base` keeps fitting in 3 bytes.
+    pub fn set_base_ns_since_unix_epoch(&self, base_ns_since_unix_epoch: u64) {
+        self.base_ns_since_unix_epoch
+            .store(base_ns_since_unix_epoch, Ordering::Relaxed);
+    }
+
+    /// Number of bytes the framebuffer occupies (i.e. how much we'd sync).
+    pub fn num_bytes(&self) -> usize {
+        self.buffer.len() * size_of::<TimeTrackingPixel>()
     }
 }
 
@@ -97,43 +116,47 @@ impl FrameBuffer for TimeTrackingFrameBuffer {
 
     fn set(&self, _: usize, _: usize, _: u32) {
         panic!(
-            "The time tracking framebuffer requires you to use the set_with_ns_since_unix_epoch function!"
+            "The time tracking framebuffer requires you to use the set_with_coarse_ns_since_base function!"
         );
     }
 
-    fn set_with_ns_since_unix_epoch(
+    fn coarse_ns_since_base(&self, ns_since_unix_epoch: u64) -> u32 {
+        // The single point that reads the (atomic) base, called once per parse call. Drop the
+        // low NS_SHIFT bits and clamp into our 3 ns bytes; if the base is more than ~536 ms in
+        // the past (shouldn't happen, it gets re-based regularly) we saturate to NS_MAX.
+        //
+        // `saturating_sub`, not `-`: the parser captures `ns_since_unix_epoch` once at the start
+        // of a parse call, but the background task may re-base `base` to a newer time in between.
+        // In that case the pixels were effectively written at the new base, so a difference of 0
+        // is exactly right.
+        let base_ns_since_unix_epoch = self.base_ns_since_unix_epoch.load(Ordering::Relaxed);
+        let raw_coarse_ns =
+            ns_since_unix_epoch.saturating_sub(base_ns_since_unix_epoch) >> NS_SHIFT;
+
+        if raw_coarse_ns > u64::from(NS_MAX) {
+            warn!(
+                base_ns_since_unix_epoch,
+                ns_since_unix_epoch,
+                raw_coarse_ns,
+                ns_max = NS_MAX,
+                "Pixels were written more than ~536ms after the last base timestamp; clamping to \
+                 ~536ms. Is the framebuffer re-basing task still running?"
+            );
+        }
+
+        u32::try_from(raw_coarse_ns).unwrap_or(u32::MAX).min(NS_MAX)
+    }
+
+    fn set_with_coarse_ns_since_base(
         &self,
         x: usize,
         y: usize,
         rgba: u32,
-        ns_since_unix_epoch: u64,
+        coarse_ns_since_base: u32,
     ) {
         if x < self.width && y < self.height {
             let pixel_index = self.pixel_index(x, y);
-
-            // Drop the low NS_SHIFT bits and clamp into our 3 ns bytes. If the base timestamp is
-            // more than ~536 ms in the past (should not happen, it gets re-based regularly) we
-            // saturate to NS_MAX.
-            let raw_coarse_ns = (ns_since_unix_epoch - self.base_ns_since_unix_epoch) >> NS_SHIFT;
-
-            // Commented out while benchmarking on a debug build (the warning would otherwise fire
-            // on the hot path). Re-enable to check whether the ~536 ms window is ever exceeded.
-            // #[cfg(debug_assertions)]
-            // if raw_coarse_ns > u64::from(NS_MAX) {
-            //     tracing::warn!(
-            //         base_ns_since_unix_epoch = self.base_ns_since_unix_epoch,
-            //         ns_since_unix_epoch,
-            //         raw_coarse_ns,
-            //         ns_max = NS_MAX,
-            //         "A pixel was set more than ~536ms after the last base timestamp; this should \
-            //          not happen. Clamping it to ~536ms"
-            //     );
-            // }
-
-            let coarse_ns_since_base = u32::try_from(raw_coarse_ns)
-                .unwrap_or(u32::MAX)
-                .min(NS_MAX)
-                .to_le_bytes();
+            let coarse_ns_since_base = coarse_ns_since_base.to_le_bytes();
 
             // Write via the byte-array fields, *not* via wide unaligned u32/u16 stores. A 6-byte
             // stride means ~10% of pixels straddle a 64-byte cache line, and a single wide store

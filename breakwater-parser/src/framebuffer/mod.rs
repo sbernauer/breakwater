@@ -58,6 +58,22 @@ pub trait FrameBuffer {
     /// that), we can only return it as a list of bytes, not a list of pixels.
     fn as_bytes(&self) -> &[u8];
 
+    /// Encode `ns_since_unix_epoch` into the compact, per-pixel `coarse_ns_since_base`
+    /// representation. This is the only place that touches the (atomic) base timestamp, so call
+    /// it **once per parse call** and pass the result to [`Self::set_with_coarse_ns_since_base`]
+    /// for every pixel. That keeps the base load (and the encoding arithmetic) out of the hot
+    /// per-pixel path, where it would otherwise re-run on every single write.
     #[cfg(feature = "time-tracking")]
-    fn set_with_ns_since_unix_epoch(&self, x: usize, y: usize, rgba: u32, ns_since_unix_epoch: u64);
+    fn coarse_ns_since_base(&self, ns_since_unix_epoch: u64) -> u32;
+
+    /// Like [`Self::set`], but also records *when* the pixel was written, as the precomputed
+    /// `coarse_ns_since_base` from [`Self::coarse_ns_since_base`].
+    #[cfg(feature = "time-tracking")]
+    fn set_with_coarse_ns_since_base(
+        &self,
+        x: usize,
+        y: usize,
+        rgba: u32,
+        coarse_ns_since_base: u32,
+    );
 }

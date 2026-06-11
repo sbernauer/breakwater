@@ -55,9 +55,13 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
 
         // As this is a potentially(?) expensive operation we only call it one in this parsing loop
         // All the pixels likely where in the same TCP packets (+- 1/2 or so) it doesn't matter after all
+        // Encode the timestamp exactly once here, not per pixel: reading the framebuffer's
+        // (atomic) base and doing the encoding arithmetic on every write costs measurable
+        // throughput, and it's constant for the whole parse call anyway.
         #[cfg(feature = "time-tracking")]
-        let ns_since_unix_epoch =
-            crate::framebuffer::time_tracking::get_current_ns_since_unix_epoch();
+        let coarse_ns_since_base = self.fb.coarse_ns_since_base(
+            crate::framebuffer::time_tracking::get_current_ns_since_unix_epoch(),
+        );
 
         #[cfg(feature = "binary-sync-pixels")]
         if let Some(remaining) = &self.remaining_pixel_sync {
@@ -127,11 +131,11 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
                             #[cfg(not(feature = "time-tracking"))]
                             self.fb.set(x, y, rgba & 0x00ff_ffff);
                             #[cfg(feature = "time-tracking")]
-                            self.fb.set_with_ns_since_unix_epoch(
+                            self.fb.set_with_coarse_ns_since_base(
                                 x,
                                 y,
                                 rgba & 0x00ff_ffff,
-                                ns_since_unix_epoch,
+                                coarse_ns_since_base,
                             );
 
                             continue;
@@ -148,11 +152,11 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
                             #[cfg(not(feature = "time-tracking"))]
                             self.fb.set(x, y, rgba & 0x00ff_ffff);
                             #[cfg(feature = "time-tracking")]
-                            self.fb.set_with_ns_since_unix_epoch(
+                            self.fb.set_with_coarse_ns_since_base(
                                 x,
                                 y,
                                 rgba & 0x00ff_ffff,
-                                ns_since_unix_epoch,
+                                coarse_ns_since_base,
                             );
 
                             continue;
@@ -198,7 +202,7 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
                             self.fb.set(x, y, rgba);
                             #[cfg(feature = "time-tracking")]
                             self.fb
-                                .set_with_ns_since_unix_epoch(x, y, rgba, ns_since_unix_epoch);
+                                .set_with_coarse_ns_since_base(x, y, rgba, coarse_ns_since_base);
 
                             continue;
                         }
@@ -237,11 +241,11 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
                 #[cfg(not(feature = "time-tracking"))]
                 self.fb.set(x as usize, y as usize, rgba & 0x00ff_ffff);
                 #[cfg(feature = "time-tracking")]
-                self.fb.set_with_ns_since_unix_epoch(
+                self.fb.set_with_coarse_ns_since_base(
                     x as usize,
                     y as usize,
                     rgba & 0x00ff_ffff,
-                    ns_since_unix_epoch,
+                    coarse_ns_since_base,
                 );
 
                 //                 P   B   XX  YY  RGBA

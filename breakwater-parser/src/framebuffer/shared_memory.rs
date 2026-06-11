@@ -224,7 +224,12 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
     }
 
     #[cfg(feature = "time-tracking")]
-    fn set_with_ns_since_unix_epoch(&self, _: usize, _: usize, _: u32, _: u64) {
+    fn coarse_ns_since_base(&self, _: u64) -> u32 {
+        panic!("The shared memory framebuffer does not support time tracking");
+    }
+
+    #[cfg(feature = "time-tracking")]
+    fn set_with_coarse_ns_since_base(&self, _: usize, _: usize, _: u32, _: u32) {
         panic!("The shared memory framebuffer does not support time tracking");
     }
 }
