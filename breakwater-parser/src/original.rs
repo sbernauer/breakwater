@@ -53,6 +53,12 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
         let mut i = 0; // We can't use a for loop here because Rust don't lets use skip characters by incrementing i
         let loop_end = buffer.len().saturating_sub(PARSER_LOOKAHEAD); // Let's extract the .len() call and the subtraction into it's own variable so we only compute it once
 
+        // As this is a potentially(?) expensive operation we only call it one in this parsing loop
+        // All the pixels likely where in the same TCP packets (+- 1/2 or so) it doesn't matter after all
+        #[cfg(feature = "time-tracking")]
+        let ns_since_unix_epoch =
+            crate::framebuffer::time_tracking::get_current_ns_since_unix_epoch();
+
         #[cfg(feature = "binary-sync-pixels")]
         if let Some(remaining) = &self.remaining_pixel_sync {
             let buffer = &buffer[0..loop_end];
@@ -118,7 +124,16 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
 
                             let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(i - 7) });
 
+                            #[cfg(not(feature = "time-tracking"))]
                             self.fb.set(x, y, rgba & 0x00ff_ffff);
+                            #[cfg(feature = "time-tracking")]
+                            self.fb.set_with_ns_since_unix_epoch(
+                                x,
+                                y,
+                                rgba & 0x00ff_ffff,
+                                ns_since_unix_epoch,
+                            );
+
                             continue;
                         }
 
@@ -130,7 +145,16 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
 
                             let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(i - 9) });
 
+                            #[cfg(not(feature = "time-tracking"))]
                             self.fb.set(x, y, rgba & 0x00ff_ffff);
+                            #[cfg(feature = "time-tracking")]
+                            self.fb.set_with_ns_since_unix_epoch(
+                                x,
+                                y,
+                                rgba & 0x00ff_ffff,
+                                ns_since_unix_epoch,
+                            );
+
                             continue;
                         }
                         #[cfg(feature = "alpha")]
@@ -156,6 +180,7 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
                             let g: u32 = (((current >> 16) & 0xff) * alpha_comp + g * alpha) / 0xff;
                             let b: u32 = (((current >> 8) & 0xff) * alpha_comp + b * alpha) / 0xff;
 
+                            // Note: We have a compile check to make sure time-tracking and alpha can not be combined
                             self.fb.set(x, y, (r << 16) | (g << 8) | b);
                             continue;
                         }
@@ -169,7 +194,11 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
 
                             let rgba: u32 = (base << 16) | (base << 8) | base;
 
+                            #[cfg(not(feature = "time-tracking"))]
                             self.fb.set(x, y, rgba);
+                            #[cfg(feature = "time-tracking")]
+                            self.fb
+                                .set_with_ns_since_unix_epoch(x, y, rgba, ns_since_unix_epoch);
 
                             continue;
                         }
@@ -205,7 +234,16 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
                 let rgba = u32::from_le((command_bytes >> 32) as u32);
 
                 // TODO: Support alpha channel (behind alpha feature flag)
+                #[cfg(not(feature = "time-tracking"))]
                 self.fb.set(x as usize, y as usize, rgba & 0x00ff_ffff);
+                #[cfg(feature = "time-tracking")]
+                self.fb.set_with_ns_since_unix_epoch(
+                    x as usize,
+                    y as usize,
+                    rgba & 0x00ff_ffff,
+                    ns_since_unix_epoch,
+                );
+
                 //                 P   B   XX  YY  RGBA
                 last_byte_parsed = i + 1 + 2 + 2 + 4;
                 i += 10;
@@ -225,6 +263,7 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
 
                 if len_in_bytes <= bytes_left_in_buffer {
                     // Easy going here
+                    // Note: We have a compile check to make sure time-tracking and binary-sync-pixels can not be combined
                     self.fb
                         .set_multi(start_x as usize, start_y as usize, unsafe {
                             slice::from_raw_parts(buffer.as_ptr().add(i), len_in_bytes)
@@ -241,6 +280,7 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
                     // what the client is doing.
                     let mut current_index =
                         start_x as usize + start_y as usize * self.fb.get_width();
+                    // Note: We have a compile check to make sure time-tracking and binary-sync-pixels can not be combined
                     current_index += self.fb.set_multi_from_start_index(current_index, unsafe {
                         slice::from_raw_parts(buffer.as_ptr().add(i), pixel_bytes)
                     });

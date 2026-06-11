@@ -1,5 +1,7 @@
 pub mod shared_memory;
 pub mod simple;
+#[cfg(feature = "time-tracking")]
+pub mod time_tracking;
 
 pub const FB_BYTES_PER_PIXEL: usize = std::mem::size_of::<u32>();
 
@@ -55,4 +57,7 @@ pub trait FrameBuffer {
     /// As the pixel memory doesn't necessarily need to be aligned (think of using shared memory for
     /// that), we can only return it as a list of bytes, not a list of pixels.
     fn as_bytes(&self) -> &[u8];
+
+    #[cfg(feature = "time-tracking")]
+    fn set_with_ns_since_unix_epoch(&self, x: usize, y: usize, rgba: u32, ns_since_unix_epoch: u64);
 }

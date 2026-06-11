@@ -27,6 +27,7 @@ rstest.workspace = true
 alpha = []
 binary-set-pixel = []
 binary-sync-pixels = []
+time-tracking = []
 
 default = []
 

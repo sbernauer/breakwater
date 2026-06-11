@@ -1,29 +1,17 @@
 use std::sync::Arc;
 
-use breakwater_parser::SharedMemoryFrameBuffer;
-use clap::Parser;
-use color_eyre::eyre::{self, Context};
-use server::Server;
-use tokio::sync::{broadcast, mpsc};
-
-use crate::{
+use breakwater::{
     cli_args::CliArgs,
+    handle_ctrl_c,
     prometheus_exporter::PrometheusExporter,
+    server::Server,
     sinks::{DisplaySink, ffmpeg::FfmpegSink},
     statistics::{Statistics, StatisticsEvent, StatisticsInformationEvent, StatisticsSaveMode},
 };
-
-mod cli_args;
-mod connection_buffer;
-mod prometheus_exporter;
-mod server;
-mod sinks;
-mod statistics;
-#[cfg(test)]
-mod test_helpers;
-
-#[cfg(test)]
-mod tests;
+use breakwater_parser::SharedMemoryFrameBuffer;
+use clap::Parser;
+use color_eyre::eyre::{self, Context};
+use tokio::sync::{broadcast, mpsc};
 
 #[tokio::main]
 #[allow(clippy::too_many_lines)]
@@ -106,7 +94,7 @@ async fn main() -> eyre::Result<()> {
 
     #[cfg(all(feature = "native-display", not(feature = "egui")))]
     {
-        use crate::sinks::native_display::NativeDisplaySink;
+        use breakwater::sinks::native_display::NativeDisplaySink;
 
         if let Some(native_display_sink) = NativeDisplaySink::new(
             fb.clone(),
@@ -124,7 +112,7 @@ async fn main() -> eyre::Result<()> {
 
     #[cfg(feature = "vnc")]
     {
-        use crate::sinks::vnc::VncSink;
+        use breakwater::sinks::vnc::VncSink;
 
         if let Some(vnc_sink) = VncSink::new(
             fb.clone(),
@@ -165,7 +153,7 @@ async fn main() -> eyre::Result<()> {
 
     #[cfg(feature = "egui")]
     {
-        use sinks::egui::EguiSink;
+        use breakwater::sinks::egui::EguiSink;
 
         match EguiSink::new(
             fb.clone(),
@@ -214,18 +202,6 @@ async fn main() -> eyre::Result<()> {
     } else {
         tracing::info!("successfully shut down");
     }
-
-    Ok(())
-}
-
-async fn handle_ctrl_c(terminate_signal_tx: broadcast::Sender<()>) -> eyre::Result<()> {
-    tokio::signal::ctrl_c()
-        .await
-        .context("failed to wait for ctrl + c")?;
-
-    terminate_signal_tx
-        .send(())
-        .context("failed to signal termination")?;
 
     Ok(())
 }
