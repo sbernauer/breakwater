@@ -15,6 +15,7 @@ pub use assembler::AssemblerParser;
 #[cfg(feature = "time-tracking")]
 pub use framebuffer::time_tracking::{
     TimeTrackingFrameBuffer, TimeTrackingPixel, get_current_ns_since_unix_epoch,
+    pixels_as_bytes_mut,
 };
 pub use framebuffer::{
     FB_BYTES_PER_PIXEL, FrameBuffer, shared_memory::SharedMemoryFrameBuffer,

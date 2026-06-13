@@ -3,7 +3,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use tracing::{debug, warn};
+use tracing::warn;
 
 use crate::FrameBuffer;
 
@@ -31,7 +31,7 @@ const NS_MAX: u32 = 0x00ff_ffff;
 ///
 /// ```text
 /// byte:  0     1     2     3     4     5
-///       [ r ] [ g ] [ b ] [ns0] [ns1] [ns2]
+///        [ r ] [ g ] [ b ] [ns0] [ns1] [ns2]
 /// ```
 ///
 /// The `ns` bytes hold `ns_since_base >> NS_SHIFT` (see [`NS_SHIFT`]), clamped to [`NS_MAX`].
@@ -57,16 +57,45 @@ pub struct TimeTrackingPixel {
     pub coarse_ns_since_base: [u8; 3],
 }
 
+/// Views a slice of pixels as their raw bytes (6 per pixel), e.g. to read a frame straight off the
+/// wire into a `Vec<TimeTrackingPixel>`. Same layout as [`FrameBuffer::as_bytes`].
+pub fn pixels_as_bytes_mut(pixels: &mut [TimeTrackingPixel]) -> &mut [u8] {
+    let len = size_of_val(pixels);
+    let ptr = pixels.as_mut_ptr().cast::<u8>();
+    // SAFETY: `TimeTrackingPixel` is `repr(C)`, `align = 1`, all-bytes-valid (just `[u8; 3]`s), so
+    // its `len * 6` bytes are a valid `[u8]` of the same lifetime and exclusive borrow.
+    unsafe { std::slice::from_raw_parts_mut(ptr, len) }
+}
+
+impl TimeTrackingPixel {
+    /// The stored `coarse_ns_since_base` as a `u32` (the implicit high byte is always zero).
+    fn coarse_ns_since_base(self) -> u32 {
+        u32::from_le_bytes([
+            self.coarse_ns_since_base[0],
+            self.coarse_ns_since_base[1],
+            self.coarse_ns_since_base[2],
+            0,
+        ])
+    }
+
+    /// The absolute UNIX-epoch time this pixel was last written, given the framebuffer's
+    /// `base_ns_since_unix_epoch`, reconstructed at `1 << NS_SHIFT` ns resolution.
+    ///
+    /// Returns `None` when the pixel carries no recent-write information (`coarse_ns == 0`): the
+    /// framebuffer re-bases every frame, so a pixel not written within the last window saturates to
+    /// 0 and is indistinguishable from "never written". Callers merging framebuffers should treat
+    /// `None` as "no update from this pixel" so stale/blank pixels don't clobber fresher content.
+    pub fn written_ns_since_unix_epoch(self, base_ns_since_unix_epoch: u64) -> Option<u64> {
+        let coarse = self.coarse_ns_since_base();
+        (coarse != 0).then(|| base_ns_since_unix_epoch + (u64::from(coarse) << NS_SHIFT))
+    }
+}
+
 impl TimeTrackingFrameBuffer {
     pub fn new(width: usize, height: usize, base_ns_since_unix_epoch: u64) -> Self {
         let mut buffer = Vec::with_capacity(width * height);
         buffer.resize_with(width * height, TimeTrackingPixel::default);
 
-        debug!(
-            size = buffer.len(),
-            bytes = buffer.len() * size_of::<TimeTrackingPixel>(),
-            "Allocated time tracking framebuffer"
-        );
         Self {
             width,
             height,
@@ -80,16 +109,17 @@ impl TimeTrackingFrameBuffer {
         x + y * self.width
     }
 
+    /// The current base all per-pixel timestamps are relative to. Capture this *before* syncing a
+    /// frame, so the consumer can interpret that frame's `coarse_ns_since_base` values.
+    pub fn base_ns_since_unix_epoch(&self) -> u64 {
+        self.base_ns_since_unix_epoch.load(Ordering::Relaxed)
+    }
+
     /// Re-base all future per-pixel timestamps to `base_ns_since_unix_epoch`. Call this
     /// regularly (faster than the ~536 ms window) so `ns_since_base` keeps fitting in 3 bytes.
     pub fn set_base_ns_since_unix_epoch(&self, base_ns_since_unix_epoch: u64) {
         self.base_ns_since_unix_epoch
             .store(base_ns_since_unix_epoch, Ordering::Relaxed);
-    }
-
-    /// Number of bytes the framebuffer occupies (i.e. how much we'd sync).
-    pub fn num_bytes(&self) -> usize {
-        self.buffer.len() * size_of::<TimeTrackingPixel>()
     }
 }
 
@@ -180,7 +210,13 @@ impl FrameBuffer for TimeTrackingFrameBuffer {
     }
 
     fn as_bytes(&self) -> &[u8] {
-        todo!("We might actually can and want to implement TimeTrackingFrameBuffer::as_bytes")
+        // The buffer is a contiguous `Vec<TimeTrackingPixel>` of `align = 1` cells, so the raw
+        // bytes are exactly the 6-bytes-per-pixel wire layout. Like the other framebuffers, this
+        // reads memory that writers may be mutating concurrently — fine for a lossy, best-effort
+        // sync (a torn pixel just gets corrected on the next frame).
+        let len = self.buffer.len() * size_of::<TimeTrackingPixel>();
+        let ptr = self.buffer.as_ptr().cast::<u8>();
+        unsafe { std::slice::from_raw_parts(ptr, len) }
     }
 }
 

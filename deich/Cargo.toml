@@ -15,10 +15,14 @@ path = "src/main.rs"
 breakwater-parser = { workspace = true, features = ["time-tracking"] }
 breakwater.workspace = true
 
+clap.workspace = true
 color-eyre.workspace = true
+postcard.workspace = true
+serde.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+uuid.workspace = true
 
 [lints]
 workspace = true
