@@ -64,6 +64,6 @@ pub struct CollectorArgs {
 
     /// Frames per second the workers should sync at. Sent to every worker as part of its config.
     /// Must stay well below the ~536 ms window the per-pixel timestamp can represent.
-    #[clap(long, default_value_t = 30, value_parser = clap::value_parser!(u32).range(3..=60))]
+    #[clap(long, default_value_t = 30, value_parser = clap::value_parser!(u32).range(1..=60))]
     pub fps: u32,
 }

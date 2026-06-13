@@ -10,7 +10,7 @@
 //! blob is deliberately *not* serialized: a [`WorkerMessage::Frame`] header is immediately followed
 //! on the wire by `frame_size` raw bytes, keeping serialization off the hot payload.
 
-use std::{io, sync::Arc, time::Duration};
+use std::{io, time::Duration};
 
 use breakwater_parser::{
     FrameBuffer, TimeTrackingFrameBuffer, TimeTrackingPixel, get_current_ns_since_unix_epoch,
@@ -20,7 +20,6 @@ use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::TcpStream,
 };
-use tracing::{info, warn};
 use uuid::Uuid;
 
 /// Identifies the deich sync protocol on the wire ("deic" in ASCII). The collector and workers are
@@ -31,9 +30,6 @@ const MAGIC: u32 = 0x6465_6963;
 /// Upper bound on a (length-delimited) control message, to reject garbage before allocating.
 /// Control messages are tiny; the big framebuffer blob is sent raw, outside this path.
 const MAX_MESSAGE_SIZE: usize = 1024 * 1024;
-
-/// How long a worker waits between attempts to (re)connect to the collector.
-const RECONNECT_BACKOFF: Duration = Duration::from_secs(1);
 
 /// Messages the collector sends to a worker.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,23 +44,13 @@ pub enum WorkerMessage {
     /// First message after the handshake: identifies which worker this connection belongs to.
     Hello { worker_id: Uuid },
 
-    /// A framebuffer frame. On the wire this header is immediately followed by
-    /// [`WorkerConfig::frame_size`] raw framebuffer bytes (not part of this serialized message).
-    Frame(FrameHeader),
-}
-
-/// Metadata sent ahead of each raw framebuffer blob.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct FrameHeader {
-    /// Which scheduled slot this frame is for (see [`FrameSchedule`]). Because every node derives
-    /// it from the same wall-clock schedule, the collector can tell when all workers' frames for a
-    /// slot have arrived, and discard frames for slots it has already rendered.
-    pub frame_number: u64,
-
-    /// The base the frame's per-pixel `coarse_ns_since_base` values are relative to. This is the
-    /// worker's *actual* re-base time, deliberately not `frame_number * period`: a temporarily
-    /// overloaded worker may re-base a slot late, and the timestamps must stay correct regardless.
-    pub base_ns_since_unix_epoch: u64,
+    /// A framebuffer frame. On the wire this is immediately followed by
+    /// [`WorkerConfig::frame_size_bytes`] raw framebuffer bytes (not part of this serialized
+    /// message). `frame_number` is the scheduled slot this frame is for (see [`FrameSchedule`]);
+    /// every node derives it from the same wall-clock schedule, so the collector knows which slot a
+    /// frame belongs to. The per-pixel write timestamps live in the blob itself (absolute, set by
+    /// the framebuffer), so no base needs to travel with the frame.
+    Frame { frame_number: u64 },
 }
 
 /// The wall-clock frame schedule shared by every worker and the collector. Frames are numbered by
@@ -108,6 +94,11 @@ pub struct WorkerConfig {
     pub width: u32,
     pub height: u32,
     pub sync_fps: u32,
+
+    /// The collector's startup time (ns since the UNIX epoch). Workers use it as the zero point for
+    /// their per-pixel timestamps, so every worker's timestamps are mutually comparable at the
+    /// collector. A 40-bit µs offset from here lasts ~12.7 days of collector uptime.
+    pub epoch_ns_since_unix_epoch: u64,
 }
 
 impl WorkerConfig {
@@ -144,25 +135,25 @@ pub async fn accept_worker<R: AsyncRead + Unpin>(reader: &mut R) -> io::Result<U
     }
 }
 
+/// Collector side: read a frame's `frame_number`. The caller must then read exactly
+/// [`WorkerConfig::frame_size_bytes`] bytes with [`receive_frame_body`] before the next message, or
+/// discard them — splitting the two lets the caller decide whether to keep the blob.
+pub async fn receive_frame_number<R: AsyncRead + Unpin>(reader: &mut R) -> io::Result<u64> {
+    match read_message(reader).await? {
+        WorkerMessage::Frame { frame_number } => Ok(frame_number),
+        WorkerMessage::Hello { worker_id } => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("expected a frame but got another hello from {worker_id}"),
+        )),
+    }
+}
+
 /// Collector side: send the worker its config in reply to the hello.
 pub async fn send_config<W: AsyncWrite + Unpin>(
     writer: &mut W,
     config: WorkerConfig,
 ) -> io::Result<()> {
     write_message(writer, &CollectorMessage::Config(config)).await
-}
-
-/// Collector side: read a frame's [`FrameHeader`]. The caller must then read exactly
-/// [`WorkerConfig::frame_size_bytes`] bytes with [`receive_frame_body`] before the next message,
-/// or discard them — splitting the two lets the caller decide whether to keep the blob.
-pub async fn receive_frame_header<R: AsyncRead + Unpin>(reader: &mut R) -> io::Result<FrameHeader> {
-    match read_message(reader).await? {
-        WorkerMessage::Frame(header) => Ok(header),
-        WorkerMessage::Hello { worker_id } => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("expected a frame but got another hello from {worker_id}"),
-        )),
-    }
 }
 
 /// Collector side: read a frame's raw blob into `pixels` (which must be
@@ -181,90 +172,36 @@ pub async fn receive_frame_body<R: AsyncRead + Unpin>(
 /// (re)connect the collector re-sends the config; we honour the frame rate, but since the
 /// framebuffer is already allocated we only warn if the geometry changed (live resize is not
 /// supported yet).
-pub async fn sync_framebuffer(
-    fb: Arc<TimeTrackingFrameBuffer>,
-    collector_address: String,
-    worker_id: Uuid,
-    mut stream: TcpStream,
-    mut config: WorkerConfig,
-) {
-    loop {
-        let schedule = FrameSchedule::new(config.sync_fps);
-        if let Err(error) = stream_frames(&fb, &mut stream, schedule).await {
-            warn!(%error, "Framebuffer sync stream failed, reconnecting");
-        }
-
-        (stream, config) = reconnect(&fb, &collector_address, worker_id).await;
-    }
-}
-
-/// Streams frames aligned to the shared [`FrameSchedule`] until a write fails (returns the error).
+/// Streams frames aligned to the shared [`FrameSchedule`] until the connection fails, returning the
+/// error. The worker treats that as a signal to tear down and start a fresh session (reconnect, get
+/// new config, rebuild the framebuffer), so there is no reconnection logic here.
 ///
-/// Each iteration sleeps until the current slot ends, sends the frame accumulated during it, then
-/// re-bases the framebuffer for the next slot. The slot the worker enters is recomputed from the
-/// clock each time, so a worker that falls behind (e.g. temporarily overloaded) skips the slots it
-/// missed instead of sending a backlog of stale frames.
-async fn stream_frames(
+/// Each iteration sleeps until the current slot ends and sends the framebuffer, tagged with the
+/// just-completed slot number. Per-pixel timestamps are absolute (set by the framebuffer at write
+/// time), so there's nothing to re-base — the worker only has to pick the right slot number, which
+/// it recomputes from the clock so a worker that falls behind simply skips missed slots.
+pub async fn sync_framebuffer(
     fb: &TimeTrackingFrameBuffer,
     stream: &mut TcpStream,
-    schedule: FrameSchedule,
+    config: WorkerConfig,
 ) -> io::Result<()> {
-    // Start accumulating the current slot, basing pixels at the actual time we started.
-    fb.set_base_ns_since_unix_epoch(get_current_ns_since_unix_epoch());
+    let schedule = FrameSchedule::new(config.sync_fps);
     let mut frame_number = schedule.frame_number_at(get_current_ns_since_unix_epoch());
 
     loop {
-        // Sleep until the slot we're accumulating ends.
+        // Sleep until the current slot ends.
         let slot_end = schedule.frame_start_ns(frame_number + 1);
         let now = get_current_ns_since_unix_epoch();
         tokio::time::sleep(Duration::from_nanos(slot_end.saturating_sub(now))).await;
 
-        // Send the just-completed slot's frame. `base_ns` is the framebuffer's *actual* base (set
-        // below for this slot), so the collector interprets `coarse_ns` correctly even if we
-        // re-based late; `frame_number` is the schedule slot, for the collector's barrier.
-        let header = FrameHeader {
-            frame_number,
-            base_ns_since_unix_epoch: fb.base_ns_since_unix_epoch(),
-        };
-        write_message(stream, &WorkerMessage::Frame(header)).await?;
+        write_message(stream, &WorkerMessage::Frame { frame_number }).await?;
         stream.write_all(fb.as_bytes()).await?;
         stream.flush().await?;
 
-        // Re-base for the next slot at the actual current time, and advance to whichever slot that
-        // is — skipping any we fell behind on, while always moving forward by at least one.
-        let now = get_current_ns_since_unix_epoch();
-        fb.set_base_ns_since_unix_epoch(now);
-        frame_number = schedule.frame_number_at(now).max(frame_number + 1);
-    }
-}
-
-/// Reconnects to the collector (retrying with a backoff), returning the new stream and config.
-async fn reconnect(
-    fb: &TimeTrackingFrameBuffer,
-    collector_address: &str,
-    worker_id: Uuid,
-) -> (TcpStream, WorkerConfig) {
-    loop {
-        match connect(collector_address, worker_id).await {
-            Ok((stream, config)) => {
-                if config.width as usize != fb.get_width()
-                    || config.height as usize != fb.get_height()
-                {
-                    warn!(
-                        ?config,
-                        fb_width = fb.get_width(),
-                        fb_height = fb.get_height(),
-                        "Collector changed canvas geometry; live resize is not supported, keeping the current framebuffer"
-                    );
-                }
-                info!(collector_address, "Reconnected to collector");
-                return (stream, config);
-            }
-            Err(error) => {
-                warn!(collector_address, %error, "Failed to reconnect to collector, retrying");
-                tokio::time::sleep(RECONNECT_BACKOFF).await;
-            }
-        }
+        // Advance to the current slot, skipping any we fell behind on, always moving forward.
+        frame_number = schedule
+            .frame_number_at(get_current_ns_since_unix_epoch())
+            .max(frame_number + 1);
     }
 }
 

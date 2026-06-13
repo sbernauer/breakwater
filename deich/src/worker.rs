@@ -1,18 +1,18 @@
-//! The worker role: runs a Pixelflut server into a time-tracking framebuffer and spawns the
-//! background task that syncs that framebuffer to the collector.
+//! The worker role: runs a Pixelflut server into a time-tracking framebuffer and syncs that
+//! framebuffer to the collector.
 //!
-//! The collector owns the canvas geometry and frame rate, so the worker fetches its config from
-//! the collector before it can allocate the framebuffer and start serving.
+//! The collector owns the canvas geometry, frame rate and timestamp epoch, so the worker fetches
+//! its config from the collector before it can allocate the framebuffer and start serving. Each
+//! [`run_session`] runs until the collector connection drops; the worker then tears everything down
+//! and starts a fresh session, which transparently picks up a changed config (geometry, fps, or a
+//! new epoch after a collector restart).
 
 use std::{fs, io, path::Path, sync::Arc, time::Duration};
 
-use breakwater::{handle_ctrl_c, server::Server, statistics::StatisticsEvent};
-use breakwater_parser::{TimeTrackingFrameBuffer, get_current_ns_since_unix_epoch};
+use breakwater::{server::Server, statistics::StatisticsEvent};
+use breakwater_parser::TimeTrackingFrameBuffer;
 use color_eyre::eyre::{self, Context};
-use tokio::{
-    net::TcpStream,
-    sync::{broadcast, mpsc},
-};
+use tokio::{net::TcpStream, sync::mpsc};
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -21,26 +21,53 @@ use crate::{
     sync::{self, WorkerConfig},
 };
 
-/// Backoff between attempts to reach the collector during startup.
-const COLLECTOR_CONNECT_BACKOFF: Duration = Duration::from_secs(1);
+/// Backoff between worker sessions (also used while waiting for the collector to become reachable).
+const SESSION_BACKOFF: Duration = Duration::from_secs(1);
 
-/// Runs the worker until Ctrl-C: a Pixelflut server plus the background framebuffer sync.
+/// Runs the worker until Ctrl-C, restarting the session whenever the collector connection drops.
 pub async fn run(args: WorkerArgs) -> eyre::Result<()> {
     let worker_id = load_or_create_worker_id(&args.worker_id_file)?;
     info!(%worker_id, "Starting worker");
 
-    // Fetch the canvas config from the collector (retrying until it's reachable) before we can
-    // allocate anything.
-    let (stream, config) = connect_to_collector(&args.collector_address, worker_id).await;
+    tokio::select! {
+        // `session_loop` never returns on its own — it just keeps (re)starting sessions.
+        result = session_loop(&args, worker_id) => result,
+        result = tokio::signal::ctrl_c() => {
+            result.context("failed to wait for ctrl + c")?;
+            info!("Received Ctrl-C, shutting down");
+            Ok(())
+        }
+    }
+}
+
+/// Runs sessions back-to-back forever; a session ending (connection lost, config change, error) is
+/// just logged and followed by a fresh one after a short backoff.
+async fn session_loop(args: &WorkerArgs, worker_id: Uuid) -> eyre::Result<()> {
+    loop {
+        match run_session(args, worker_id).await {
+            Ok(()) => info!("Collector connection ended; restarting worker session"),
+            Err(error) => warn!(%error, "Worker session failed; restarting"),
+        }
+        tokio::time::sleep(SESSION_BACKOFF).await;
+    }
+}
+
+/// One worker session: connect to the collector, build the framebuffer from its config, serve
+/// Pixelflut into it, and sync it — until the collector connection drops (or the server stops).
+///
+/// The server, stats drain and sync all run as `select!` arms (not detached tasks), so when the
+/// session ends — here, or because the whole worker is cancelled on Ctrl-C — they're all dropped
+/// together. No teardown bookkeeping, no leaked tasks.
+async fn run_session(args: &WorkerArgs, worker_id: Uuid) -> eyre::Result<()> {
+    let (mut stream, config) = connect_to_collector(&args.collector_address, worker_id).await;
     info!(?config, "Received configuration from collector");
 
     let fb = Arc::new(TimeTrackingFrameBuffer::new(
         config.width as usize,
         config.height as usize,
-        get_current_ns_since_unix_epoch(),
+        config.epoch_ns_since_unix_epoch,
     ));
     let (statistics_tx, statistics_rx) = mpsc::channel::<StatisticsEvent>(100);
-    let (terminate_signal_tx, _terminate_signal_rx) = broadcast::channel::<()>(1);
 
     let network_buffer_size = args
         .network_buffer_size
@@ -51,27 +78,20 @@ pub async fn run(args: WorkerArgs) -> eyre::Result<()> {
     let mut server = Server::new(
         &args.listen_addresses,
         fb.clone(),
-        statistics_tx.clone(),
+        statistics_tx,
         network_buffer_size,
         None,
     )
     .await
     .context("failed to start pixelflut server")?;
 
-    let server_listener_thread = tokio::spawn(async move { server.start().await });
-    let stats_drain_thread = tokio::spawn(async move { drain_stats(statistics_rx).await });
-    let sync_thread = {
-        let fb = fb.clone();
-        let collector_address = args.collector_address;
-        tokio::spawn(async move {
-            sync::sync_framebuffer(fb, collector_address, worker_id, stream, config).await;
-        })
-    };
-
-    handle_ctrl_c(terminate_signal_tx).await?;
-    server_listener_thread.abort();
-    stats_drain_thread.abort();
-    sync_thread.abort();
+    tokio::select! {
+        result = server.start() => result.context("pixelflut server stopped")?,
+        () = drain_stats(statistics_rx) => {}
+        result = sync::sync_framebuffer(&fb, &mut stream, config) => {
+            result.context("framebuffer sync to the collector stopped")?;
+        }
+    }
 
     Ok(())
 }
@@ -90,7 +110,7 @@ async fn connect_to_collector(
                     %error,
                     "Waiting for the collector to become reachable"
                 );
-                tokio::time::sleep(COLLECTOR_CONNECT_BACKOFF).await;
+                tokio::time::sleep(SESSION_BACKOFF).await;
             }
         }
     }

@@ -44,53 +44,29 @@ const FRAME_STREAM_BUDGET: Duration = Duration::from_millis(50);
 /// never cross an `.await`, so an async `tokio::sync::RwLock` would only add overhead.
 type ConnectedWorkers = Arc<RwLock<HashMap<Uuid, SocketAddr>>>;
 
-/// One worker's framebuffer for one frame, plus the timestamp base it's relative to. Stored as
-/// [`TimeTrackingPixel`]s (rather than raw bytes) to keep the layout tied to the canonical type;
-/// the wire bytes are read straight into this buffer via a `bytemuck` cast.
-struct ReceivedFrame {
-    /// The base the pixels' `coarse_ns_since_base` values are relative to.
-    base_ns_since_unix_epoch: u64,
-    buffer: Vec<TimeTrackingPixel>,
-}
-
 /// The long-term merged canvas, held by the master for the whole process lifetime.
 ///
-/// Unlike a worker's framebuffer (whose 3-byte `coarse_ns` only spans ~536 ms), each pixel here
-/// keeps a full `u64` absolute write timestamp, so last-write-wins is *exact* over arbitrary time
-/// and survives traffic gaps and worker restarts. It's a flat pixel vector — no width/height,
-/// merging is purely per-index.
+/// Each pixel keeps its full write timestamp (the high bits of [`TimeTrackingPixel`]), so
+/// last-write-wins is exact over arbitrary time and survives traffic gaps and worker restarts.
+/// It's a flat pixel vector — no width/height; merging is purely per-index.
 struct Canvas {
-    pixels: Vec<CanvasPixel>,
-}
-
-#[derive(Clone, Copy, Default)]
-struct CanvasPixel {
-    /// The winning color. Written by the merge; read by the (future) renderer and the tests.
-    // Not read in the binary yet (no rendering); `expect` can't be used as the tests *do* read it.
-    #[allow(dead_code)]
-    rgb: [u8; 3],
-    /// Absolute UNIX-epoch time the winning write happened; `0` means "never written".
-    written_ns_since_unix_epoch: u64,
+    pixels: Vec<TimeTrackingPixel>,
 }
 
 impl Canvas {
     fn new(pixel_count: usize) -> Self {
         Self {
-            pixels: vec![CanvasPixel::default(); pixel_count],
+            pixels: vec![TimeTrackingPixel::default(); pixel_count],
         }
     }
 
-    /// Folds `frame` in, keeping for each pixel the write with the latest absolute timestamp.
-    /// Pixels the frame carries no recent-write info for (`coarse_ns == 0`) are skipped, so a blank
-    /// or stale frame never clobbers fresher content.
-    fn merge(&mut self, frame: &ReceivedFrame) {
-        for (canvas_pixel, frame_pixel) in self.pixels.iter_mut().zip(&frame.buffer) {
-            if let Some(written_ns) =
-                frame_pixel.written_ns_since_unix_epoch(frame.base_ns_since_unix_epoch)
-                && written_ns > canvas_pixel.written_ns_since_unix_epoch
-            {
-                canvas_pixel.rgb = frame_pixel.rgb;
-                canvas_pixel.written_ns_since_unix_epoch = written_ns;
+    /// Folds `frame` in, keeping for each pixel whichever write has the larger timestamp. Since the
+    /// default timestamp is `0` (oldest possible), a never-written pixel — a blank or restarted
+    /// worker's frame — never clobbers fresher content.
+    fn merge(&mut self, frame: &[TimeTrackingPixel]) {
+        for (canvas_pixel, &frame_pixel) in self.pixels.iter_mut().zip(frame) {
+            if frame_pixel.timestamp() > canvas_pixel.timestamp() {
+                *canvas_pixel = frame_pixel;
             }
         }
     }
@@ -103,9 +79,9 @@ struct FrameStore {
     /// until the master's first tick.
     interesting: RwLock<Option<RangeInclusive<u64>>>,
 
-    /// Stored frames: `frame_number -> (worker_id -> frame)`. Written by workers, read and evicted
-    /// by the master.
-    frames: Mutex<HashMap<u64, HashMap<Uuid, ReceivedFrame>>>,
+    /// Stored frames: `frame_number -> (worker_id -> framebuffer)`. Written by workers, read and
+    /// evicted by the master.
+    frames: Mutex<HashMap<u64, HashMap<Uuid, Vec<TimeTrackingPixel>>>>,
 }
 
 impl FrameStore {
@@ -126,7 +102,7 @@ impl FrameStore {
     }
 
     /// Stores a worker's frame (overwriting any previous frame from the same worker for that slot).
-    fn store(&self, frame_number: u64, worker_id: Uuid, frame: ReceivedFrame) {
+    fn store(&self, frame_number: u64, worker_id: Uuid, frame: Vec<TimeTrackingPixel>) {
         self.frames
             .lock()
             .expect("frame store lock poisoned")
@@ -142,7 +118,7 @@ impl FrameStore {
         &self,
         window: RangeInclusive<u64>,
         render_frame: u64,
-    ) -> HashMap<Uuid, ReceivedFrame> {
+    ) -> HashMap<Uuid, Vec<TimeTrackingPixel>> {
         *self
             .interesting
             .write()
@@ -161,6 +137,8 @@ pub async fn run(args: CollectorArgs) -> eyre::Result<()> {
         width: args.width,
         height: args.height,
         sync_fps: args.fps,
+        // Our startup time: the zero point for every worker's per-pixel timestamps.
+        epoch_ns_since_unix_epoch: get_current_ns_since_unix_epoch(),
     };
 
     let listener = TcpListener::bind(args.listen_address)
@@ -297,27 +275,20 @@ async fn serve_frames(
     let mut discard = vec![0u8; config.frame_size_bytes()];
 
     loop {
-        let header = sync::receive_frame_header(stream).await?;
+        let frame_number = sync::receive_frame_number(stream).await?;
 
-        if frame_store.is_interested(header.frame_number) {
+        if frame_store.is_interested(frame_number) {
             // Read straight into a fresh pixel buffer (outside any lock) so we can hand ownership to
             // the store; `read_exact` writes directly into its bytes, no extra copy.
             let mut buffer = vec![TimeTrackingPixel::default(); pixel_count];
             sync::receive_frame_body(stream, pixels_as_bytes_mut(&mut buffer)).await?;
-            frame_store.store(
-                header.frame_number,
-                worker_id,
-                ReceivedFrame {
-                    base_ns_since_unix_epoch: header.base_ns_since_unix_epoch,
-                    buffer,
-                },
-            );
+            frame_store.store(frame_number, worker_id, buffer);
         } else {
             // Still consume the blob so the stream stays aligned for the next message.
             sync::receive_frame_body(stream, &mut discard).await?;
             warn!(
                 %peer,
-                frame_number = header.frame_number,
+                frame_number,
                 "Master is not interested in this frame (outside the window); dropping it"
             );
         }
@@ -361,66 +332,50 @@ fn deregister(connected_workers: &ConnectedWorkers, worker_id: Uuid, peer: Socke
 mod tests {
     use super::*;
 
-    /// Builds a `ReceivedFrame` from `(rgb, coarse_ns)` pairs.
-    fn frame(base_ns_since_unix_epoch: u64, pixels: &[([u8; 3], u32)]) -> ReceivedFrame {
-        let buffer = pixels
+    /// Builds a frame from `(rgb, timestamp)` pairs.
+    fn frame(pixels: &[(u32, u64)]) -> Vec<TimeTrackingPixel> {
+        pixels
             .iter()
-            .map(|&(rgb, coarse)| {
-                let coarse = coarse.to_le_bytes();
-                TimeTrackingPixel {
-                    rgb,
-                    coarse_ns_since_base: [coarse[0], coarse[1], coarse[2]],
-                }
-            })
-            .collect();
-        ReceivedFrame {
-            base_ns_since_unix_epoch,
-            buffer,
-        }
+            .map(|&(rgb, timestamp)| TimeTrackingPixel::new(rgb, timestamp))
+            .collect()
     }
 
     #[test]
-    fn merges_latest_absolute_write_per_pixel() {
+    fn merges_latest_timestamp_per_pixel() {
         let mut canvas = Canvas::new(2);
 
-        // Pixel 0: A at 1000 + (10 << 5) = 1320; B at 5000 + (1 << 5) = 5032 -> B wins.
-        // Pixel 1: A at 1000 + (100 << 5) = 4200; B has coarse 0 -> skipped -> A stays.
-        let a = frame(1_000, &[([0xaa, 0, 0], 10), ([0xaa, 0, 1], 100)]);
-        let b = frame(5_000, &[([0, 0, 0xbb], 1), ([0, 0, 0xbc], 0)]);
+        // Pixel 0: A timestamp 1320, B timestamp 5032 -> B wins.
+        // Pixel 1: A timestamp 4200, B timestamp 0 (never written) -> A stays.
+        canvas.merge(&frame(&[(0xaa_0000, 1_320), (0xaa_0001, 4_200)]));
+        canvas.merge(&frame(&[(0x00_00bb, 5_032), (0x00_00bc, 0)]));
 
-        canvas.merge(&a);
-        canvas.merge(&b);
-
-        assert_eq!(canvas.pixels[0].rgb, [0, 0, 0xbb]);
-        assert_eq!(canvas.pixels[0].written_ns_since_unix_epoch, 5_032);
-        assert_eq!(canvas.pixels[1].rgb, [0xaa, 0, 1]);
-        assert_eq!(canvas.pixels[1].written_ns_since_unix_epoch, 4_200);
+        assert_eq!(canvas.pixels[0].rgb(), 0x00_00bb);
+        assert_eq!(canvas.pixels[0].timestamp(), 5_032);
+        assert_eq!(canvas.pixels[1].rgb(), 0xaa_0001);
+        assert_eq!(canvas.pixels[1].timestamp(), 4_200);
     }
 
     #[test]
-    fn blank_or_stale_frame_never_overwrites_live_content() {
+    fn blank_frame_never_overwrites_live_content() {
         let mut canvas = Canvas::new(1);
-        canvas.merge(&frame(1_000, &[([0x12, 0x34, 0x56], 50)]));
+        canvas.merge(&frame(&[(0x12_3456, 50)]));
 
-        // A frame with coarse 0 carries no recent-write info — even with a far-later base it must
-        // not clobber the live pixel (this is the restarted-worker / blank-canvas case).
-        canvas.merge(&frame(9_000_000_000, &[([0, 0, 0], 0)]));
+        // A never-written pixel has timestamp 0 (oldest possible), so it can't clobber live content
+        // (the restarted-worker / blank-canvas case).
+        canvas.merge(&frame(&[(0, 0)]));
 
-        assert_eq!(canvas.pixels[0].rgb, [0x12, 0x34, 0x56]);
-        assert_eq!(
-            canvas.pixels[0].written_ns_since_unix_epoch,
-            1_000 + (50 << 5)
-        );
+        assert_eq!(canvas.pixels[0].rgb(), 0x12_3456);
+        assert_eq!(canvas.pixels[0].timestamp(), 50);
     }
 
     #[test]
     fn older_write_does_not_replace_newer() {
         let mut canvas = Canvas::new(1);
         // Merge the newer write first, then an older one — order must not matter.
-        canvas.merge(&frame(5_000, &[([0, 0, 0xbb], 1)])); // 5032
-        canvas.merge(&frame(1_000, &[([0xaa, 0, 0], 10)])); // 1320, older
+        canvas.merge(&frame(&[(0x00_00bb, 5_032)]));
+        canvas.merge(&frame(&[(0xaa_0000, 1_320)]));
 
-        assert_eq!(canvas.pixels[0].rgb, [0, 0, 0xbb]);
-        assert_eq!(canvas.pixels[0].written_ns_since_unix_epoch, 5_032);
+        assert_eq!(canvas.pixels[0].rgb(), 0x00_00bb);
+        assert_eq!(canvas.pixels[0].timestamp(), 5_032);
     }
 }

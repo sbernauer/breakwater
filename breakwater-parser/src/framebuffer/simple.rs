@@ -84,12 +84,12 @@ impl FrameBuffer for SimpleFrameBuffer {
     }
 
     #[cfg(feature = "time-tracking")]
-    fn coarse_ns_since_base(&self, _: u64) -> u32 {
+    fn pixel_timestamp(&self, _: u64) -> u64 {
         panic!("The simple framebuffer does not support time tracking");
     }
 
     #[cfg(feature = "time-tracking")]
-    fn set_with_coarse_ns_since_base(&self, _: usize, _: usize, _: u32, _: u32) {
+    fn set_with_pixel_timestamp(&self, _: usize, _: usize, _: u32, _: u64) {
         panic!("The simple framebuffer does not support time tracking");
     }
 }
