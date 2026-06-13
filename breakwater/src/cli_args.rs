@@ -1,10 +1,6 @@
 use std::net::SocketAddr;
-#[cfg(feature = "vnc")]
-use std::net::{SocketAddrV4, SocketAddrV6};
 
 use clap::Parser;
-#[cfg(feature = "vnc")]
-use color_eyre::eyre::{self, ensure};
 use const_format::formatcp;
 
 pub const DEFAULT_NETWORK_BUFFER_SIZE: usize = 256 * 1024;
@@ -119,32 +115,3 @@ pub struct CliArgs {
     pub shared_memory_name: Option<String>,
 }
 
-impl CliArgs {
-    /// Checks that at most one IP per version (v4/v6) is configured.
-    /// Returns the (optional) v4 address and (optional) v6 address.
-    #[cfg(feature = "vnc")]
-    pub fn get_vnc_listen_addresses(
-        &self,
-    ) -> eyre::Result<(Option<&SocketAddrV4>, Option<&SocketAddrV6>)> {
-        self.vnc_listen_addresses
-            .iter()
-            .try_fold((None, None), |(v4, v6), addr| match addr {
-                SocketAddr::V4(new) => {
-                    // Fail if an IPv4 was already encountered
-                    ensure!(
-                        v4.is_none(),
-                        "You can only specify one IPv4 VNC listen address"
-                    );
-                    Ok((Some(new), v6))
-                }
-                SocketAddr::V6(new) => {
-                    // Fail if an IPv6 was already encountered
-                    ensure!(
-                        v6.is_none(),
-                        "You can only specify one IPv6 VNC listen address"
-                    );
-                    Ok((v4, Some(new)))
-                }
-            })
-    }
-}

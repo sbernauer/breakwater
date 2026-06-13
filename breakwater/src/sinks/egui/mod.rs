@@ -67,20 +67,16 @@ pub struct EguiSink<FB: FrameBuffer> {
     ui_overlay: Arc<UiOverlay>,
 }
 
-#[async_trait]
-impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
+impl<FB: FrameBuffer + Send + Sync + 'static> EguiSink<FB> {
     /// This function can return [`None`] in case this sink is not configured (by looking at the `cli_args`).
     #[instrument(skip_all, err)]
-    async fn new(
+    pub async fn new(
         fb: Arc<FB>,
         cli_args: &crate::cli_args::CliArgs,
         _statistics_tx: mpsc::Sender<crate::statistics::StatisticsEvent>,
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
-    ) -> eyre::Result<Option<Self>>
-    where
-        Self: Sized,
-    {
+    ) -> eyre::Result<Option<Self>> {
         let viewports = match (
             cli_args.viewport.as_slice(),
             cli_args.native_display,
@@ -137,7 +133,10 @@ impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
             ui_overlay,
         }))
     }
+}
 
+#[async_trait]
+impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
     /// This should only run on the main thread
     #[instrument(skip(self), err)]
     async fn run(&mut self) -> eyre::Result<()> {

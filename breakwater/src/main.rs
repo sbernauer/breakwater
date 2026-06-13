@@ -31,7 +31,9 @@ async fn main() -> eyre::Result<()> {
 
     // Give the user quick feedback on invalid VNC arguments
     #[cfg(feature = "vnc")]
-    if let Err(e) = args.get_vnc_listen_addresses() {
+    if let Err(e) =
+        breakwater::sinks::vnc::vnc_listen_addresses_v4_v6(&args.vnc_listen_addresses)
+    {
         use clap::CommandFactory;
         let mut cmd = <CliArgs as CommandFactory>::command();
         // Displays error in the standard 'clap' format and exits
@@ -116,7 +118,10 @@ async fn main() -> eyre::Result<()> {
 
         if let Some(vnc_sink) = VncSink::new(
             fb.clone(),
-            &args,
+            &args.vnc_listen_addresses,
+            &args.font,
+            args.fps,
+            &args.text,
             statistics_tx.clone(),
             statistics_information_rx.resubscribe(),
             terminate_signal_rx.resubscribe(),

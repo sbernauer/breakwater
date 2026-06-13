@@ -23,10 +23,9 @@ pub struct FfmpegSink<FB: FrameBuffer> {
     fps: u32,
 }
 
-#[async_trait]
-impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
+impl<FB: FrameBuffer + Sync + Send> FfmpegSink<FB> {
     #[instrument(skip_all, err)]
-    async fn new(
+    pub async fn new(
         fb: Arc<FB>,
         cli_args: &crate::cli_args::CliArgs,
         _statistics_tx: mpsc::Sender<crate::statistics::StatisticsEvent>,
@@ -45,7 +44,10 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
             Ok(None)
         }
     }
+}
 
+#[async_trait]
+impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
     #[instrument(skip(self), err)]
     async fn run(&mut self) -> eyre::Result<()> {
         let mut ffmpeg_args: Vec<String> = self
