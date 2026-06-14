@@ -103,7 +103,8 @@ impl FrameBuffer for TimeTrackingFrameBuffer {
     fn pixel_timestamp(&self, ns_since_unix_epoch: u64) -> u64 {
         // The per-parse-call timestamp, computed once. `saturating_sub` guards against a worker
         // whose clock trails the collector's epoch slightly; `.min` clamps the ~12.7 day range.
-        (ns_since_unix_epoch.saturating_sub(self.epoch_ns_since_unix_epoch) / 1_000).min(TIMESTAMP_MAX)
+        (ns_since_unix_epoch.saturating_sub(self.epoch_ns_since_unix_epoch) / 1_000)
+            .min(TIMESTAMP_MAX)
     }
 
     fn set_with_pixel_timestamp(&self, x: usize, y: usize, rgba: u32, pixel_timestamp: u64) {

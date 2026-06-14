@@ -4,15 +4,10 @@ use async_trait::async_trait;
 use breakwater_parser::FrameBuffer;
 use chrono::Local;
 use color_eyre::eyre::{self, Context};
-use tokio::{
-    io::AsyncWriteExt,
-    process::Command,
-    sync::{broadcast, mpsc},
-    time,
-};
+use tokio::{io::AsyncWriteExt, process::Command, sync::broadcast, time};
 use tracing::instrument;
 
-use crate::{sinks::DisplaySink, statistics::StatisticsInformationEvent};
+use crate::sinks::DisplaySink;
 
 pub struct FfmpegSink<FB: FrameBuffer> {
     fb: Arc<FB>,
@@ -23,22 +18,35 @@ pub struct FfmpegSink<FB: FrameBuffer> {
     fps: u32,
 }
 
+#[derive(clap::Parser, Debug)]
+pub struct FfmpegSinkCliArgs {
+    /// Enable rtmp streaming to configured address, e.g. `rtmp://127.0.0.1:1935/live/test`
+    #[clap(long)]
+    pub rtmp_address: Option<String>,
+
+    /// Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4`
+    #[clap(long)]
+    pub video_save_folder: Option<String>,
+}
+
 impl<FB: FrameBuffer + Sync + Send> FfmpegSink<FB> {
     #[instrument(skip_all, err)]
     pub async fn new(
         fb: Arc<FB>,
-        cli_args: &crate::cli_args::CliArgs,
-        _statistics_tx: mpsc::Sender<crate::statistics::StatisticsEvent>,
-        _statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
+        FfmpegSinkCliArgs {
+            rtmp_address,
+            video_save_folder,
+        }: &FfmpegSinkCliArgs,
+        fps: u32,
         terminate_signal_rx: broadcast::Receiver<()>,
     ) -> eyre::Result<Option<Self>> {
-        if cli_args.rtmp_address.is_some() || cli_args.video_save_folder.is_some() {
+        if rtmp_address.is_some() || video_save_folder.is_some() {
             Ok(Some(Self {
                 fb,
                 terminate_signal_rx,
-                rtmp_address: cli_args.rtmp_address.clone(),
-                video_save_folder: cli_args.video_save_folder.clone(),
-                fps: cli_args.fps,
+                rtmp_address: rtmp_address.clone(),
+                video_save_folder: video_save_folder.clone(),
+                fps,
             }))
         } else {
             Ok(None)

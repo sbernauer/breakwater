@@ -34,9 +34,6 @@ impl<FB: FrameBuffer + Sync + Send + 'static> NativeDisplaySink<FB> {
     #[instrument(skip_all, err)]
     pub async fn new(
         fb: Arc<FB>,
-        cli_args: &CliArgs,
-        _statistics_tx: mpsc::Sender<StatisticsEvent>,
-        _statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
     ) -> eyre::Result<Option<Self>> {
         if !cli_args.native_display {

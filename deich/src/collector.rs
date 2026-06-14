@@ -19,9 +19,19 @@ use std::{
     time::Duration,
 };
 
-use breakwater_parser::{TimeTrackingPixel, get_current_ns_since_unix_epoch, pixels_as_bytes_mut};
+use breakwater::{
+    sinks::{DisplaySink, ffmpeg::FfmpegSink},
+    statistics::{StatisticsEvent, StatisticsInformationEvent},
+};
+use breakwater_parser::{
+    FrameBuffer, SimpleFrameBuffer, TimeTrackingPixel, get_current_ns_since_unix_epoch,
+    pixels_as_bytes_mut,
+};
 use color_eyre::eyre::{self, Context};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::{
+    net::{TcpListener, TcpStream},
+    sync::{broadcast, mpsc},
+};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
@@ -30,9 +40,9 @@ use crate::{
     sync::{self, FrameSchedule, WorkerConfig},
 };
 
-/// How long we assume a worker needs to stream a frame to us. The master keeps the last
-/// `⌈budget / frame_period⌉` frames "interesting" and renders the oldest of them, so it only
-/// renders a frame once every worker has had this long to deliver it.
+/// How long we assume a worker needs to stream a frame to us (on top of the slot the worker spends
+/// finishing it). Together with that slot, this sets how far behind "now" the master renders, so a
+/// frame has had time to arrive — see the `margin` computation in [`run_master`].
 const FRAME_STREAM_BUDGET: Duration = Duration::from_millis(50);
 
 /// The workers currently connected, keyed by their UUID (value: the connection's peer address, for
@@ -54,9 +64,9 @@ struct Canvas {
 }
 
 impl Canvas {
-    fn new(pixel_count: usize) -> Self {
+    fn new(width: usize, height: usize) -> Self {
         Self {
-            pixels: vec![TimeTrackingPixel::default(); pixel_count],
+            pixels: vec![TimeTrackingPixel::default(); width * height],
         }
     }
 
@@ -69,6 +79,15 @@ impl Canvas {
                 *canvas_pixel = frame_pixel;
             }
         }
+    }
+
+    fn draw_to_framebuffer<FB: FrameBuffer>(&self, fb: &Arc<FB>) {
+        let pixels = self
+            .pixels
+            .iter()
+            .flat_map(|pixel| pixel.rgb().to_le_bytes())
+            .collect::<Vec<_>>();
+        fb.set_multi_from_start_index(0, &pixels);
     }
 }
 
@@ -132,6 +151,7 @@ impl FrameStore {
 
 /// Runs the collector until Ctrl-C: accepts worker connections, configures them, stores frames, and
 /// runs the master render-scheduling task.
+#[expect(clippy::too_many_lines)]
 pub async fn run(args: CollectorArgs) -> eyre::Result<()> {
     let config = WorkerConfig {
         width: args.width,
@@ -154,12 +174,124 @@ pub async fn run(args: CollectorArgs) -> eyre::Result<()> {
     let connected_workers: ConnectedWorkers = Arc::new(RwLock::new(HashMap::new()));
     let frame_store = Arc::new(FrameStore::new());
 
+    // Most of the time we want to render the screen to *something*, otherwise the game is boring
+    // As the breakwater sinks expect the memory layout of the [`SimpleFrameBuffer`] we need to
+    // create and maintain one.
+    let render_fb = Arc::new(SimpleFrameBuffer::new(
+        args.width as usize,
+        args.height as usize,
+    ));
+
+    // If we make the channel to big, stats will start to lag behind
+    // TODO: Check performance impact in real-world scenario. Maybe the statistics thread blocks the other threads
+    #[allow(unused_variables)]
+    let (statistics_tx, mut statistics_rx) = mpsc::channel::<StatisticsEvent>(100);
+    #[allow(unused_variables)]
+    let (_statistics_information_tx, statistics_information_rx) =
+        broadcast::channel::<StatisticsInformationEvent>(2);
+    let (_terminate_signal_tx, terminate_signal_rx) = broadcast::channel::<()>(1);
+
+    // FIXME: For now we need to drain the statistics
+    tokio::spawn(async move { while statistics_rx.recv().await.is_some() {} });
+
+    let mut display_sinks = Vec::<Box<dyn DisplaySink<SimpleFrameBuffer> + Send>>::new();
+
+    #[cfg(feature = "vnc")]
     {
-        let frame_store = frame_store.clone();
-        let connected_workers = connected_workers.clone();
-        tokio::spawn(async move { run_master(&frame_store, &connected_workers, config).await });
+        use breakwater::sinks::vnc::VncSink;
+
+        if let Some(vnc_sink) = VncSink::new(
+            render_fb.clone(),
+            &args.vnc_sink,
+            args.fps,
+            "deich", // FIXME
+            statistics_tx.clone(),
+            statistics_information_rx.resubscribe(),
+            terminate_signal_rx.resubscribe(),
+        )
+        .await
+        .context("failed to create vnc sink")?
+        {
+            display_sinks.push(Box::new(vnc_sink));
+        }
     }
 
+    if let Some(ffmpeg_sink) = FfmpegSink::new(
+        render_fb.clone(),
+        &args.ffmpeg_sink,
+        args.fps,
+        terminate_signal_rx.resubscribe(),
+    )
+    .await
+    .context("failed to create ffmpeg sink")?
+    {
+        display_sinks.push(Box::new(ffmpeg_sink));
+    }
+
+    let mut sink_threads = Vec::new();
+    for mut sink in display_sinks {
+        sink_threads.push(tokio::spawn(async move {
+            sink.run().await?;
+            eyre::Result::<()>::Ok(())
+        }));
+    }
+
+    {
+        let frame_store = frame_store.clone();
+        let render_fb = render_fb.clone();
+        let connected_workers = connected_workers.clone();
+        tokio::spawn(async move {
+            run_master(&frame_store, &connected_workers, config, render_fb).await;
+        });
+    }
+
+    let accept_thread = tokio::spawn(accept_workers(
+        listener,
+        connected_workers,
+        frame_store,
+        config,
+    ));
+
+    #[cfg(feature = "egui")]
+    {
+        use breakwater::sinks::egui::EguiSink;
+
+        if let Some(mut egui_sink) = EguiSink::new(
+            render_fb,
+            &args.egui_sink,
+            // There are no listen addresses we know about (the traffic comes in via a complicated
+            // path - virtual IP and stuff)
+            &[],
+            args.native_display,
+            statistics_information_rx.resubscribe(),
+            terminate_signal_rx.resubscribe(),
+        )
+        .await
+        .context("failed to create egui sink")?
+        {
+            // Some platforms require opening windows from the main thread.
+            // The tokio::main macro uses Runtime::block_on(future) which runs the future on
+            // the current thread, which should be the main thread right now. Workers keep being
+            // accepted by the background task above while egui owns this thread.
+            egui_sink.run().await.context("failed to run egui sink")?;
+            return Ok(());
+        }
+    }
+
+    // No main-thread sink is running, so block on the accept task to keep the collector alive.
+    accept_thread
+        .await
+        .context("the worker-accept task panicked")?
+}
+
+/// Accepts worker connections forever, spawning a handler per connection. Only returns if accepting
+/// itself fails.
+async fn accept_workers(
+    listener: TcpListener,
+    connected_workers: ConnectedWorkers,
+    frame_store: Arc<FrameStore>,
+    config: WorkerConfig,
+) -> eyre::Result<()> {
     loop {
         let (stream, peer) = listener
             .accept()
@@ -192,12 +324,17 @@ async fn run_master(
     frame_store: &FrameStore,
     connected_workers: &ConnectedWorkers,
     config: WorkerConfig,
+    render_fb: Arc<SimpleFrameBuffer>,
 ) {
     let schedule = FrameSchedule::new(config.sync_fps);
-    // Render the oldest frame that has had `FRAME_STREAM_BUDGET` to arrive.
-    let margin = schedule.frames_spanning(FRAME_STREAM_BUDGET);
+    // How many slots behind "now" the master renders. A worker only sends frame N once slot N has
+    // *ended* — one period after it began — so a frame is already a full slot old before streaming
+    // even starts. The `1 +` covers that slot-completion delay; `frames_spanning(..)` adds the
+    // streaming budget on top. (Without the `1 +`, `--fps 1` rendered a slot whose frame was still
+    // in flight, so nothing ever merged.)
+    let margin = 1 + schedule.frames_spanning(FRAME_STREAM_BUDGET);
 
-    let mut canvas = Canvas::new(config.width as usize * config.height as usize);
+    let mut canvas = Canvas::new(config.width as usize, config.height as usize);
 
     let mut current_frame = schedule.frame_number_at(get_current_ns_since_unix_epoch());
     loop {
@@ -218,7 +355,8 @@ async fn run_master(
             canvas.merge(frame);
         }
 
-        // TODO: render `canvas` to the screen / output sink.
+        canvas.draw_to_framebuffer(&render_fb);
+
         info!(
             render_frame,
             frames_merged = frames.len(),
@@ -342,7 +480,7 @@ mod tests {
 
     #[test]
     fn merges_latest_timestamp_per_pixel() {
-        let mut canvas = Canvas::new(2);
+        let mut canvas = Canvas::new(1, 2);
 
         // Pixel 0: A timestamp 1320, B timestamp 5032 -> B wins.
         // Pixel 1: A timestamp 4200, B timestamp 0 (never written) -> A stays.
@@ -357,7 +495,7 @@ mod tests {
 
     #[test]
     fn blank_frame_never_overwrites_live_content() {
-        let mut canvas = Canvas::new(1);
+        let mut canvas = Canvas::new(1, 1);
         canvas.merge(&frame(&[(0x12_3456, 50)]));
 
         // A never-written pixel has timestamp 0 (oldest possible), so it can't clobber live content
@@ -370,7 +508,7 @@ mod tests {
 
     #[test]
     fn older_write_does_not_replace_newer() {
-        let mut canvas = Canvas::new(1);
+        let mut canvas = Canvas::new(1, 1);
         // Merge the newer write first, then an older one — order must not matter.
         canvas.merge(&frame(&[(0x00_00bb, 5_032)]));
         canvas.merge(&frame(&[(0xaa_0000, 1_320)]));

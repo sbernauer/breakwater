@@ -39,7 +39,7 @@ pub struct WorkerArgs {
     pub network_buffer_size: i64,
 
     /// Address of the collector to fetch the config from and stream the framebuffer to.
-    #[clap(long, default_value = "127.0.0.1:9999")]
+    #[clap(long, default_value = "127.0.0.1:1235")]
     pub collector_address: String,
 
     /// File storing this worker's persistent UUID, created on first run. The UUID identifies the
@@ -51,7 +51,7 @@ pub struct WorkerArgs {
 #[derive(Args, Debug)]
 pub struct CollectorArgs {
     /// Listen address the workers connect to.
-    #[clap(short, long, default_value = "[::]:9999")]
+    #[clap(short, long, default_value = "[::]:1235")]
     pub listen_address: SocketAddr,
 
     /// Width of the canvas. Sent to every worker as part of its config.
@@ -66,4 +66,21 @@ pub struct CollectorArgs {
     /// Must stay well below the ~536 ms window the per-pixel timestamp can represent.
     #[clap(long, default_value_t = 30, value_parser = clap::value_parser!(u32).range(1..=60))]
     pub fps: u32,
+
+    #[clap(flatten)]
+    pub ffmpeg_sink: breakwater::sinks::ffmpeg::FfmpegSinkCliArgs,
+
+    /// Enable native display output. This requires some form of graphical system (so will probably not work on your
+    /// server).
+    #[cfg(any(feature = "native-display", feature = "egui"))]
+    #[clap(long)]
+    pub native_display: bool,
+
+    #[cfg(feature = "egui")]
+    #[clap(flatten)]
+    pub egui_sink: breakwater::sinks::egui::EguiSinkCliArgs,
+
+    #[cfg(feature = "vnc")]
+    #[clap(flatten)]
+    pub vnc_sink: breakwater::sinks::vnc::VncSinkCliArgs,
 }

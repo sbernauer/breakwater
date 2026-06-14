@@ -11,6 +11,11 @@ repository.workspace = true
 name = "deich"
 path = "src/main.rs"
 
+[features]
+egui = ["breakwater/egui"]
+native-display = ["breakwater/native-display"]
+vnc = ["breakwater/vnc"]
+
 [dependencies]
 breakwater-parser = { workspace = true, features = ["time-tracking"] }
 breakwater.workspace = true

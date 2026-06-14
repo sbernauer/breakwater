@@ -45,21 +45,36 @@ pub struct VncSink<'a, FB: FrameBuffer> {
     font: Font<'a>,
 }
 
+#[derive(clap::Parser, Debug)]
+pub struct VncSinkCliArgs {
+    /// VNC server listen address to bind to (multiple can be specified).
+    /// Only one address of each IP version can be specified
+    #[clap(long = "vnc-listen-address")]
+    pub listen_addresses: Vec<SocketAddr>,
+
+    /// The font used to render the text on the screen.
+    /// Should be a ttf file.
+    /// If you use the default value a copy that ships with breakwater will be used - no need to download and provide the font.
+    #[clap(long, default_value = "Arial.ttf")]
+    pub font: String,
+}
+
 impl<FB: FrameBuffer + Sync + Send> VncSink<'_, FB> {
     /// Returns `Ok(None)` if no VNC listen addresses are configured (the sink is then disabled).
-    #[tracing::instrument(skip_all, err)]
-    #[expect(clippy::too_many_arguments, reason = "the sink genuinely needs all of these")]
+    #[expect(clippy::unused_async)]
     pub async fn new(
         fb: Arc<FB>,
-        vnc_listen_addresses: &[SocketAddr],
-        font: &str,
+        VncSinkCliArgs {
+            listen_addresses,
+            font,
+        }: &VncSinkCliArgs,
         target_fps: u32,
         text: &str,
         statistics_tx: mpsc::Sender<StatisticsEvent>,
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
     ) -> eyre::Result<Option<Self>> {
-        if vnc_listen_addresses.is_empty() {
+        if listen_addresses.is_empty() {
             tracing::debug!("VNC sink not enabled as no vnc addresses are specified");
             return Ok(None);
         }
@@ -87,7 +102,7 @@ impl<FB: FrameBuffer + Sync + Send> VncSink<'_, FB> {
             (*screen).ipv6port = -1;
         }
 
-        let (v4, v6) = vnc_listen_addresses_v4_v6(vnc_listen_addresses)?;
+        let (v4, v6) = vnc_listen_addresses_v4_v6(listen_addresses)?;
 
         if let Some(v4) = v4 {
             unsafe {
@@ -272,11 +287,17 @@ pub fn vnc_listen_addresses_v4_v6(
         .iter()
         .try_fold((None, None), |(v4, v6), addr| match addr {
             SocketAddr::V4(addr) => {
-                ensure!(v4.is_none(), "You can only specify one IPv4 VNC listen address");
+                ensure!(
+                    v4.is_none(),
+                    "You can only specify one IPv4 VNC listen address"
+                );
                 Ok((Some(addr), v6))
             }
             SocketAddr::V6(addr) => {
-                ensure!(v6.is_none(), "You can only specify one IPv6 VNC listen address");
+                ensure!(
+                    v6.is_none(),
+                    "You can only specify one IPv6 VNC listen address"
+                );
                 Ok((v4, Some(addr)))
             }
         })

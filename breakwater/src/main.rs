@@ -32,7 +32,7 @@ async fn main() -> eyre::Result<()> {
     // Give the user quick feedback on invalid VNC arguments
     #[cfg(feature = "vnc")]
     if let Err(e) =
-        breakwater::sinks::vnc::vnc_listen_addresses_v4_v6(&args.vnc_listen_addresses)
+        breakwater::sinks::vnc::vnc_listen_addresses_v4_v6(&args.vnc_sink.listen_addresses)
     {
         use clap::CommandFactory;
         let mut cmd = <CliArgs as CommandFactory>::command();
@@ -98,15 +98,10 @@ async fn main() -> eyre::Result<()> {
     {
         use breakwater::sinks::native_display::NativeDisplaySink;
 
-        if let Some(native_display_sink) = NativeDisplaySink::new(
-            fb.clone(),
-            &args,
-            statistics_tx.clone(),
-            statistics_information_rx.resubscribe(),
-            terminate_signal_rx.resubscribe(),
-        )
-        .await
-        .context("failed to create native display sink")?
+        if let Some(native_display_sink) =
+            NativeDisplaySink::new(fb.clone(), terminate_signal_rx.resubscribe())
+                .await
+                .context("failed to create native display sink")?
         {
             display_sinks.push(Box::new(native_display_sink));
         }
@@ -118,8 +113,7 @@ async fn main() -> eyre::Result<()> {
 
         if let Some(vnc_sink) = VncSink::new(
             fb.clone(),
-            &args.vnc_listen_addresses,
-            &args.font,
+            &args.vnc_sink,
             args.fps,
             &args.text,
             statistics_tx.clone(),
@@ -136,9 +130,8 @@ async fn main() -> eyre::Result<()> {
     let mut ffmpeg_thread_present = false;
     if let Some(ffmpeg_sink) = FfmpegSink::new(
         fb.clone(),
-        &args,
-        statistics_tx.clone(),
-        statistics_information_rx.resubscribe(),
+        &args.ffmpeg_sink,
+        args.fps,
         terminate_signal_rx.resubscribe(),
     )
     .await
@@ -162,8 +155,9 @@ async fn main() -> eyre::Result<()> {
 
         match EguiSink::new(
             fb.clone(),
-            &args,
-            statistics_tx.clone(),
+            &args.egui_sink,
+            &args.listen_addresses,
+            args.native_display,
             statistics_information_rx.resubscribe(),
             terminate_signal_rx.resubscribe(),
         )
