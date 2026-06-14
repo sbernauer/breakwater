@@ -128,7 +128,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all-features --all-targets
+          args: --features alpha,binary-set-pixel,binary-sync-pixels,egui,native-display,vnc --all-targets
       - name: Test vnc feature
         uses: actions-rs/cargo@v1
         with:
@@ -184,7 +184,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --target=${{ matrix.target }} --all-features
+          args: --target=${{ matrix.target }} --features alpha,binary-set-pixel,binary-sync-pixels,egui,native-display,vnc
       # pkg-config on MaxOS and Windows is a pain!
       # As it is only needed for VNC, we disable that feature here
       - if: runner.os == 'macOS' || runner.os == 'Windows'

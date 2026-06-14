@@ -91,6 +91,15 @@ pub struct CliArgs {
     #[clap(long)]
     pub native_display: bool,
 
+    /// Enable the NDI source. Set the source name with --ndi-source-name.
+    #[cfg(feature = "ndi")]
+    #[clap(long)]
+    pub ndi: bool,
+    /// Set the readable NDI source name. NDI output is not enabled unless you specify --ndi.
+    #[cfg(feature = "ndi")]
+    #[clap(long, default_value = "breakwater canvas")]
+    pub ndi_source_name: String,
+
     /// Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`.
     /// Might be specified multiple times for more than one viewport. Useful for multi-projector setups.
     /// Defaults to display the entire canvas.
