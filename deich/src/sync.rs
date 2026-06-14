@@ -84,6 +84,11 @@ impl FrameSchedule {
         let ns = u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX);
         ns.div_ceil(self.frame_period_ns)
     }
+
+    /// Wall-clock duration of `frames` frame slots.
+    pub fn duration_of_frames(&self, frames: u64) -> Duration {
+        Duration::from_nanos(frames.saturating_mul(self.frame_period_ns))
+    }
 }
 
 /// Configuration the collector hands to each worker. The collector is the single source of truth

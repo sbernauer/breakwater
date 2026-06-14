@@ -91,6 +91,17 @@ impl Canvas {
     }
 }
 
+/// How an incoming frame relates to the window of frames the master currently wants.
+enum FrameInterest {
+    /// In the window — store it.
+    Wanted,
+    /// Outside the window. Carries the window so the caller can tell whether the frame is too old
+    /// (arrived late) or from the future, and by how much.
+    OutsideWindow { window: RangeInclusive<u64> },
+    /// The master hasn't published a window yet (just started up).
+    NoWindowYet,
+}
+
 /// Shared between the master task and the worker-connection tasks.
 struct FrameStore {
     /// Frame numbers the master currently wants: the inclusive window `[render_frame ..= current]`.
@@ -111,13 +122,20 @@ impl FrameStore {
         }
     }
 
-    /// Whether the master currently wants frame `frame_number`.
-    fn is_interested(&self, frame_number: u64) -> bool {
-        self.interesting
+    /// Classifies an incoming frame against the window the master currently wants.
+    fn classify(&self, frame_number: u64) -> FrameInterest {
+        match self
+            .interesting
             .read()
             .expect("interesting-window lock poisoned")
             .as_ref()
-            .is_some_and(|window| window.contains(&frame_number))
+        {
+            None => FrameInterest::NoWindowYet,
+            Some(window) if window.contains(&frame_number) => FrameInterest::Wanted,
+            Some(window) => FrameInterest::OutsideWindow {
+                window: window.clone(),
+            },
+        }
     }
 
     /// Stores a worker's frame (overwriting any previous frame from the same worker for that slot).
@@ -408,6 +426,7 @@ async fn serve_frames(
 ) -> io::Result<()> {
     sync::send_config(stream, config).await?;
 
+    let schedule = FrameSchedule::new(config.sync_fps);
     let pixel_count = config.width as usize * config.height as usize;
     // Reused only for discarding frames the master doesn't want.
     let mut discard = vec![0u8; config.frame_size_bytes()];
@@ -415,20 +434,62 @@ async fn serve_frames(
     loop {
         let frame_number = sync::receive_frame_number(stream).await?;
 
-        if frame_store.is_interested(frame_number) {
-            // Read straight into a fresh pixel buffer (outside any lock) so we can hand ownership to
-            // the store; `read_exact` writes directly into its bytes, no extra copy.
-            let mut buffer = vec![TimeTrackingPixel::default(); pixel_count];
-            sync::receive_frame_body(stream, pixels_as_bytes_mut(&mut buffer)).await?;
-            frame_store.store(frame_number, worker_id, buffer);
-        } else {
-            // Still consume the blob so the stream stays aligned for the next message.
-            sync::receive_frame_body(stream, &mut discard).await?;
-            warn!(
-                %peer,
-                frame_number,
-                "Master is not interested in this frame (outside the window); dropping it"
-            );
+        match frame_store.classify(frame_number) {
+            FrameInterest::Wanted => {
+                // Read straight into a fresh pixel buffer (outside any lock) so we can hand
+                // ownership to the store; `read_exact` writes directly into its bytes, no extra copy.
+                let mut buffer = vec![TimeTrackingPixel::default(); pixel_count];
+                sync::receive_frame_body(stream, pixels_as_bytes_mut(&mut buffer)).await?;
+                frame_store.store(frame_number, worker_id, buffer);
+            }
+            other => {
+                // Still consume the blob so the stream stays aligned for the next message.
+                sync::receive_frame_body(stream, &mut discard).await?;
+                log_dropped_frame(peer, frame_number, &other, schedule);
+            }
+        }
+    }
+}
+
+/// Logs a frame the master didn't want, explaining whether it was outdated or from the future and
+/// by how much, alongside the tolerance (the size of the window the master accepts).
+fn log_dropped_frame(
+    peer: SocketAddr,
+    frame_number: u64,
+    interest: &FrameInterest,
+    schedule: FrameSchedule,
+) {
+    match interest {
+        // Can't reach here for `Wanted`, but keep the match exhaustive and cheap.
+        FrameInterest::Wanted => {}
+        FrameInterest::NoWindowYet => {
+            debug!(%peer, frame_number, "Dropping frame: the master hasn't started rendering yet");
+        }
+        FrameInterest::OutsideWindow { window } => {
+            // The window is `[oldest ..= newest]`; `newest` is the master's current slot and the
+            // span is how far back it still accepts frames.
+            let tolerance = schedule.duration_of_frames(window.end() - window.start());
+            if frame_number < *window.start() {
+                // Older than the oldest slot we still accept: it arrived too late.
+                let delayed_by = schedule.duration_of_frames(window.end() - frame_number);
+                warn!(
+                    %peer,
+                    frame_number,
+                    ?delayed_by,
+                    ?tolerance,
+                    "Dropping outdated frame: it arrived later than the collector tolerates"
+                );
+            } else {
+                // Newer than the master's current slot: the worker's clock is ahead of ours.
+                let ahead_by = schedule.duration_of_frames(frame_number - window.end());
+                warn!(
+                    %peer,
+                    frame_number,
+                    ?ahead_by,
+                    ?tolerance,
+                    "Dropping frame from the future (is the worker's clock ahead of the collector's?)"
+                );
+            }
         }
     }
 }
@@ -476,6 +537,27 @@ mod tests {
             .iter()
             .map(|&(rgb, timestamp)| TimeTrackingPixel::new(rgb, timestamp))
             .collect()
+    }
+
+    #[test]
+    fn classify_distinguishes_wanted_old_and_new() {
+        let store = FrameStore::new();
+
+        // Before the master ticks, there's no window yet.
+        assert!(matches!(store.classify(42), FrameInterest::NoWindowYet));
+
+        *store.interesting.write().unwrap() = Some(40..=42);
+
+        assert!(matches!(store.classify(41), FrameInterest::Wanted));
+        // Older than the window -> outdated; newer than the window -> from the future.
+        assert!(matches!(
+            store.classify(38),
+            FrameInterest::OutsideWindow { .. }
+        ));
+        assert!(matches!(
+            store.classify(50),
+            FrameInterest::OutsideWindow { .. }
+        ));
     }
 
     #[test]

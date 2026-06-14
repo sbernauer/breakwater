@@ -58,9 +58,9 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
         // Encode the timestamp exactly once here, not per pixel: it's constant for the whole parse
         // call, so computing it per write would just waste throughput on the hot path.
         #[cfg(feature = "time-tracking")]
-        let pixel_timestamp = self.fb.pixel_timestamp(
-            crate::framebuffer::time_tracking::get_current_ns_since_unix_epoch(),
-        );
+        let pixel_timestamp = self
+            .fb
+            .pixel_timestamp(crate::framebuffer::time_tracking::get_current_ns_since_unix_epoch());
 
         #[cfg(feature = "binary-sync-pixels")]
         if let Some(remaining) = &self.remaining_pixel_sync {
