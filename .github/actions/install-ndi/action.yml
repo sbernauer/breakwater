@@ -1,4 +1,4 @@
-name: Install NDI SDK on x86_64 Linux
+name: Install NDI SDK on Linux
 description: Downloads and installs the NDI SDK so the `ndi` feature can be built.
 runs:
   using: composite
