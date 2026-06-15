@@ -331,7 +331,7 @@ async fn test_binary_sync_pixels_last_pixel<FB: FrameBuffer>(fb: Arc<FB>) {
     input.extend(x.to_le_bytes()); // x
     input.extend(y.to_le_bytes()); // y
     input.extend(1_u32.to_le_bytes()); // length
-    input.extend(0x12345678_u32.to_be_bytes());
+    input.extend(0x1234_5678_u32.to_be_bytes());
 
     input.extend(format!("PX 0 0\nPX {} {y}\nPX {x} {y}\n", x - 1).as_bytes());
     assert_returns(
@@ -367,13 +367,13 @@ async fn test_binary_sync_pixels_in_the_middle<FB: FrameBuffer>(fb: Arc<FB>) {
     let mut rgba = 0_u32;
     for x in 42..fb.get_width() {
         input.extend(format!("PX {x} 13\n").as_bytes());
-        expected += &format!("PX {x} 13 {rgba:06x}\n");
+        let _ = writeln!(expected, "PX {x} 13 {rgba:06x}");
         rgba += 1;
     }
 
     for x in 0..52 {
         input.extend(format!("PX {x} 14\n").as_bytes());
-        expected += &format!("PX {x} 14 {rgba:06x}\n");
+        let _ = writeln!(expected, "PX {x} 14 {rgba:06x}");
         rgba += 1;
     }
 
@@ -395,8 +395,8 @@ async fn test_binary_sync_pixels_exceeding_screen<FB: FrameBuffer>(fb: Arc<FB>) 
     input.extend(x.to_le_bytes()); // x
     input.extend(y.to_le_bytes()); // y
     input.extend(2_u32.to_le_bytes()); // length
-    input.extend(0x12345678_u32.to_be_bytes());
-    input.extend(0x87654321_u32.to_be_bytes());
+    input.extend(0x1234_5678_u32.to_be_bytes());
+    input.extend(0x8765_4321_u32.to_be_bytes());
 
     input.extend(format!("PX {x} {y}\n").as_bytes());
     // As we exceeded the screen nothing should have been set
@@ -438,12 +438,12 @@ async fn test_binary_sync_pixels_larger_than_buffer<FB: FrameBuffer>(fb: Arc<FB>
         for x in 0..fb.get_width() {
             // rgba = 0xdeadbe_u32; // For testing
             input.extend(format!("PX {x} {y}\n").as_bytes());
-            expected += &format!("PX {x} {y} {rgba:06x}\n");
+            let _ = writeln!(expected, "PX {x} {y} {rgba:06x}");
             rgba += 1;
         }
     }
 
-    let mut stream = MockTcpStream::from_bytes(input.to_owned());
+    let mut stream = MockTcpStream::from_bytes(input);
     handle_connection(
         &mut stream,
         ip(),

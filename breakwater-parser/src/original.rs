@@ -236,28 +236,27 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
                     i += len_in_bytes;
                     last_byte_parsed = i;
                     continue;
-                } else {
-                    // We need to round down to the 4 bytes of a pixel alignment
-                    let pixel_bytes: usize = bytes_left_in_buffer / 4 * 4;
-
-                    // The client requested to write more bytes that are currently in the buffer, we need to remember
-                    // what the client is doing.
-                    let mut current_index =
-                        start_x as usize + start_y as usize * self.fb.get_width();
-                    current_index += self.fb.set_multi_from_start_index(current_index, unsafe {
-                        slice::from_raw_parts(buffer.as_ptr().add(i), pixel_bytes)
-                    });
-
-                    self.remaining_pixel_sync = Some(RemainingPixelSync {
-                        current_index,
-                        bytes_remaining: len_in_bytes - pixel_bytes,
-                    });
-
-                    // Nothing to do left, we can early return
-                    // I have absolutely no idea why we need to subtract 1 here, but it is what it is. At least we have
-                    // tests for this madness :)
-                    return i + pixel_bytes.saturating_sub(1);
                 }
+
+                // We need to round down to the 4 bytes of a pixel alignment
+                let pixel_bytes: usize = bytes_left_in_buffer / 4 * 4;
+
+                // The client requested to write more bytes that are currently in the buffer, we need to remember
+                // what the client is doing.
+                let mut current_index = start_x as usize + start_y as usize * self.fb.get_width();
+                current_index += self.fb.set_multi_from_start_index(current_index, unsafe {
+                    slice::from_raw_parts(buffer.as_ptr().add(i), pixel_bytes)
+                });
+
+                self.remaining_pixel_sync = Some(RemainingPixelSync {
+                    current_index,
+                    bytes_remaining: len_in_bytes - pixel_bytes,
+                });
+
+                // Nothing to do left, we can early return
+                // I have absolutely no idea why we need to subtract 1 here, but it is what it is. At least we have
+                // tests for this madness :)
+                return i + pixel_bytes.saturating_sub(1);
             }
             if current_command & 0x00ff_ffff_ffff_ffff == OFFSET_PATTERN {
                 i += 7;
