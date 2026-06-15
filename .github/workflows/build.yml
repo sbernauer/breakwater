@@ -75,6 +75,8 @@ jobs:
           override: true
       - name: Install libvncserver-dev
         run: sudo apt update && sudo apt install -y libvncserver-dev
+      - name: Install NDI SDK
+        uses: ./.github/actions/install-ndi
       - name: Run clippy action to produce annotations (all features)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
