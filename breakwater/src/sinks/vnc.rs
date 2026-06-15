@@ -30,6 +30,21 @@ use crate::{
 
 const STATS_HEIGHT: usize = 35;
 
+#[derive(Clone, Debug, clap::Parser)]
+#[command(next_help_heading = "VNC options")]
+pub struct VncSinkCliArgs {
+    /// VNC server listen address to bind to (multiple can be specified).
+    /// Only one address of each IP version can be specified
+    #[clap(long = "vnc-listen-address")]
+    pub vnc_listen_addresses: Vec<SocketAddr>,
+
+    /// The font used to render the text on the screen.
+    /// Should be a ttf file.
+    /// If you use the default value a copy that ships with breakwater will be used - no need to download and provide the font.
+    #[clap(long, default_value = "Arial.ttf")]
+    pub font: String,
+}
+
 // Sorry! Help needed :)
 unsafe impl<FB: FrameBuffer> Send for VncSink<'_, FB> {}
 
@@ -40,41 +55,26 @@ pub struct VncSink<'a, FB: FrameBuffer> {
     terminate_signal_rx: broadcast::Receiver<()>,
 
     screen: RfbScreenInfoPtr,
-    target_fps: u32,
+    fps: u32,
     text: String,
     font: Font<'a>,
 }
 
-#[derive(clap::Parser, Debug)]
-pub struct VncSinkCliArgs {
-    /// VNC server listen address to bind to (multiple can be specified).
-    /// Only one address of each IP version can be specified
-    #[clap(long = "vnc-listen-address")]
-    pub listen_addresses: Vec<SocketAddr>,
-
-    /// The font used to render the text on the screen.
-    /// Should be a ttf file.
-    /// If you use the default value a copy that ships with breakwater will be used - no need to download and provide the font.
-    #[clap(long, default_value = "Arial.ttf")]
-    pub font: String,
-}
-
 impl<FB: FrameBuffer + Sync + Send> VncSink<'_, FB> {
     /// Returns `Ok(None)` if no VNC listen addresses are configured (the sink is then disabled).
-    #[expect(clippy::unused_async)]
-    pub async fn new(
+    pub fn new(
         fb: Arc<FB>,
         VncSinkCliArgs {
-            listen_addresses,
+            vnc_listen_addresses,
             font,
         }: &VncSinkCliArgs,
-        target_fps: u32,
+        fps: u32,
         text: &str,
         statistics_tx: mpsc::Sender<StatisticsEvent>,
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
     ) -> eyre::Result<Option<Self>> {
-        if listen_addresses.is_empty() {
+        if vnc_listen_addresses.is_empty() {
             tracing::debug!("VNC sink not enabled as no vnc addresses are specified");
             return Ok(None);
         }
@@ -102,7 +102,7 @@ impl<FB: FrameBuffer + Sync + Send> VncSink<'_, FB> {
             (*screen).ipv6port = -1;
         }
 
-        let (v4, v6) = vnc_listen_addresses_v4_v6(listen_addresses)?;
+        let (v4, v6) = vnc_listen_addresses_v4_v6(vnc_listen_addresses)?;
 
         if let Some(v4) = v4 {
             unsafe {
@@ -136,7 +136,7 @@ impl<FB: FrameBuffer + Sync + Send> VncSink<'_, FB> {
             statistics_information_rx,
             terminate_signal_rx,
             screen,
-            target_fps,
+            fps,
             text: text.to_owned(),
             font,
         }))
@@ -157,9 +157,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
         let height_up_to_stats_text = self.fb.get_height() - STATS_HEIGHT - 1;
         let fb_size_up_to_stats_text = self.fb.get_width() * height_up_to_stats_text;
 
-        let mut interval = time::interval(Duration::from_micros(
-            1_000_000 / u64::from(self.target_fps),
-        ));
+        let mut interval = time::interval(Duration::from_micros(1_000_000 / u64::from(self.fps)));
         loop {
             if self.terminate_signal_rx.try_recv().is_ok() {
                 return Ok(());
@@ -278,6 +276,20 @@ impl<FB: FrameBuffer> VncSink<'_, FB> {
     }
 }
 
+fn format_per_s(value: f64) -> String {
+    match NumberPrefix::decimal(value) {
+        NumberPrefix::Prefixed(prefix, n) => format!("{n:.1}{prefix}"),
+        NumberPrefix::Standalone(n) => format!("{n}"),
+    }
+}
+
+fn format(value: f64) -> String {
+    match NumberPrefix::decimal(value) {
+        NumberPrefix::Prefixed(prefix, n) => format!("{n:.1}{prefix}"),
+        NumberPrefix::Standalone(n) => format!("{n}"),
+    }
+}
+
 /// Splits VNC listen addresses into at most one IPv4 and one IPv6 address (libvncserver listens on
 /// one of each). Errors if more than one of either version is given.
 pub fn vnc_listen_addresses_v4_v6(
@@ -301,18 +313,4 @@ pub fn vnc_listen_addresses_v4_v6(
                 Ok((v4, Some(addr)))
             }
         })
-}
-
-fn format_per_s(value: f64) -> String {
-    match NumberPrefix::decimal(value) {
-        NumberPrefix::Prefixed(prefix, n) => format!("{n:.1}{prefix}"),
-        NumberPrefix::Standalone(n) => format!("{n}"),
-    }
-}
-
-fn format(value: f64) -> String {
-    match NumberPrefix::decimal(value) {
-        NumberPrefix::Prefixed(prefix, n) => format!("{n:.1}{prefix}"),
-        NumberPrefix::Standalone(n) => format!("{n}"),
-    }
 }

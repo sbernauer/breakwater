@@ -30,10 +30,12 @@ pub struct NativeDisplaySink<FB: FrameBuffer> {
     surface: Option<softbuffer::Surface<DisplayHandle<'static>, Arc<Window>>>,
 }
 
+#[async_trait]
 impl<FB: FrameBuffer + Sync + Send + 'static> NativeDisplaySink<FB> {
     #[instrument(skip_all, err)]
-    pub async fn new(
+    pub fn new(
         fb: Arc<FB>,
+        cli_args: &CliArgs,
         terminate_signal_rx: broadcast::Receiver<()>,
     ) -> eyre::Result<Option<Self>> {
         if !cli_args.native_display {

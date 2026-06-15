@@ -61,17 +61,17 @@ pub struct CliArgs {
     #[clap(short, long)]
     pub connections_per_ip: Option<u64>,
 
-    /// Create (or use an existing) shared memory region for the framebuffer.
-    /// This enables other applications to read and write Pixel values to the framebuffer or can be
-    /// used to persist the canvas across restarts.
-    #[clap(long)]
-    pub shared_memory_name: Option<String>,
-
     /// Enable native display output. This requires some form of graphical system (so will probably not work on your
     /// server).
     #[cfg(any(feature = "native-display", feature = "egui"))]
     #[clap(long)]
     pub native_display: bool,
+
+    /// Create (or use an existing) shared memory region for the framebuffer.
+    /// This enables other applications to read and write Pixel values to the framebuffer or can be
+    /// used to persist the canvas across restarts.
+    #[clap(long)]
+    pub shared_memory_name: Option<String>,
 
     #[clap(flatten)]
     pub ffmpeg_sink: crate::sinks::ffmpeg::FfmpegSinkCliArgs,
@@ -79,6 +79,10 @@ pub struct CliArgs {
     #[cfg(feature = "egui")]
     #[clap(flatten)]
     pub egui_sink: crate::sinks::egui::EguiSinkCliArgs,
+
+    #[cfg(feature = "ndi")]
+    #[clap(flatten)]
+    pub ndi_sink: crate::sinks::ndi::NdiSinkCliArgs,
 
     #[cfg(feature = "vnc")]
     #[clap(flatten)]

@@ -169,7 +169,6 @@ impl FrameStore {
 
 /// Runs the collector until Ctrl-C: accepts worker connections, configures them, stores frames, and
 /// runs the master render-scheduling task.
-#[expect(clippy::too_many_lines)]
 pub async fn run(args: CollectorArgs) -> eyre::Result<()> {
     let config = WorkerConfig {
         width: args.width,
@@ -227,7 +226,6 @@ pub async fn run(args: CollectorArgs) -> eyre::Result<()> {
             statistics_information_rx.resubscribe(),
             terminate_signal_rx.resubscribe(),
         )
-        .await
         .context("failed to create vnc sink")?
         {
             display_sinks.push(Box::new(vnc_sink));
@@ -240,7 +238,6 @@ pub async fn run(args: CollectorArgs) -> eyre::Result<()> {
         args.fps,
         terminate_signal_rx.resubscribe(),
     )
-    .await
     .context("failed to create ffmpeg sink")?
     {
         display_sinks.push(Box::new(ffmpeg_sink));
@@ -284,7 +281,6 @@ pub async fn run(args: CollectorArgs) -> eyre::Result<()> {
             statistics_information_rx.resubscribe(),
             terminate_signal_rx.resubscribe(),
         )
-        .await
         .context("failed to create egui sink")?
         {
             // Some platforms require opening windows from the main thread.

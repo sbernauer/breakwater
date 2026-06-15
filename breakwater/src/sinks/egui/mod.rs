@@ -15,6 +15,28 @@ mod canvas_renderer;
 mod dynamic_overlay;
 mod view;
 
+#[derive(Clone, Debug, clap::Parser)]
+#[command(next_help_heading = "egui options")]
+pub struct EguiSinkCliArgs {
+    /// Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`.
+    /// Might be specified multiple times for more than one viewport. Useful for multi-projector setups.
+    /// Defaults to display the entire canvas.
+    /// Implies --native-display.
+    #[clap(long)]
+    pub viewport: Vec<crate::sinks::egui::ViewportConfig>,
+
+    /// Specify one or more pixelflut endpoints to display.
+    #[clap(long)]
+    pub advertised_endpoints: Vec<String>,
+
+    /// Provide a path to a dylib containing a custom egui overlay.
+    /// Implies --native-display.
+    //
+    // Qualifying import here to avoid feature-specific imports
+    #[clap(long)]
+    pub ui: Option<std::path::PathBuf>,
+}
+
 /// Describes the part of the framebuffer that the corresponding viewport will display.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub struct ViewportConfig {
@@ -67,31 +89,10 @@ pub struct EguiSink<FB: FrameBuffer> {
     ui_overlay: Arc<UiOverlay>,
 }
 
-#[derive(clap::Parser, Debug)]
-pub struct EguiSinkCliArgs {
-    /// Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`.
-    /// Might be specified multiple times for more than one viewport. Useful for multi-projector setups.
-    /// Defaults to display the entire canvas.
-    /// Implies --native-display.
-    #[clap(long)]
-    pub viewport: Vec<crate::sinks::egui::ViewportConfig>,
-
-    /// Specify one or more pixelflut endpoints to display.
-    #[clap(long)]
-    pub advertised_endpoints: Vec<String>,
-
-    /// Provide a path to a dylib containing a custom egui overlay.
-    /// Implies --native-display.
-    //
-    // Qualifying import here to avoid feature-specific imports
-    #[clap(long)]
-    pub ui: Option<std::path::PathBuf>,
-}
-
 impl<FB: FrameBuffer + Send + Sync + 'static> EguiSink<FB> {
     /// This function can return [`None`] in case this sink is not configured (by looking at the `cli_args`).
     #[instrument(skip_all, err)]
-    pub async fn new(
+    pub fn new(
         fb: Arc<FB>,
         EguiSinkCliArgs {
             viewport,

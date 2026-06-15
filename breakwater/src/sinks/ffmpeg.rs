@@ -9,16 +9,8 @@ use tracing::instrument;
 
 use crate::sinks::DisplaySink;
 
-pub struct FfmpegSink<FB: FrameBuffer> {
-    fb: Arc<FB>,
-    terminate_signal_rx: broadcast::Receiver<()>,
-
-    rtmp_address: Option<String>,
-    video_save_folder: Option<String>,
-    fps: u32,
-}
-
-#[derive(clap::Parser, Debug)]
+#[derive(Clone, Debug, clap::Parser)]
+#[command(next_help_heading = "ffmpeg options")]
 pub struct FfmpegSinkCliArgs {
     /// Enable rtmp streaming to configured address, e.g. `rtmp://127.0.0.1:1935/live/test`
     #[clap(long)]
@@ -29,24 +21,27 @@ pub struct FfmpegSinkCliArgs {
     pub video_save_folder: Option<String>,
 }
 
+pub struct FfmpegSink<FB: FrameBuffer> {
+    cli_args: FfmpegSinkCliArgs,
+    fb: Arc<FB>,
+    fps: u32,
+    terminate_signal_rx: broadcast::Receiver<()>,
+}
+
 impl<FB: FrameBuffer + Sync + Send> FfmpegSink<FB> {
     #[instrument(skip_all, err)]
-    pub async fn new(
+    pub fn new(
         fb: Arc<FB>,
-        FfmpegSinkCliArgs {
-            rtmp_address,
-            video_save_folder,
-        }: &FfmpegSinkCliArgs,
+        cli_args: &FfmpegSinkCliArgs,
         fps: u32,
         terminate_signal_rx: broadcast::Receiver<()>,
     ) -> eyre::Result<Option<Self>> {
-        if rtmp_address.is_some() || video_save_folder.is_some() {
+        if cli_args.rtmp_address.is_some() || cli_args.video_save_folder.is_some() {
             Ok(Some(Self {
+                cli_args: cli_args.to_owned(),
                 fb,
-                terminate_signal_rx,
-                rtmp_address: rtmp_address.clone(),
-                video_save_folder: video_save_folder.clone(),
                 fps,
+                terminate_signal_rx,
             }))
         } else {
             Ok(None)
@@ -64,9 +59,9 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
             .flat_map(|(arg, value)| [format!("-{arg}"), value])
             .collect();
 
-        match &self.rtmp_address {
+        match &self.cli_args.rtmp_address {
             Some(rtmp_address) => {
-                if let Some(video_save_folder) = &self.video_save_folder {
+                if let Some(video_save_folder) = &self.cli_args.video_save_folder {
                     // Write to rtmp and file
                     ffmpeg_args.extend(
                         self.ffmpeg_rtmp_sink_args()
@@ -102,7 +97,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
                     ffmpeg_args.extend(["-f".to_string(), "flv".to_string(), rtmp_address.clone()]);
                 }
             }
-            None => match &self.video_save_folder {
+            None => match &self.cli_args.video_save_folder {
                 // Only write to file
                 Some(video_save_folder) => {
                     ffmpeg_args.extend([Self::video_file(video_save_folder)]);

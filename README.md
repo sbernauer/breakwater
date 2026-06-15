@@ -6,9 +6,12 @@ It claims to be the fastest Pixelflut server in existence - at least at the time
 
 # Features
 1. Accepts Pixelflut commands
-2. It can start a native display window in your graphical environment
-3. Simultaneously it can provide a VNC server so that everybody can watch
-4. As an alternative it can stream to a RTMP sink, so that you can e.g. directly live-stream into Twitch or YouTube
+2. Many possible outputs:
+  - Start a native display window in your graphical environment
+  - Start a VNC server so that everybody can watch
+  - Stream to an RTMP sink, so that you can e.g. directly live-stream into Twitch or YouTube
+  - Provide an [NDI](https://ndi.video) source
+  - … all of these can be used at the same time
 5. Exposes Prometheus metrics
 6. IPv6 and legacy IP support
 
@@ -46,14 +49,16 @@ The default settings should provide you with a ready-to-use server.
 | 9100 | Prometheus metrics exporter |
 
 The get a list of options try
+
 ```bash
 cargo run --release -- --help
 ```
+
 <details>
   <summary>Output</summary>
 
 ```bash
-cargo run --release -- --help
+cargo run --release --all-features -- --help
     Finished release [optimized] target(s) in 0.04s
      Running `target/release/breakwater --help`
 Pixelflut server
@@ -73,8 +78,6 @@ Options:
           The size in bytes of the network buffer used for each open TCP connection. Please use at least 64 KB (64_000 bytes) [default: 262144]
   -t, --text <TEXT>
           Text to display on the screen [default: "Pixelflut server (breakwater)"]
-      --font <FONT>
-          The font used to render the text on the screen. Should be a ttf file. If you use the default value a copy that ships with breakwater will be used - no need to download and provide the font [default: Arial.ttf]
   -p, --prometheus-listen-address <PROMETHEUS_LISTEN_ADDRESS>
           Listen address the prometheus exporter should listen on [default: [::]:9100]
       --statistics-save-file <STATISTICS_SAVE_FILE>
@@ -83,28 +86,42 @@ Options:
           Interval (in seconds) in which the statistics save file should be updated [default: 10]
       --disable-statistics-save-file
           Disable periodical saving of statistics into save file
-      --rtmp-address <RTMP_ADDRESS>
-          Enable rtmp streaming to configured address, e.g. `rtmp://127.0.0.1:1935/live/test`
-      --video-save-folder <VIDEO_SAVE_FOLDER>
-          Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4`
   -c, --connections-per-ip <CONNECTIONS_PER_IP>
           Allow only a certain number of connections per ip address
-      --vnc-listen-address <VNC_LISTEN_ADDRESSES>
-          VNC server listen address to bind to (multiple can be specified). Only one address of each IP version can be specified
       --native-display
           Enable native display output. This requires some form of graphical system (so will probably not work on your server)
-      --viewport <VIEWPORT>
-          Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`. Might be specified multiple times for more than one viewport. Useful for multi-projector setups. Defaults to display the entire canvas. Implies --native-display
-      --advertised-endpoints <ADVERTISED_ENDPOINTS>
-          Specify one or more pixelflut endpoints to display
-      --ui <UI>
-          Provide a path to a dylib containing a custom egui overlay. Implies --native-display
       --shared-memory-name <SHARED_MEMORY_NAME>
           Create (or use an existing) shared memory region for the framebuffer. This enables other applications to read and write Pixel values to the framebuffer or can be used to persist the canvas across restarts
   -h, --help
           Print help
   -V, --version
           Print version
+
+ffmpeg options:
+      --rtmp-address <RTMP_ADDRESS>
+          Enable rtmp streaming to configured address, e.g. `rtmp://127.0.0.1:1935/live/test`
+      --video-save-folder <VIDEO_SAVE_FOLDER>
+          Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4`
+
+egui options:
+      --viewport <VIEWPORT>
+          Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`. Might be specified multiple times for more than one viewport. Useful for multi-projector setups. Defaults to display the entire canvas. Implies --native-display
+      --advertised-endpoints <ADVERTISED_ENDPOINTS>
+          Specify one or more pixelflut endpoints to display
+      --ui <UI>
+          Provide a path to a dylib containing a custom egui overlay. Implies --native-display
+
+NDI options:
+      --ndi
+          Enable the NDI source. Set the source name with --ndi-source-name
+      --ndi-source-name <NDI_SOURCE_NAME>
+          Set the readable NDI source name. NDI output is not enabled unless you specify --ndi [default: "breakwater canvas"]
+
+VNC options:
+      --vnc-listen-address <VNC_LISTEN_ADDRESSES>
+          VNC server listen address to bind to (multiple can be specified). Only one address of each IP version can be specified
+      --font <FONT>
+          The font used to render the text on the screen. Should be a ttf file. If you use the default value a copy that ships with breakwater will be used - no need to download and provide the font [default: Arial.ttf]
 ```
 </details>
 
@@ -118,6 +135,7 @@ As of writing the following features are supported:
 
 * `egui` (enabled by default): Enables an advanced customizable graphical frontend on your local system. Please note that this requires a graphical environment.
 * `native-display` (disabled by default): Enables a minimalist graphical window on your local system. Please note that this requires a graphical environment.
+* `ndi` (disabled by default): Enables NDI video streaming. This requires the proprietary NDI SDK to be installed, see below.
 * `vnc` (enabled by default): Starts a VNC server, where users can connect to. Needs `libvncserver-dev` to be installed. Please note that the VNC server offers basically no latency, but consumes quite some CPU.
 * `alpha` (disabled by default): Respect alpha values during `PX` commands. Disabled by default as this can cause performance degradation.
 * `binary-set-pixel` (disabled by default): Allows use of the `PB` command.
@@ -126,8 +144,26 @@ As of writing the following features are supported:
 To e.g. turn the VNC server off, build with
 
 ```bash
-cargo run --release --no-default-features # --features alpha,vnc to explicitly enable
+cargo run --release --no-default-features
 ```
+
+Enable (any number of) desired features with
+
+```bash
+cargo run --release --features vnc,native-display,alpha
+```
+
+## NDI
+
+[NDI](https://ndi.video) is a network video streaming protocol. Its major advantages for Pixelflut are the low latency, efficiency, high quality (almost lossless), automatic discovery via mDNS, and support in lots of software (e.g. OBS and GStreamer) and professional hardware. You should be familiar with the architecture and operating principle of NDI if you want to use it.
+
+In order to use NDI, you need to install the *proprietary* NDI SDK from Vizrt/NewTek, which works on x86_64 only and requires SSE4.2. DistroAV, the OBS plugin for NDI support, has [excellent installation documentation](https://github.com/DistroAV/DistroAV/wiki/1.-Installation#required-components---ndi-runtime). If your Linux distribution offers a package (e.g. nonfree Fedora, Arch User Repository), use that instead. If you are still running into issues, your install location is probably unusual and/or you are missing Clang/LLVM. Refer to the [rust-ndi-sdk](https://github.com/kleinesfilmroellchen/rust-ndi-sdk) usage instructions in this case. NDI is untested on Windows, but should work as long as you install the Windows SDK and follow rust-ndi-sdk’s instructions. As of writing (2026-06), rust-ndi-sdk does not support macOS.
+
+Tested versions of the NDI SDK include version 6.3.2.0; any NDI 6 release should work.
+
+Breakwater’s use of NDI is conventional. The framerate and resolution of the NDI stream are set according to the command-line parameters (`--width`, `--height`, and `--fps`). Pixel format is `RGBX` (aka. 32-bit aligned RGB without alpha). No audio stream is added. The source is advertised via mDNS and does not use any custom groups.
+
+Disclaimer: This project is not in any way affiliated with NDI® or NewTek/Vizrt. NDI is a registered trademark of NDI Vizrt AB.
 
 ## Custom overlay for the egui native display
 

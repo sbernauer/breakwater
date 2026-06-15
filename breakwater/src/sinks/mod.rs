@@ -6,6 +6,8 @@ pub mod egui;
 pub mod ffmpeg;
 #[cfg(all(feature = "native-display", not(feature = "egui")))]
 pub mod native_display;
+#[cfg(feature = "ndi")]
+pub mod ndi;
 #[cfg(feature = "vnc")]
 pub mod vnc;
 

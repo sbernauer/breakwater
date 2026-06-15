@@ -29,17 +29,6 @@ async fn main() -> eyre::Result<()> {
 
     let args = CliArgs::parse();
 
-    // Give the user quick feedback on invalid VNC arguments
-    #[cfg(feature = "vnc")]
-    if let Err(e) =
-        breakwater::sinks::vnc::vnc_listen_addresses_v4_v6(&args.vnc_sink.listen_addresses)
-    {
-        use clap::CommandFactory;
-        let mut cmd = <CliArgs as CommandFactory>::command();
-        // Displays error in the standard 'clap' format and exits
-        cmd.error(clap::error::ErrorKind::InvalidValue, e).exit();
-    }
-
     // Not using dynamic dispatch here for performance reasons
     let fb = Arc::new(
         SharedMemoryFrameBuffer::new(args.width, args.height, args.shared_memory_name.as_deref())
@@ -120,10 +109,25 @@ async fn main() -> eyre::Result<()> {
             statistics_information_rx.resubscribe(),
             terminate_signal_rx.resubscribe(),
         )
-        .await
         .context("failed to create vnc sink")?
         {
             display_sinks.push(Box::new(vnc_sink));
+        }
+    }
+
+    #[cfg(feature = "ndi")]
+    {
+        use breakwater::sinks::ndi::NdiSink;
+
+        if let Some(ndi_sink) = NdiSink::new(
+            fb.clone(),
+            &args.ndi_sink,
+            args.fps,
+            terminate_signal_rx.resubscribe(),
+        )
+        .context("failed to create ndi sink")?
+        {
+            display_sinks.push(Box::new(ndi_sink));
         }
     }
 
@@ -134,7 +138,6 @@ async fn main() -> eyre::Result<()> {
         args.fps,
         terminate_signal_rx.resubscribe(),
     )
-    .await
     .context("failed to create ffmpeg sink")?
     {
         display_sinks.push(Box::new(ffmpeg_sink));
@@ -161,7 +164,6 @@ async fn main() -> eyre::Result<()> {
             statistics_information_rx.resubscribe(),
             terminate_signal_rx.resubscribe(),
         )
-        .await
         .context("failed to create egui sink")?
         {
             Some(mut egui_sink) => {
