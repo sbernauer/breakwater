@@ -31,7 +31,7 @@ use crate::{
 const STATS_HEIGHT: usize = 35;
 
 #[derive(Clone, Debug, clap::Parser)]
-#[command(next_help_heading = "VNC options")]
+#[command(next_help_heading = "VNC sink options")]
 pub struct VncSinkCliArgs {
     /// VNC server listen address to bind to (multiple can be specified).
     /// Only one address of each IP version can be specified

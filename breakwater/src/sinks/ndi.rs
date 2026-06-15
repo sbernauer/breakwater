@@ -18,14 +18,14 @@ use tracing::{error, info, instrument, trace};
 use crate::sinks::DisplaySink;
 
 #[derive(Clone, Debug, clap::Parser)]
-#[command(next_help_heading = "NDI options")]
+#[command(next_help_heading = "NDI sink options")]
 pub struct NdiSinkCliArgs {
-    /// Enable the NDI source. Set the source name with --ndi-source-name.
+    /// Enable the NDI source
     #[clap(long)]
     pub ndi: bool,
 
-    /// Set the readable NDI source name. NDI output is not enabled unless you specify --ndi.
-    #[clap(long, default_value = "breakwater canvas")]
+    /// Readable NDI source name. Requires --ndi to be set.
+    #[clap(long, default_value = "breakwater canvas", requires = "ndi")]
     pub ndi_source_name: String,
 }
 
