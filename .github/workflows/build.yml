@@ -199,10 +199,10 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --target=${{ matrix.target }} --no-default-features --features alpha,binary-set-pixel,binary-sync-pixels,egui,native-display,vnc
+          args: --target=${{ matrix.target }} --no-default-features --features alpha,binary-set-pixel,binary-sync-pixels,egui,native-display
       # I couldn't get pkg-config to work on Windows, so we omit the vnc feature
       - if: runner.os == 'Windows'
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --target=${{ matrix.target }} --no-default-features --features alpha,binary-set-pixel,binary-sync-pixels,egui,native-display,vnc,ndi
+          args: --target=${{ matrix.target }} --no-default-features --features alpha,binary-set-pixel,binary-sync-pixels,egui,native-display,ndi
