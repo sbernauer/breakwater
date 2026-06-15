@@ -49,14 +49,16 @@ The default settings should provide you with a ready-to-use server.
 | 9100 | Prometheus metrics exporter |
 
 The get a list of options try
+
 ```bash
 cargo run --release -- --help
 ```
+
 <details>
   <summary>Output</summary>
 
 ```bash
-cargo run --release -- --help
+cargo run --release --all-features -- --help
     Finished release [optimized] target(s) in 0.04s
      Running `target/release/breakwater --help`
 Pixelflut server
@@ -76,8 +78,6 @@ Options:
           The size in bytes of the network buffer used for each open TCP connection. Please use at least 64 KB (64_000 bytes) [default: 262144]
   -t, --text <TEXT>
           Text to display on the screen [default: "Pixelflut server (breakwater)"]
-      --font <FONT>
-          The font used to render the text on the screen. Should be a ttf file. If you use the default value a copy that ships with breakwater will be used - no need to download and provide the font [default: Arial.ttf]
   -p, --prometheus-listen-address <PROMETHEUS_LISTEN_ADDRESS>
           Listen address the prometheus exporter should listen on [default: [::]:9100]
       --statistics-save-file <STATISTICS_SAVE_FILE>
@@ -86,32 +86,42 @@ Options:
           Interval (in seconds) in which the statistics save file should be updated [default: 10]
       --disable-statistics-save-file
           Disable periodical saving of statistics into save file
-      --rtmp-address <RTMP_ADDRESS>
-          Enable rtmp streaming to configured address, e.g. `rtmp://127.0.0.1:1935/live/test`
-      --video-save-folder <VIDEO_SAVE_FOLDER>
-          Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4`
   -c, --connections-per-ip <CONNECTIONS_PER_IP>
           Allow only a certain number of connections per ip address
-      --vnc-listen-address <VNC_LISTEN_ADDRESSES>
-          VNC server listen address to bind to (multiple can be specified). Only one address of each IP version can be specified
       --native-display
           Enable native display output. This requires some form of graphical system (so will probably not work on your server)
-      --ndi
-          Enable the NDI source. Set the source name with --ndi-source-name
-      --ndi-source-name <NDI_SOURCE_NAME>
-          Set the readable NDI source name. NDI output is not enabled unless you specify --ndi [default: "breakwater canvas"]
-      --viewport <VIEWPORT>
-          Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`. Might be specified multiple times for more than one viewport. Useful for multi-projector setups. Defaults to display the entire canvas. Implies --native-display
-      --advertised-endpoints <ADVERTISED_ENDPOINTS>
-          Specify one or more pixelflut endpoints to display
-      --ui <UI>
-          Provide a path to a dylib containing a custom egui overlay. Implies --native-display
       --shared-memory-name <SHARED_MEMORY_NAME>
           Create (or use an existing) shared memory region for the framebuffer. This enables other applications to read and write Pixel values to the framebuffer or can be used to persist the canvas across restarts
   -h, --help
           Print help
   -V, --version
           Print version
+
+ffmpeg options:
+      --rtmp-address <RTMP_ADDRESS>
+          Enable rtmp streaming to configured address, e.g. `rtmp://127.0.0.1:1935/live/test`
+      --video-save-folder <VIDEO_SAVE_FOLDER>
+          Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4`
+
+egui options:
+      --viewport <VIEWPORT>
+          Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`. Might be specified multiple times for more than one viewport. Useful for multi-projector setups. Defaults to display the entire canvas. Implies --native-display
+      --advertised-endpoints <ADVERTISED_ENDPOINTS>
+          Specify one or more pixelflut endpoints to display
+      --ui <UI>
+          Provide a path to a dylib containing a custom egui overlay. Implies --native-display
+
+NDI options:
+      --ndi
+          Enable the NDI source. Set the source name with --ndi-source-name
+      --ndi-source-name <NDI_SOURCE_NAME>
+          Set the readable NDI source name. NDI output is not enabled unless you specify --ndi [default: "breakwater canvas"]
+
+VNC options:
+      --vnc-listen-address <VNC_LISTEN_ADDRESSES>
+          VNC server listen address to bind to (multiple can be specified). Only one address of each IP version can be specified
+      --font <FONT>
+          The font used to render the text on the screen. Should be a ttf file. If you use the default value a copy that ships with breakwater will be used - no need to download and provide the font [default: Arial.ttf]
 ```
 </details>
 

@@ -4,48 +4,53 @@ use async_trait::async_trait;
 use breakwater_parser::FrameBuffer;
 use chrono::Local;
 use color_eyre::eyre::{self, Context};
-use tokio::{
-    io::AsyncWriteExt,
-    process::Command,
-    sync::{broadcast, mpsc},
-    time,
-};
+use tokio::{io::AsyncWriteExt, process::Command, sync::broadcast, time};
 use tracing::instrument;
 
-use crate::{sinks::DisplaySink, statistics::StatisticsInformationEvent};
+use crate::sinks::DisplaySink;
 
-pub struct FfmpegSink<FB: FrameBuffer> {
-    fb: Arc<FB>,
-    terminate_signal_rx: broadcast::Receiver<()>,
+#[derive(Clone, Debug, clap::Parser)]
+#[command(next_help_heading = "ffmpeg options")]
+pub struct FfmpegSinkCliArgs {
+    /// Enable rtmp streaming to configured address, e.g. `rtmp://127.0.0.1:1935/live/test`
+    #[clap(long)]
+    pub rtmp_address: Option<String>,
 
-    rtmp_address: Option<String>,
-    video_save_folder: Option<String>,
-    fps: u32,
+    /// Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4`
+    #[clap(long)]
+    pub video_save_folder: Option<String>,
 }
 
-#[async_trait]
-impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
+pub struct FfmpegSink<FB: FrameBuffer> {
+    cli_args: FfmpegSinkCliArgs,
+    fb: Arc<FB>,
+    fps: u32,
+    terminate_signal_rx: broadcast::Receiver<()>,
+}
+
+impl<FB: FrameBuffer + Sync + Send> FfmpegSink<FB> {
     #[instrument(skip_all, err)]
-    async fn new(
+    pub fn new(
         fb: Arc<FB>,
-        cli_args: &crate::cli_args::CliArgs,
-        _statistics_tx: mpsc::Sender<crate::statistics::StatisticsEvent>,
-        _statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
+        cli_args: &FfmpegSinkCliArgs,
+        fps: u32,
         terminate_signal_rx: broadcast::Receiver<()>,
     ) -> eyre::Result<Option<Self>> {
         if cli_args.rtmp_address.is_some() || cli_args.video_save_folder.is_some() {
             Ok(Some(Self {
+                cli_args: cli_args.to_owned(),
                 fb,
+                fps,
                 terminate_signal_rx,
-                rtmp_address: cli_args.rtmp_address.clone(),
-                video_save_folder: cli_args.video_save_folder.clone(),
-                fps: cli_args.fps,
             }))
         } else {
             Ok(None)
         }
     }
+}
 
+#[async_trait]
+impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
     #[instrument(skip(self), err)]
     async fn run(&mut self) -> eyre::Result<()> {
         let mut ffmpeg_args: Vec<String> = self
@@ -54,9 +59,9 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
             .flat_map(|(arg, value)| [format!("-{arg}"), value])
             .collect();
 
-        match &self.rtmp_address {
+        match &self.cli_args.rtmp_address {
             Some(rtmp_address) => {
-                if let Some(video_save_folder) = &self.video_save_folder {
+                if let Some(video_save_folder) = &self.cli_args.video_save_folder {
                     // Write to rtmp and file
                     ffmpeg_args.extend(
                         self.ffmpeg_rtmp_sink_args()
@@ -92,7 +97,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
                     ffmpeg_args.extend(["-f".to_string(), "flv".to_string(), rtmp_address.clone()]);
                 }
             }
-            None => match &self.video_save_folder {
+            None => match &self.cli_args.video_save_folder {
                 // Only write to file
                 Some(video_save_folder) => {
                     ffmpeg_args.extend([Self::video_file(video_save_folder)]);

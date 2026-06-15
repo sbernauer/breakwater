@@ -1,10 +1,6 @@
 use std::net::SocketAddr;
-#[cfg(feature = "vnc")]
-use std::net::{SocketAddrV4, SocketAddrV6};
 
 use clap::Parser;
-#[cfg(feature = "vnc")]
-use color_eyre::eyre::{self, ensure};
 use const_format::formatcp;
 
 pub const DEFAULT_NETWORK_BUFFER_SIZE: usize = 256 * 1024;
@@ -43,12 +39,6 @@ pub struct CliArgs {
     #[clap(short, long, default_value = "Pixelflut server (breakwater)")]
     pub text: String,
 
-    /// The font used to render the text on the screen.
-    /// Should be a ttf file.
-    /// If you use the default value a copy that ships with breakwater will be used - no need to download and provide the font.
-    #[clap(long, default_value = "Arial.ttf")]
-    pub font: String,
-
     /// Listen address the prometheus exporter should listen on.
     #[clap(short, long, default_value = "[::]:9100")]
     pub prometheus_listen_address: String,
@@ -67,23 +57,9 @@ pub struct CliArgs {
     #[clap(long)]
     pub disable_statistics_save_file: bool,
 
-    /// Enable rtmp streaming to configured address, e.g. `rtmp://127.0.0.1:1935/live/test`
-    #[clap(long)]
-    pub rtmp_address: Option<String>,
-
-    /// Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4`
-    #[clap(long)]
-    pub video_save_folder: Option<String>,
-
     /// Allow only a certain number of connections per ip address
     #[clap(short, long)]
     pub connections_per_ip: Option<u64>,
-
-    /// VNC server listen address to bind to (multiple can be specified).
-    /// Only one address of each IP version can be specified
-    #[cfg(feature = "vnc")]
-    #[clap(long = "vnc-listen-address")]
-    pub vnc_listen_addresses: Vec<SocketAddr>,
 
     /// Enable native display output. This requires some form of graphical system (so will probably not work on your
     /// server).
@@ -91,69 +67,24 @@ pub struct CliArgs {
     #[clap(long)]
     pub native_display: bool,
 
-    /// Enable the NDI source. Set the source name with --ndi-source-name.
-    #[cfg(feature = "ndi")]
-    #[clap(long)]
-    pub ndi: bool,
-    /// Set the readable NDI source name. NDI output is not enabled unless you specify --ndi.
-    #[cfg(feature = "ndi")]
-    #[clap(long, default_value = "breakwater canvas")]
-    pub ndi_source_name: String,
-
-    /// Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`.
-    /// Might be specified multiple times for more than one viewport. Useful for multi-projector setups.
-    /// Defaults to display the entire canvas.
-    /// Implies --native-display.
-    #[cfg(feature = "egui")]
-    #[clap(long)]
-    pub viewport: Vec<crate::sinks::egui::ViewportConfig>,
-
-    /// Specify one or more pixelflut endpoints to display.
-    #[cfg(feature = "egui")]
-    #[clap(long)]
-    pub advertised_endpoints: Vec<String>,
-
-    /// Provide a path to a dylib containing a custom egui overlay.
-    /// Implies --native-display.
-    //
-    // Qualifying import here to avoid feature-specific imports
-    #[cfg(feature = "egui")]
-    #[clap(long)]
-    pub ui: Option<std::path::PathBuf>,
-
     /// Create (or use an existing) shared memory region for the framebuffer.
     /// This enables other applications to read and write Pixel values to the framebuffer or can be
     /// used to persist the canvas across restarts.
     #[clap(long)]
     pub shared_memory_name: Option<String>,
-}
 
-impl CliArgs {
-    /// Checks that at most one IP per version (v4/v6) is configured.
-    /// Returns the (optional) v4 address and (optional) v6 address.
+    #[clap(flatten)]
+    pub ffmpeg_sink: crate::sinks::ffmpeg::FfmpegSinkCliArgs,
+
+    #[cfg(feature = "egui")]
+    #[clap(flatten)]
+    pub egui_sink: crate::sinks::egui::EguiSinkCliArgs,
+
+    #[cfg(feature = "ndi")]
+    #[clap(flatten)]
+    pub ndi_sink: crate::sinks::ndi::NdiSinkCliArgs,
+
     #[cfg(feature = "vnc")]
-    pub fn get_vnc_listen_addresses(
-        &self,
-    ) -> eyre::Result<(Option<&SocketAddrV4>, Option<&SocketAddrV6>)> {
-        self.vnc_listen_addresses
-            .iter()
-            .try_fold((None, None), |(v4, v6), addr| match addr {
-                SocketAddr::V4(new) => {
-                    // Fail if an IPv4 was already encountered
-                    ensure!(
-                        v4.is_none(),
-                        "You can only specify one IPv4 VNC listen address"
-                    );
-                    Ok((Some(new), v6))
-                }
-                SocketAddr::V6(new) => {
-                    // Fail if an IPv6 was already encountered
-                    ensure!(
-                        v6.is_none(),
-                        "You can only specify one IPv6 VNC listen address"
-                    );
-                    Ok((v4, Some(new)))
-                }
-            })
-    }
+    #[clap(flatten)]
+    pub vnc_sink: crate::sinks::vnc::VncSinkCliArgs,
 }
