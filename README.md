@@ -97,13 +97,13 @@ Options:
   -V, --version
           Print version
 
-ffmpeg options:
+ffmpeg sink options:
       --rtmp-address <RTMP_ADDRESS>
           Enable rtmp streaming to configured address, e.g. `rtmp://127.0.0.1:1935/live/test`
       --video-save-folder <VIDEO_SAVE_FOLDER>
           Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4`
 
-egui options:
+egui sink options:
       --viewport <VIEWPORT>
           Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`. Might be specified multiple times for more than one viewport. Useful for multi-projector setups. Defaults to display the entire canvas. Implies --native-display
       --advertised-endpoints <ADVERTISED_ENDPOINTS>
@@ -111,13 +111,13 @@ egui options:
       --ui <UI>
           Provide a path to a dylib containing a custom egui overlay. Implies --native-display
 
-NDI options:
+NDI sink options:
       --ndi
-          Enable the NDI source. Set the source name with --ndi-source-name
+          Enable the NDI source
       --ndi-source-name <NDI_SOURCE_NAME>
-          Set the readable NDI source name. NDI output is not enabled unless you specify --ndi [default: "breakwater canvas"]
+          Readable NDI source name. Requires --ndi to be set [default: "breakwater canvas"]
 
-VNC options:
+VNC sink options:
       --vnc-listen-address <VNC_LISTEN_ADDRESSES>
           VNC server listen address to bind to (multiple can be specified). Only one address of each IP version can be specified
       --font <FONT>
