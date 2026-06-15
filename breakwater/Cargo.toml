@@ -26,6 +26,7 @@ egui = { workspace = true, optional = true }
 libloading = { workspace = true, optional = true }
 local-ip-address.workspace = true
 memadvise.workspace = true
+ndi-sdk-sys = { workspace = true, optional = true }
 number_prefix.workspace = true
 page_size.workspace = true
 prometheus_exporter.workspace = true
@@ -56,6 +57,7 @@ binary-sync-pixels = ["breakwater-parser/binary-sync-pixels"]
 egui = ["dep:breakwater-egui-overlay", "dep:bytemuck", "dep:eframe", "dep:egui", "dep:libloading"]
 native-display = ["dep:softbuffer", "dep:winit"]
 vnc = ["dep:vncserver"]
+ndi = ["dep:ndi-sdk-sys"]
 
 [lints]
 workspace = true

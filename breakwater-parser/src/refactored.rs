@@ -151,15 +151,15 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
 
         let alpha_comp = 0xff - alpha;
         let current = unsafe { self.fb.get_unchecked(x, y) };
-        let r = (rgba >> 16) & 0xff;
-        let g = (rgba >> 8) & 0xff;
-        let b = rgba & 0xff;
+        let red = (rgba >> 16) & 0xff;
+        let green = (rgba >> 8) & 0xff;
+        let blue = rgba & 0xff;
 
-        let r: u32 = (((current >> 24) & 0xff) * alpha_comp + r * alpha) / 0xff;
-        let g: u32 = (((current >> 16) & 0xff) * alpha_comp + g * alpha) / 0xff;
-        let b: u32 = (((current >> 8) & 0xff) * alpha_comp + b * alpha) / 0xff;
+        let red: u32 = (((current >> 24) & 0xff) * alpha_comp + red * alpha) / 0xff;
+        let green: u32 = (((current >> 16) & 0xff) * alpha_comp + green * alpha) / 0xff;
+        let blue: u32 = (((current >> 8) & 0xff) * alpha_comp + blue * alpha) / 0xff;
 
-        self.fb.set(x, y, (r << 16) | (g << 8) | b);
+        self.fb.set(x, y, (red << 16) | (green << 8) | blue);
     }
 
     #[inline(always)]

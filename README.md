@@ -6,9 +6,12 @@ It claims to be the fastest Pixelflut server in existence - at least at the time
 
 # Features
 1. Accepts Pixelflut commands
-2. It can start a native display window in your graphical environment
-3. Simultaneously it can provide a VNC server so that everybody can watch
-4. As an alternative it can stream to a RTMP sink, so that you can e.g. directly live-stream into Twitch or YouTube
+2. Many possible outputs:
+  - Start a native display window in your graphical environment
+  - Start a VNC server so that everybody can watch
+  - Stream to an RTMP sink, so that you can e.g. directly live-stream into Twitch or YouTube
+  - Provide an [NDI](https://ndi.video) source
+  - … all of these can be used at the same time
 5. Exposes Prometheus metrics
 6. IPv6 and legacy IP support
 
@@ -93,6 +96,10 @@ Options:
           VNC server listen address to bind to (multiple can be specified). Only one address of each IP version can be specified
       --native-display
           Enable native display output. This requires some form of graphical system (so will probably not work on your server)
+      --ndi
+          Enable the NDI source. Set the source name with --ndi-source-name
+      --ndi-source-name <NDI_SOURCE_NAME>
+          Set the readable NDI source name. NDI output is not enabled unless you specify --ndi [default: "breakwater canvas"]
       --viewport <VIEWPORT>
           Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`. Might be specified multiple times for more than one viewport. Useful for multi-projector setups. Defaults to display the entire canvas. Implies --native-display
       --advertised-endpoints <ADVERTISED_ENDPOINTS>
@@ -118,6 +125,7 @@ As of writing the following features are supported:
 
 * `egui` (enabled by default): Enables an advanced customizable graphical frontend on your local system. Please note that this requires a graphical environment.
 * `native-display` (disabled by default): Enables a minimalist graphical window on your local system. Please note that this requires a graphical environment.
+* `ndi` (disabled by default): Enables NDI video streaming. This requires the proprietary NDI SDK to be installed, see below.
 * `vnc` (enabled by default): Starts a VNC server, where users can connect to. Needs `libvncserver-dev` to be installed. Please note that the VNC server offers basically no latency, but consumes quite some CPU.
 * `alpha` (disabled by default): Respect alpha values during `PX` commands. Disabled by default as this can cause performance degradation.
 * `binary-set-pixel` (disabled by default): Allows use of the `PB` command.
@@ -126,8 +134,26 @@ As of writing the following features are supported:
 To e.g. turn the VNC server off, build with
 
 ```bash
-cargo run --release --no-default-features # --features alpha,vnc to explicitly enable
+cargo run --release --no-default-features
 ```
+
+Enable (any number of) desired features with
+
+```bash
+cargo run --release --features vnc,native-display,alpha
+```
+
+## NDI
+
+[NDI](https://ndi.video) is a network video streaming protocol. Its major advantages for Pixelflut are the low latency, efficiency, high quality (almost lossless), automatic discovery via mDNS, and support in lots of software (e.g. OBS and GStreamer) and professional hardware. You should be familiar with the architecture and operating principle of NDI if you want to use it.
+
+In order to use NDI, you need to install the *proprietary* NDI SDK from Vizrt/NewTek, which works on x86_64 only and requires SSE4.2. DistroAV, the OBS plugin for NDI support, has [excellent installation documentation](https://github.com/DistroAV/DistroAV/wiki/1.-Installation#required-components---ndi-runtime). If your Linux distribution offers a package (e.g. nonfree Fedora, Arch User Repository), use that instead. If you are still running into issues, your install location is probably unusual and/or you are missing Clang/LLVM. Refer to the [rust-ndi-sdk](https://github.com/kleinesfilmroellchen/rust-ndi-sdk) usage instructions in this case. NDI is untested on Windows, but should work as long as you install the Windows SDK and follow rust-ndi-sdk’s instructions. As of writing (2026-06), rust-ndi-sdk does not support macOS.
+
+Tested versions of the NDI SDK include version 6.3.2.0; any NDI 6 release should work.
+
+Breakwater’s use of NDI is conventional. The framerate and resolution of the NDI stream are set according to the command-line parameters (`--width`, `--height`, and `--fps`). Pixel format is `RGBX` (aka. 32-bit aligned RGB without alpha). No audio stream is added. The source is advertised via mDNS and does not use any custom groups.
+
+Disclaimer: This project is not in any way affiliated with NDI® or NewTek/Vizrt. NDI is a registered trademark of NDI Vizrt AB.
 
 ## Custom overlay for the egui native display
 

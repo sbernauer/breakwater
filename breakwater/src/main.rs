@@ -140,6 +140,24 @@ async fn main() -> eyre::Result<()> {
         }
     }
 
+    #[cfg(feature = "ndi")]
+    {
+        use crate::sinks::ndi::NdiSink;
+
+        if let Some(ndi_sink) = NdiSink::new(
+            fb.clone(),
+            &args,
+            statistics_tx.clone(),
+            statistics_information_rx.resubscribe(),
+            terminate_signal_rx.resubscribe(),
+        )
+        .await
+        .context("failed to create ndi sink")?
+        {
+            display_sinks.push(Box::new(ndi_sink));
+        }
+    }
+
     let mut ffmpeg_thread_present = false;
     if let Some(ffmpeg_sink) = FfmpegSink::new(
         fb.clone(),
