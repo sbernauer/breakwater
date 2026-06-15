@@ -1,0 +1,25 @@
+name: Install NDI SDK on x86_64 Linux
+description: Downloads and installs the NDI SDK so the `ndi` feature can be built.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+
+        # Keep this URL in sync with default.nix.
+        url="https://downloads.ndi.tv/SDK/NDI_SDK_Linux/Install_NDI_SDK_v6_Linux.tar.gz"
+        curl -fsSL "$url" -o ndi-sdk.tar.gz
+        tar -xf ndi-sdk.tar.gz
+
+        # The installer is a self-extracting archive that pages through the EULA
+        # and then prompts to accept it. `yes` accepts it non-interactively.
+        yes | PAGER=cat ./Install_NDI_SDK_v6_Linux.sh >/dev/null
+
+        sdk="NDI SDK for Linux"
+        # ndi-sdk-sys's build.rs looks for the header in /usr/include by default
+        # and links `-lndi` without emitting a link-search path, so libndi.so
+        # needs to live in a standard library directory.
+        sudo cp "$sdk/include/"*.h /usr/include/
+        sudo cp -P "$sdk/lib/x86_64-linux-gnu/"libndi.so* /usr/lib/x86_64-linux-gnu/
+        sudo ldconfig
