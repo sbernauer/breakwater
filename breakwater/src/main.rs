@@ -41,15 +41,6 @@ async fn main() -> eyre::Result<()> {
 
     let args = CliArgs::parse();
 
-    // Give the user quick feedback on invalid VNC arguments
-    #[cfg(feature = "vnc")]
-    if let Err(e) = args.get_vnc_listen_addresses() {
-        use clap::CommandFactory;
-        let mut cmd = <CliArgs as CommandFactory>::command();
-        // Displays error in the standard 'clap' format and exits
-        cmd.error(clap::error::ErrorKind::InvalidValue, e).exit();
-    }
-
     // Not using dynamic dispatch here for performance reasons
     let fb = Arc::new(
         SharedMemoryFrameBuffer::new(args.width, args.height, args.shared_memory_name.as_deref())
@@ -128,12 +119,13 @@ async fn main() -> eyre::Result<()> {
 
         if let Some(vnc_sink) = VncSink::new(
             fb.clone(),
-            &args,
+            &args.vnc_sink,
+            args.fps,
+            &args.text,
             statistics_tx.clone(),
             statistics_information_rx.resubscribe(),
             terminate_signal_rx.resubscribe(),
         )
-        .await
         .context("failed to create vnc sink")?
         {
             display_sinks.push(Box::new(vnc_sink));
@@ -146,12 +138,10 @@ async fn main() -> eyre::Result<()> {
 
         if let Some(ndi_sink) = NdiSink::new(
             fb.clone(),
-            &args,
-            statistics_tx.clone(),
-            statistics_information_rx.resubscribe(),
+            &args.ndi_sink,
+            args.fps,
             terminate_signal_rx.resubscribe(),
         )
-        .await
         .context("failed to create ndi sink")?
         {
             display_sinks.push(Box::new(ndi_sink));
@@ -161,12 +151,10 @@ async fn main() -> eyre::Result<()> {
     let mut ffmpeg_thread_present = false;
     if let Some(ffmpeg_sink) = FfmpegSink::new(
         fb.clone(),
-        &args,
-        statistics_tx.clone(),
-        statistics_information_rx.resubscribe(),
+        &args.ffmpeg_sink,
+        args.fps,
         terminate_signal_rx.resubscribe(),
     )
-    .await
     .context("failed to create ffmpeg sink")?
     {
         display_sinks.push(Box::new(ffmpeg_sink));
@@ -187,12 +175,12 @@ async fn main() -> eyre::Result<()> {
 
         match EguiSink::new(
             fb.clone(),
-            &args,
-            statistics_tx.clone(),
+            &args.egui_sink,
+            &args.listen_addresses,
+            args.native_display,
             statistics_information_rx.resubscribe(),
             terminate_signal_rx.resubscribe(),
         )
-        .await
         .context("failed to create egui sink")?
         {
             Some(mut egui_sink) => {

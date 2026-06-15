@@ -1,11 +1,11 @@
-use std::{fmt::Display, str::FromStr, sync::Arc};
+use std::{fmt::Display, net::SocketAddr, str::FromStr, sync::Arc};
 
 use async_trait::async_trait;
 use breakwater_parser::FrameBuffer;
 use color_eyre::eyre::{self, Context};
 use dynamic_overlay::UiOverlay;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::broadcast;
 use tracing::instrument;
 
 use super::DisplaySink;
@@ -14,6 +14,28 @@ use crate::statistics::StatisticsInformationEvent;
 mod canvas_renderer;
 mod dynamic_overlay;
 mod view;
+
+#[derive(Clone, Debug, clap::Parser)]
+#[command(next_help_heading = "egui options")]
+pub struct EguiSinkCliArgs {
+    /// Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`.
+    /// Might be specified multiple times for more than one viewport. Useful for multi-projector setups.
+    /// Defaults to display the entire canvas.
+    /// Implies --native-display.
+    #[clap(long)]
+    pub viewport: Vec<crate::sinks::egui::ViewportConfig>,
+
+    /// Specify one or more pixelflut endpoints to display.
+    #[clap(long)]
+    pub advertised_endpoints: Vec<String>,
+
+    /// Provide a path to a dylib containing a custom egui overlay.
+    /// Implies --native-display.
+    //
+    // Qualifying import here to avoid feature-specific imports
+    #[clap(long)]
+    pub ui: Option<std::path::PathBuf>,
+}
 
 /// Describes the part of the framebuffer that the corresponding viewport will display.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
@@ -67,25 +89,22 @@ pub struct EguiSink<FB: FrameBuffer> {
     ui_overlay: Arc<UiOverlay>,
 }
 
-#[async_trait]
-impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
+impl<FB: FrameBuffer + Send + Sync + 'static> EguiSink<FB> {
     /// This function can return [`None`] in case this sink is not configured (by looking at the `cli_args`).
     #[instrument(skip_all, err)]
-    async fn new(
+    pub fn new(
         fb: Arc<FB>,
-        cli_args: &crate::cli_args::CliArgs,
-        _statistics_tx: mpsc::Sender<crate::statistics::StatisticsEvent>,
+        EguiSinkCliArgs {
+            viewport,
+            advertised_endpoints,
+            ui,
+        }: &EguiSinkCliArgs,
+        listen_addresses: &[SocketAddr],
+        native_display: bool,
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
-    ) -> eyre::Result<Option<Self>>
-    where
-        Self: Sized,
-    {
-        let viewports = match (
-            cli_args.viewport.as_slice(),
-            cli_args.native_display,
-            cli_args.ui.as_ref(),
-        ) {
+    ) -> eyre::Result<Option<Self>> {
+        let viewports = match (viewport.as_slice(), native_display, ui.as_ref()) {
             (vp, _, _) if !vp.is_empty() => Vec::from(vp),
             ([], _, Some(_)) | ([], true, _) => vec![ViewportConfig {
                 x: 0,
@@ -97,17 +116,17 @@ impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
         };
 
         let ui_overlay = Arc::new({
-            if let Some(ui) = cli_args.ui.as_ref() {
+            if let Some(ui) = ui.as_ref() {
                 dynamic_overlay::load_and_check(ui).context("failed to load dynamic overlay")?
             } else {
                 UiOverlay::BuiltIn
             }
         });
 
-        let advertised_endpoints = if cli_args.advertised_endpoints.is_empty() {
+        let advertised_endpoints = if advertised_endpoints.is_empty() {
             // In case no advertised endpoints to display are given, we calculate the most likely
             // endpoint(s) to display.
-            match &cli_args.listen_addresses[..] {
+            match listen_addresses[..] {
                 // No listeners given, so also no endpoints to advertise
                 [] => vec![],
                 // In case of a single listener we get the local IPs (v4 + v6) and concat them with
@@ -122,10 +141,12 @@ impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
                         .collect()
                 }
                 // If multiple listeners are used it's complicated, so we just print them
-                multiple_listeners => multiple_listeners.iter().map(ToString::to_string).collect(),
+                ref multiple_listeners => {
+                    multiple_listeners.iter().map(ToString::to_string).collect()
+                }
             }
         } else {
-            cli_args.advertised_endpoints.clone()
+            advertised_endpoints.clone()
         };
 
         Ok(Some(Self {
@@ -137,7 +158,10 @@ impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
             ui_overlay,
         }))
     }
+}
 
+#[async_trait]
+impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
     /// This should only run on the main thread
     #[instrument(skip(self), err)]
     async fn run(&mut self) -> eyre::Result<()> {

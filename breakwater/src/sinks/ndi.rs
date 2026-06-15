@@ -12,34 +12,43 @@ use ndi_sdk_sys::{
     sdk,
     sender::{NDISender, NDISenderBuilder},
 };
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::broadcast;
 use tracing::{error, info, instrument, trace};
 
-use crate::{
-    cli_args::CliArgs,
-    sinks::DisplaySink,
-    statistics::{StatisticsEvent, StatisticsInformationEvent},
-};
+use crate::sinks::DisplaySink;
+
+#[derive(Clone, Debug, clap::Parser)]
+#[command(next_help_heading = "NDI options options")]
+pub struct NdiSinkCliArgs {
+    /// Enable the NDI source. Set the source name with --ndi-source-name.
+    #[clap(long)]
+    pub ndi: bool,
+
+    /// Set the readable NDI source name. NDI output is not enabled unless you specify --ndi.
+    #[clap(long, default_value = "breakwater canvas")]
+    pub ndi_source_name: String,
+}
 
 pub struct NdiSink<FB: FrameBuffer> {
     fb: Arc<FB>,
     terminate_signal_rx: broadcast::Receiver<()>,
-    target_fps: u32,
+    fps: u32,
 
     source: Arc<NDISender>,
 }
 
-#[async_trait]
-impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for NdiSink<FB> {
+impl<FB: FrameBuffer + Sync + Send + 'static> NdiSink<FB> {
     #[instrument(skip_all, err)]
-    async fn new(
+    pub fn new(
         fb: Arc<FB>,
-        cli_args: &CliArgs,
-        _statistics_tx: mpsc::Sender<StatisticsEvent>,
-        _statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
+        NdiSinkCliArgs {
+            ndi,
+            ndi_source_name,
+        }: &NdiSinkCliArgs,
+        fps: u32,
         terminate_signal_rx: broadcast::Receiver<()>,
     ) -> eyre::Result<Option<Self>> {
-        if !cli_args.ndi {
+        if !ndi {
             return Ok(None);
         }
 
@@ -50,7 +59,7 @@ impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for NdiSink<FB> {
         sdk::initialize().context("failed to initialize NDI SDK")?;
 
         let source = NDISenderBuilder::new()
-            .name(&cli_args.ndi_source_name)?
+            .name(ndi_source_name)?
             .clock_video(true)
             .build()
             .context("failed to build NDI sender")?;
@@ -68,16 +77,19 @@ impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for NdiSink<FB> {
             fb,
             terminate_signal_rx,
             source: Arc::new(source),
-            target_fps: cli_args.fps,
+            fps,
         }))
     }
+}
 
+#[async_trait]
+impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for NdiSink<FB> {
     #[instrument(skip(self), err)]
     async fn run(&mut self) -> eyre::Result<()> {
         let fb = self.fb.clone();
         let mut terminate_signal_rx = self.terminate_signal_rx.resubscribe();
         let source = self.source.clone();
-        let target_fps = self.target_fps;
+        let fps = i32::try_from(self.fps).context("fps too high to fit in i32")?;
 
         tokio::task::spawn_blocking(move || {
             let mut frame = VideoFrame::new();
@@ -88,7 +100,7 @@ impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for NdiSink<FB> {
             // The framebuffer is "technically" RGBA, but the alpha values are always zero.
             // If we were to set RGBA here, the image would be entirely black :)
             frame.set_four_cc(FourCCVideo::RGBX)?;
-            frame.set_frame_rate((target_fps as i32).into());
+            frame.set_frame_rate(fps.into());
             frame
                 .try_alloc()
                 .context("failed to allocate NDI framebuffer")?;

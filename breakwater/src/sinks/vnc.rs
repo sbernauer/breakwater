@@ -1,9 +1,15 @@
 use core::slice;
-use std::{ffi::CString, str::FromStr, sync::Arc, time::Duration};
+use std::{
+    ffi::CString,
+    net::{SocketAddr, SocketAddrV4, SocketAddrV6},
+    str::FromStr,
+    sync::Arc,
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use breakwater_parser::{FB_BYTES_PER_PIXEL, FrameBuffer};
-use color_eyre::eyre::{self, Context, ContextCompat};
+use color_eyre::eyre::{self, Context, ContextCompat, ensure};
 use number_prefix::NumberPrefix;
 use rusttype::{Font, Scale, point};
 use tokio::{
@@ -16,7 +22,6 @@ use vncserver::{
 };
 
 use crate::{
-    cli_args::CliArgs,
     sinks::DisplaySink,
     statistics::{
         STATISTICS_INFO_RECV_ERR, STATISTICS_SEND_ERR, StatisticsEvent, StatisticsInformationEvent,
@@ -24,6 +29,21 @@ use crate::{
 };
 
 const STATS_HEIGHT: usize = 35;
+
+#[derive(Clone, Debug, clap::Parser)]
+#[command(next_help_heading = "VNC options")]
+pub struct VncSinkCliArgs {
+    /// VNC server listen address to bind to (multiple can be specified).
+    /// Only one address of each IP version can be specified
+    #[clap(long = "vnc-listen-address")]
+    pub vnc_listen_addresses: Vec<SocketAddr>,
+
+    /// The font used to render the text on the screen.
+    /// Should be a ttf file.
+    /// If you use the default value a copy that ships with breakwater will be used - no need to download and provide the font.
+    #[clap(long, default_value = "Arial.ttf")]
+    pub font: String,
+}
 
 // Sorry! Help needed :)
 unsafe impl<FB: FrameBuffer> Send for VncSink<'_, FB> {}
@@ -35,34 +55,38 @@ pub struct VncSink<'a, FB: FrameBuffer> {
     terminate_signal_rx: broadcast::Receiver<()>,
 
     screen: RfbScreenInfoPtr,
-    target_fps: u32,
+    fps: u32,
     text: String,
     font: Font<'a>,
 }
 
-#[async_trait]
-impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
-    async fn new(
+impl<FB: FrameBuffer + Sync + Send> VncSink<'_, FB> {
+    pub fn new(
         fb: Arc<FB>,
-        cli_args: &CliArgs,
+        VncSinkCliArgs {
+            vnc_listen_addresses,
+            font,
+        }: &VncSinkCliArgs,
+        fps: u32,
+        text: &str,
         statistics_tx: mpsc::Sender<StatisticsEvent>,
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
     ) -> eyre::Result<Option<Self>> {
-        if cli_args.vnc_listen_addresses.is_empty() {
+        if vnc_listen_addresses.is_empty() {
             tracing::debug!("VNC sink not enabled as no vnc addresses are specified");
             return Ok(None);
         }
 
         // We ship our own copy of Arial.ttf, so that users don't need to download and provide it
-        let font = if cli_args.font.as_str() == "Arial.ttf" {
+        let font = if font.as_str() == "Arial.ttf" {
             let font_bytes = include_bytes!("../../../Arial.ttf");
             Font::try_from_bytes(font_bytes).context("failed to load default font")?
         } else {
-            let font_bytes = std::fs::read(&cli_args.font)
-                .with_context(|| format!("failed to read font from file {}", cli_args.font))?;
+            let font_bytes = std::fs::read(font)
+                .with_context(|| format!("failed to read font from file {font}"))?;
             Font::try_from_vec(font_bytes)
-                .with_context(|| format!("failed to construct font from file {}", cli_args.font))?
+                .with_context(|| format!("failed to construct font from file {font}"))?
         };
 
         let screen = rfb_get_screen(fb.get_width() as i32, fb.get_height() as i32, 8, 3, 4);
@@ -77,7 +101,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
             (*screen).ipv6port = -1;
         }
 
-        let (v4, v6) = cli_args.get_vnc_listen_addresses()?;
+        let (v4, v6) = vnc_listen_addresses_v4_v6(vnc_listen_addresses)?;
 
         if let Some(v4) = v4 {
             unsafe {
@@ -112,12 +136,15 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
             statistics_information_rx,
             terminate_signal_rx,
             screen,
-            target_fps: cli_args.fps,
-            text: cli_args.text.clone(),
+            fps,
+            text: text.to_owned(),
             font,
         }))
     }
+}
 
+#[async_trait]
+impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
     async fn run(&mut self) -> eyre::Result<()> {
         let vnc_fb_slice: &mut [u8] = unsafe {
             slice::from_raw_parts_mut(
@@ -130,9 +157,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
         let height_up_to_stats_text = self.fb.get_height() - STATS_HEIGHT - 1;
         let fb_size_up_to_stats_text = self.fb.get_width() * height_up_to_stats_text;
 
-        let mut interval = time::interval(Duration::from_micros(
-            1_000_000 / u64::from(self.target_fps),
-        ));
+        let mut interval = time::interval(Duration::from_micros(1_000_000 / u64::from(self.fps)));
         loop {
             if self.terminate_signal_rx.try_recv().is_ok() {
                 return Ok(());
@@ -263,4 +288,29 @@ fn format(value: f64) -> String {
         NumberPrefix::Prefixed(prefix, n) => format!("{n:.1}{prefix}"),
         NumberPrefix::Standalone(n) => format!("{n}"),
     }
+}
+
+/// Splits VNC listen addresses into at most one IPv4 and one IPv6 address (libvncserver listens on
+/// one of each). Errors if more than one of either version is given.
+pub fn vnc_listen_addresses_v4_v6(
+    addresses: &[SocketAddr],
+) -> eyre::Result<(Option<&SocketAddrV4>, Option<&SocketAddrV6>)> {
+    addresses
+        .iter()
+        .try_fold((None, None), |(v4, v6), addr| match addr {
+            SocketAddr::V4(addr) => {
+                ensure!(
+                    v4.is_none(),
+                    "You can only specify one IPv4 VNC listen address"
+                );
+                Ok((Some(addr), v6))
+            }
+            SocketAddr::V6(addr) => {
+                ensure!(
+                    v6.is_none(),
+                    "You can only specify one IPv6 VNC listen address"
+                );
+                Ok((v4, Some(addr)))
+            }
+        })
 }

@@ -31,13 +31,11 @@ pub struct NativeDisplaySink<FB: FrameBuffer> {
 }
 
 #[async_trait]
-impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for NativeDisplaySink<FB> {
+impl<FB: FrameBuffer + Sync + Send + 'static> NativeDisplaySink<FB> {
     #[instrument(skip_all, err)]
-    async fn new(
+    pub fn new(
         fb: Arc<FB>,
         cli_args: &CliArgs,
-        _statistics_tx: mpsc::Sender<StatisticsEvent>,
-        _statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
     ) -> eyre::Result<Option<Self>> {
         if !cli_args.native_display {
@@ -50,7 +48,10 @@ impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for NativeDisplayS
             surface: None,
         }))
     }
+}
 
+#[async_trait]
+impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for NativeDisplaySink<FB> {
     #[instrument(skip(self), err)]
     async fn run(&mut self) -> eyre::Result<()> {
         let fb_clone = self.fb.clone();
