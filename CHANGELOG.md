@@ -4,12 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Add an [NDI](https://ndi.video/) sink.
+  It's a high-quality low-latency network video streaming protocol, i.e. ideal for Pixelflut ([#79]).
+
 ### Fixed
 
 - Raise an error in case the `statistics.json` is written by an older version and can not be deserialized any more.
   Previously, we would ignore such an error, which results in all statistics being lost ([#77]).
 
 [#77]: https://github.com/sbernauer/breakwater/pull/77
+[#79]: https://github.com/sbernauer/breakwater/pull/79
 
 ## [0.20.0] - 2026-01-05
 
