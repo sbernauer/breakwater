@@ -7,16 +7,18 @@ runs:
       run: |
         set -euo pipefail
 
-        # Keep this URL in sync with default.nix.
-        url="https://downloads.ndi.tv/SDK/NDI_SDK_Linux/Install_NDI_SDK_v6_Linux.tar.gz"
-        curl -fsSL "$url" -o ndi-sdk.tar.gz
+        curl -fsSL "https://downloads.ndi.tv/SDK/NDI_SDK_Linux/Install_NDI_SDK_v6_Linux.tar.gz" -o ndi-sdk.tar.gz
         tar -xf ndi-sdk.tar.gz
 
         # The installer is a self-extracting archive that pages through the EULA
-        # and then prompts to accept it. `yes` accepts it non-interactively.
-        yes | PAGER=cat ./Install_NDI_SDK_v6_Linux.sh >/dev/null
+        # and then prompts to accept it. Feed it `y` to accept non-interactively.
+        # `yes` dies with EPIPE once the installer stops reading stdin, which is
+        # expected, so `|| true` keeps it from tripping pipefail.
+        { yes || true; } | PAGER=cat ./Install_NDI_SDK_v6_Linux.sh >/dev/null
 
         sdk="NDI SDK for Linux"
+        # Fail loudly if the installer did not extract the SDK as expected.
+        test -d "$sdk"
         # ndi-sdk-sys's build.rs looks for the header in /usr/include by default
         # and links `-lndi` without emitting a link-search path, so libndi.so
         # needs to live in a standard library directory.
