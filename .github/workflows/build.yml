@@ -75,19 +75,24 @@ jobs:
           override: true
       - name: Install libvncserver-dev
         run: sudo apt update && sudo apt install -y libvncserver-dev
-      - name: Run clippy action to produce annotations
+      - name: Run clippy action to produce annotations (all features)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         uses: actions-rs/clippy-check@v1
         if: env.GITHUB_TOKEN != null
         with:
-          args: --all-targets -- -D warnings
+          args: --all-targets --all-features -- -D warnings
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Run clippy manually without annotations
+      - name: Run clippy manually without annotations (no default features)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         if: env.GITHUB_TOKEN == null
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --no-default-features -- -D warnings
+      - name: Run clippy manually without annotations (all features)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: env.GITHUB_TOKEN == null
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
   run_rustdoc:
     name: Run RustDoc
