@@ -18,7 +18,7 @@ use tracing::{error, info, instrument, trace};
 use crate::sinks::DisplaySink;
 
 #[derive(Clone, Debug, clap::Parser)]
-#[command(next_help_heading = "NDI options options")]
+#[command(next_help_heading = "NDI options")]
 pub struct NdiSinkCliArgs {
     /// Enable the NDI source. Set the source name with --ndi-source-name.
     #[clap(long)]
