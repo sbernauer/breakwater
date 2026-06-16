@@ -61,6 +61,7 @@ pub struct VncSink<'a, FB: FrameBuffer> {
 }
 
 impl<FB: FrameBuffer + Sync + Send> VncSink<'_, FB> {
+    /// Returns `Ok(None)` if no VNC listen addresses are configured (the sink is then disabled).
     pub fn new(
         fb: Arc<FB>,
         VncSinkCliArgs {
@@ -79,7 +80,7 @@ impl<FB: FrameBuffer + Sync + Send> VncSink<'_, FB> {
         }
 
         // We ship our own copy of Arial.ttf, so that users don't need to download and provide it
-        let font = if font.as_str() == "Arial.ttf" {
+        let font = if font == "Arial.ttf" {
             let font_bytes = include_bytes!("../../../Arial.ttf");
             Font::try_from_bytes(font_bytes).context("failed to load default font")?
         } else {
@@ -129,7 +130,6 @@ impl<FB: FrameBuffer + Sync + Send> VncSink<'_, FB> {
             }
         }
 
-        // FIXME: Only return Some in case VNC is enabled
         Ok(Some(Self {
             fb,
             statistics_tx,

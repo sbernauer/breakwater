@@ -12,6 +12,11 @@ mod refactored;
 
 #[cfg(target_arch = "x86_64")]
 pub use assembler::AssemblerParser;
+#[cfg(feature = "time-tracking")]
+pub use framebuffer::time_tracking::{
+    TimeTrackingFrameBuffer, TimeTrackingPixel, get_current_ns_since_unix_epoch,
+    pixels_as_bytes_mut,
+};
 pub use framebuffer::{
     FB_BYTES_PER_PIXEL, FrameBuffer, shared_memory::SharedMemoryFrameBuffer,
     simple::SimpleFrameBuffer,
@@ -57,3 +62,8 @@ pub trait Parser {
     // Sadly this cant be const (yet?) (https://github.com/rust-lang/rust/issues/71971 and https://github.com/rust-lang/rfcs/pull/2632)
     fn parser_lookahead(&self) -> usize;
 }
+
+#[cfg(all(feature = "time-tracking", feature = "alpha"))]
+compile_error!("The features time-tracking and alpha can not be combined");
+#[cfg(all(feature = "time-tracking", feature = "binary-sync-pixels"))]
+compile_error!("The features time-tracking and binary-sync-pixels can not be combined");

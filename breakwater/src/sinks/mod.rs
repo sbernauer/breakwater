@@ -13,6 +13,9 @@ pub mod vnc;
 
 // The stabilization of async functions in traits in Rust 1.75 did not include support for using traits containing async
 // functions as dyn Trait, so we still need to use async_trait here.
+//
+// Each sink has its own inherent `new(..)` constructor (their arguments differ), returning
+// `Ok(None)` when the sink isn't configured. This trait only carries the shared run loop.
 #[async_trait]
 pub trait DisplaySink<FB> {
     async fn run(&mut self) -> eyre::Result<()>;

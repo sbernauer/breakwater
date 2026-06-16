@@ -1,5 +1,7 @@
 pub mod shared_memory;
 pub mod simple;
+#[cfg(feature = "time-tracking")]
+pub mod time_tracking;
 
 pub const FB_BYTES_PER_PIXEL: usize = std::mem::size_of::<u32>();
 
@@ -55,4 +57,15 @@ pub trait FrameBuffer {
     /// As the pixel memory doesn't necessarily need to be aligned (think of using shared memory for
     /// that), we can only return it as a list of bytes, not a list of pixels.
     fn as_bytes(&self) -> &[u8];
+
+    /// Encode `ns_since_unix_epoch` into the per-pixel timestamp representation. Compute it **once
+    /// per parse call** and pass the result to [`Self::set_with_pixel_timestamp`] for every pixel
+    /// (it's the same for all pixels in a call), keeping the encoding out of the hot per-pixel path.
+    #[cfg(feature = "time-tracking")]
+    fn pixel_timestamp(&self, ns_since_unix_epoch: u64) -> u64;
+
+    /// Like [`Self::set`], but also records *when* the pixel was written, as the precomputed
+    /// `pixel_timestamp` from [`Self::pixel_timestamp`].
+    #[cfg(feature = "time-tracking")]
+    fn set_with_pixel_timestamp(&self, x: usize, y: usize, rgba: u32, pixel_timestamp: u64);
 }

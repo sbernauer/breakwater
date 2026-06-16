@@ -222,4 +222,14 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
         let base_ptr: *const u8 = self.buffer.as_ptr().cast();
         unsafe { slice::from_raw_parts(base_ptr, self.bytes) }
     }
+
+    #[cfg(feature = "time-tracking")]
+    fn pixel_timestamp(&self, _: u64) -> u64 {
+        panic!("The shared memory framebuffer does not support time tracking");
+    }
+
+    #[cfg(feature = "time-tracking")]
+    fn set_with_pixel_timestamp(&self, _: usize, _: usize, _: u32, _: u64) {
+        panic!("The shared memory framebuffer does not support time tracking");
+    }
 }

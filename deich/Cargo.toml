@@ -1,0 +1,33 @@
+[package]
+name = "deich"
+description = "Distributed Pixelflut server"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "deich"
+path = "src/main.rs"
+
+[features]
+egui = ["breakwater/egui"]
+native-display = ["breakwater/native-display"]
+vnc = ["breakwater/vnc"]
+
+[dependencies]
+breakwater-parser = { workspace = true, features = ["time-tracking"] }
+breakwater.workspace = true
+
+clap.workspace = true
+color-eyre.workspace = true
+postcard.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true
