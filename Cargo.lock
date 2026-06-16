@@ -478,7 +478,7 @@ dependencies = [
 
 [[package]]
 name = "breakwater"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "async-trait",
  "breakwater-egui-overlay",
@@ -515,7 +515,7 @@ dependencies = [
 
 [[package]]
 name = "breakwater-egui-overlay"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "eframe",
  "egui",
@@ -523,7 +523,7 @@ dependencies = [
 
 [[package]]
 name = "breakwater-parser"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "color-eyre",
  "const_format",
@@ -537,7 +537,7 @@ dependencies = [
 
 [[package]]
 name = "breakwater-parser-c-bindings"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "breakwater-parser",
  "libc",
@@ -1100,7 +1100,7 @@ checksum = "a4ae5f15dda3c708c0ade84bfee31ccab44a3da4f88015ed22f63732abe300c8"
 
 [[package]]
 name = "deich"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "breakwater",
  "breakwater-parser",

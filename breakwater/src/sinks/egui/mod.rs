@@ -16,7 +16,7 @@ mod dynamic_overlay;
 mod view;
 
 #[derive(Clone, Debug, clap::Parser)]
-#[command(next_help_heading = "egui options")]
+#[command(next_help_heading = "egui sink options")]
 pub struct EguiSinkCliArgs {
     /// Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`.
     /// Might be specified multiple times for more than one viewport. Useful for multi-projector setups.

@@ -10,7 +10,7 @@ use tracing::instrument;
 use crate::sinks::DisplaySink;
 
 #[derive(Clone, Debug, clap::Parser)]
-#[command(next_help_heading = "ffmpeg options")]
+#[command(next_help_heading = "ffmpeg sink options")]
 pub struct FfmpegSinkCliArgs {
     /// Enable rtmp streaming to configured address, e.g. `rtmp://127.0.0.1:1935/live/test`
     #[clap(long)]
