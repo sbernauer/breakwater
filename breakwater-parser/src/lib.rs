@@ -16,7 +16,6 @@ mod refactored;
 
 #[cfg(target_arch = "x86_64")]
 pub use assembler::AssemblerParser;
-#[cfg(feature = "time-tracking")]
 pub use framebuffer::time_tracking::{TimeTrackingFrameBuffer, TimeTrackingPixel};
 pub use framebuffer::{
     FB_BYTES_PER_PIXEL, FrameBuffer, MultiPixelSet, PixelColorBytes,
@@ -63,3 +62,12 @@ pub trait Parser {
     // Sadly this cant be const (yet?) (https://github.com/rust-lang/rust/issues/71971 and https://github.com/rust-lang/rfcs/pull/2632)
     fn parser_lookahead(&self) -> usize;
 }
+
+#[cfg(all(feature = "time-tracking", feature = "alpha"))]
+compile_error!(
+    "The features `time-tracking` and `alpha` are mutually exclusive, as the time-tracking framebuffer is used in distributed pixelflut installation where a correct alpha functionality can not be guaranteed."
+);
+#[cfg(all(feature = "time-tracking", feature = "binary-sync-pixels"))]
+compile_error!(
+    "The features `time-tracking` and `binary-sync-pixels` are mutually exclusive, as the time-tracking framebuffer has an entirely different memory layout than PXMULTI."
+);

@@ -1,6 +1,5 @@
 pub mod shared_memory;
 pub mod simple;
-#[cfg(feature = "time-tracking")]
 pub mod time_tracking;
 
 /// Non-time-tracking framebuffer use an [`u32`] to store the color value

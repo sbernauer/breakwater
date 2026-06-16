@@ -140,6 +140,9 @@ As of writing the following features are supported:
 * `alpha` (disabled by default): Respect alpha values during `PX` commands. Disabled by default as this can cause performance degradation.
 * `binary-set-pixel` (disabled by default): Allows use of the `PB` command.
 * `binary-sync-pixels`(disabled by default): Allows use of the `PXMULTI` command.
+* `time-tracking` (disabled by default, `breakwater-parser` only): Tracks the write timestamp of every pixel by packing it into the same `u64` as the color. Intended for distributed pixelflut installations.
+
+Some features are mutually exclusive and will fail to compile when combined (with an explanatory error). In particular, `time-tracking` cannot be combined with `alpha` (a distributed setup can't guarantee correct alpha) or with `binary-sync-pixels` (the time-tracking framebuffer has a different memory layout than `PXMULTI` expects). For this reason `--all-features` does not compile; enable explicit, compatible feature sets instead.
 
 To e.g. turn the VNC server off, build with
 

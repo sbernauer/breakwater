@@ -77,24 +77,32 @@ jobs:
         run: sudo apt update && sudo apt install -y libvncserver-dev
       - name: Install NDI SDK
         uses: ./.github/actions/install-ndi
-      - name: Run clippy action to produce annotations (all features)
+      # We can't use `--all-features`: `time-tracking` is mutually exclusive with `alpha` and
+      # `binary-sync-pixels`, and `egui` is mutually exclusive with `native-display`. `--all-features`
+      # would silently disable the conflicting code paths instead of testing them. So we lint
+      # explicit, valid feature combinations instead.
+      - name: Run clippy action to produce annotations (all compatible features)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         uses: actions-rs/clippy-check@v1
         if: env.GITHUB_TOKEN != null
         with:
-          args: --all-targets --all-features -- -D warnings
+          args: --all-targets -p breakwater --features alpha,binary-set-pixel,binary-sync-pixels,egui,vnc,ndi -- -D warnings
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Run clippy manually without annotations (no default features)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         if: env.GITHUB_TOKEN == null
         run: cargo clippy --all-targets --no-default-features -- -D warnings
-      - name: Run clippy manually without annotations (all features)
+      - name: Run clippy manually without annotations (all compatible features)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         if: env.GITHUB_TOKEN == null
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets -p breakwater --features alpha,binary-set-pixel,binary-sync-pixels,egui,vnc,ndi -- -D warnings
+      - name: Run clippy on the native-display feature (mutually exclusive with egui)
+        run: cargo clippy --all-targets -p breakwater --no-default-features --features alpha,binary-set-pixel,binary-sync-pixels,native-display,vnc,ndi -- -D warnings
+      - name: Run clippy on the time-tracking feature (mutually exclusive with alpha and binary-sync-pixels)
+        run: cargo clippy --all-targets -p breakwater-parser --features time-tracking,binary-set-pixel -- -D warnings
 
   run_rustdoc:
     name: Run RustDoc
@@ -133,11 +141,30 @@ jobs:
         with:
           command: test
           args: --no-default-features --all-targets
-      - name: Test with all features turned on
+      # We can't use `--all-features`: `time-tracking` is mutually exclusive with `alpha` and
+      # `binary-sync-pixels`, and `egui` is mutually exclusive with `native-display`. `--all-features`
+      # would silently disable the conflicting code paths (e.g. `alpha`/`PXMULTI` become no-ops),
+      # which slips past compilation but fails these tests. So we test explicit, valid combinations.
+      - name: Test breakwater with all compatible features (egui variant)
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all-features --all-targets
+          args: -p breakwater --features alpha,binary-set-pixel,binary-sync-pixels,egui,vnc,ndi --all-targets
+      - name: Test breakwater with the native-display feature (mutually exclusive with egui)
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: -p breakwater --no-default-features --features alpha,binary-set-pixel,binary-sync-pixels,native-display,vnc,ndi --all-targets
+      - name: Test breakwater-parser with all compatible features
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: -p breakwater-parser --features alpha,binary-set-pixel,binary-sync-pixels --all-targets
+      - name: Test breakwater-parser with the time-tracking feature (mutually exclusive with alpha and binary-sync-pixels)
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: -p breakwater-parser --features time-tracking,binary-set-pixel --all-targets
       - name: Test vnc feature
         uses: actions-rs/cargo@v1
         with:
