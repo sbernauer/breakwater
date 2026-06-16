@@ -6,7 +6,8 @@ use shared_memory::{Shmem, ShmemConf, ShmemError};
 use tracing::{debug, info, instrument, warn};
 
 use super::FrameBuffer;
-use crate::framebuffer::FB_BYTES_PER_PIXEL;
+
+pub const FB_BYTES_PER_PIXEL: usize = std::mem::size_of::<u32>();
 
 // Width and height, both of type u16.
 const HEADER_SIZE: usize = 2 * std::mem::size_of::<u16>();
@@ -218,7 +219,7 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
     }
 
     #[inline(always)]
-    fn as_bytes(&self) -> &[u8] {
+    fn pixel_color_bytes(&self) -> &[u8] {
         let base_ptr: *const u8 = self.buffer.as_ptr().cast();
         unsafe { slice::from_raw_parts(base_ptr, self.bytes) }
     }

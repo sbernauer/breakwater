@@ -151,8 +151,8 @@ impl<FB: FrameBuffer> ApplicationHandler for NativeDisplaySink<FB> {
                 buffer.copy_from_slice(
                     &self
                         .fb
-                        .as_bytes()
-                        .chunks_exact(4)
+                        .pixel_color_bytes()
+                        .chunks_exact(SHARED_MEMORY_FB_BYTES_PER_PIXEL)
                         .map(|chunk| u32::from_be_bytes([0, chunk[0], chunk[1], chunk[2]]))
                         .collect::<Vec<_>>(),
                 );

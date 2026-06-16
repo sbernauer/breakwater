@@ -158,7 +158,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
 
                 return Ok(());
             }
-            let bytes = self.fb.as_bytes();
+            let bytes = self.fb.pixel_color_bytes();
             stdin
                 .write_all(bytes)
                 .await

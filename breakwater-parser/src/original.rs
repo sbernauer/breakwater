@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{ALT_HELP_TEXT, FrameBuffer, HELP_TEXT, Parser};
+use crate::{ALT_HELP_TEXT, HELP_TEXT, Parser, framebuffer::FrameBuffer};
 
 pub const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
 
@@ -47,13 +47,20 @@ impl<FB: FrameBuffer> OriginalParser<FB> {
 impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
     #[allow(clippy::too_many_lines)]
     fn parse(&mut self, buffer: &[u8], response: &mut Vec<u8>) -> usize {
+        // As this is a potentially(?) expensive operation we only call it one in this parsing loop
+        // All the pixels likely where in the same TCP packets (+- 1/2 or so) it doesn't matter after all
+        // Encode the timestamp exactly once here, not per pixel: it's constant for the whole parse
+        // call, so computing it per write would just waste throughput on the hot path.
+        #[cfg(feature = "time-tracking")]
+        let current_ts = self.fb.current_ts();
+
         let mut last_byte_parsed = 0;
         let mut help_count = 0;
 
         let mut i = 0; // We can't use a for loop here because Rust don't lets use skip characters by incrementing i
         let loop_end = buffer.len().saturating_sub(PARSER_LOOKAHEAD); // Let's extract the .len() call and the subtraction into it's own variable so we only compute it once
 
-        #[cfg(feature = "binary-sync-pixels")]
+        #[cfg(all(feature = "binary-sync-pixels", not(feature = "time-tracking")))]
         if let Some(remaining) = &self.remaining_pixel_sync {
             let buffer = &buffer[0..loop_end];
 
@@ -118,7 +125,13 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
 
                             let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(i - 7) });
 
-                            self.fb.set(x, y, rgba & 0x00ff_ffff);
+                            self.fb.set(
+                                x,
+                                y,
+                                rgba & 0x00ff_ffff,
+                                #[cfg(feature = "time-tracking")]
+                                current_ts,
+                            );
                             continue;
                         }
 
@@ -130,10 +143,16 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
 
                             let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(i - 9) });
 
-                            self.fb.set(x, y, rgba & 0x00ff_ffff);
+                            self.fb.set(
+                                x,
+                                y,
+                                rgba & 0x00ff_ffff,
+                                #[cfg(feature = "time-tracking")]
+                                current_ts,
+                            );
                             continue;
                         }
-                        #[cfg(feature = "alpha")]
+                        #[cfg(all(feature = "alpha", not(feature = "time-tracking")))]
                         if unsafe { *buffer.get_unchecked(i + 8) } == b'\n' {
                             last_byte_parsed = i + 8;
                             i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
@@ -172,7 +191,13 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
 
                             let rgba: u32 = (base << 16) | (base << 8) | base;
 
-                            self.fb.set(x, y, rgba);
+                            self.fb.set(
+                                x,
+                                y,
+                                rgba,
+                                #[cfg(feature = "time-tracking")]
+                                current_ts,
+                            );
 
                             continue;
                         }
@@ -208,13 +233,19 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
                 let rgba = u32::from_le((command_bytes >> 32) as u32);
 
                 // TODO: Support alpha channel (behind alpha feature flag)
-                self.fb.set(x as usize, y as usize, rgba & 0x00ff_ffff);
+                self.fb.set(
+                    x as usize,
+                    y as usize,
+                    rgba & 0x00ff_ffff,
+                    #[cfg(feature = "time-tracking")]
+                    current_ts,
+                );
                 //                 P   B   XX  YY  RGBA
                 last_byte_parsed = i + 1 + 2 + 2 + 4;
                 i += 10;
                 continue;
             }
-            #[cfg(feature = "binary-sync-pixels")]
+            #[cfg(all(feature = "binary-sync-pixels", not(feature = "time-tracking")))]
             if current_command & 0x00ff_ffff_ffff_ffff == PXMULTI_PATTERN {
                 i += "PXMULTI".len();
                 let header = unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };

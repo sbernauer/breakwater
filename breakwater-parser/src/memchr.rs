@@ -14,6 +14,13 @@ impl<FB: FrameBuffer> MemchrParser<FB> {
 
 impl<FB: FrameBuffer> Parser for MemchrParser<FB> {
     fn parse(&mut self, buffer: &[u8], _response: &mut Vec<u8>) -> usize {
+        // As this is a potentially(?) expensive operation we only call it one in this parsing loop
+        // All the pixels likely where in the same TCP packets (+- 1/2 or so) it doesn't matter after all
+        // Encode the timestamp exactly once here, not per pixel: it's constant for the whole parse
+        // call, so computing it per write would just waste throughput on the hot path.
+        #[cfg(feature = "time-tracking")]
+        let current_ts = self.fb.current_ts();
+
         let mut last_char_after_newline = 0;
         for newline in memchr::memchr_iter(b'\n', buffer) {
             // TODO Use get_unchecked everywhere
@@ -53,7 +60,13 @@ impl<FB: FrameBuffer> Parser for MemchrParser<FB> {
                     .parse()
                     .expect("rgba was not a number");
 
-                self.fb.set(x as usize, y as usize, rgba);
+                self.fb.set(
+                    x as usize,
+                    y as usize,
+                    rgba,
+                    #[cfg(feature = "time-tracking")]
+                    current_ts,
+                );
             }
         }
 

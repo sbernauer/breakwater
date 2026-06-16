@@ -110,7 +110,7 @@ impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for NdiSink<FB> {
                     return eyre::Ok(());
                 }
 
-                let source_frame_data = fb.as_bytes();
+                let source_frame_data = fb.pixel_color_bytes();
                 let (target_data, info) = frame
                     .video_data_mut()
                     .context("failed to get mutable access to the NDI frame")?;

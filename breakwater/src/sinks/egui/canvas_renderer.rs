@@ -74,7 +74,7 @@ impl<FB: FrameBuffer> CanvasRenderer<FB> {
                     self.framebuffer.get_height() as i32,
                     glow::RGBA,
                     glow::UNSIGNED_BYTE,
-                    glow::PixelUnpackData::Slice(Some(self.framebuffer.as_bytes())),
+                    glow::PixelUnpackData::Slice(Some(self.framebuffer.pixel_color_bytes())),
                 );
 
                 gl.bind_texture(glow::TEXTURE_2D, None);

@@ -2,7 +2,9 @@ use core::slice;
 
 use tracing::debug;
 
-use super::{FB_BYTES_PER_PIXEL, FrameBuffer};
+use super::FrameBuffer;
+
+pub const FB_BYTES_PER_PIXEL: usize = std::mem::size_of::<u32>();
 
 pub struct SimpleFrameBuffer {
     width: usize,
@@ -77,7 +79,7 @@ impl FrameBuffer for SimpleFrameBuffer {
     }
 
     #[inline(always)]
-    fn as_bytes(&self) -> &[u8] {
+    fn pixel_color_bytes(&self) -> &[u8] {
         let len = self.buffer.len() * FB_BYTES_PER_PIXEL;
         let ptr = self.buffer.as_ptr() as *const u8;
         unsafe { std::slice::from_raw_parts(ptr, len) }
