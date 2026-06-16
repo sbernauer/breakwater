@@ -18,7 +18,6 @@ impl<FB: FrameBuffer> Parser for MemchrParser<FB> {
         // All the pixels likely where in the same TCP packets (+- 1/2 or so) it doesn't matter after all
         // Encode the timestamp exactly once here, not per pixel: it's constant for the whole parse
         // call, so computing it per write would just waste throughput on the hot path.
-        #[cfg(feature = "time-tracking")]
         let current_ts = self.fb.current_ts();
 
         let mut last_char_after_newline = 0;
@@ -60,13 +59,7 @@ impl<FB: FrameBuffer> Parser for MemchrParser<FB> {
                     .parse()
                     .expect("rgba was not a number");
 
-                self.fb.set(
-                    x as usize,
-                    y as usize,
-                    rgba,
-                    #[cfg(feature = "time-tracking")]
-                    current_ts,
-                );
+                self.fb.set(x as usize, y as usize, rgba, current_ts);
             }
         }
 

@@ -1,6 +1,6 @@
 use std::{num::NonZero, sync::Arc};
 
-use breakwater_parser::FrameBuffer;
+use breakwater_parser::{FrameBuffer, PixelColorBytes};
 use eframe::glow::{self, HasContext, PixelUnpackData};
 
 const VERTEX: Vertex = Vertex {
@@ -17,32 +17,23 @@ pub struct Vertex {
 
 /// Handles opengl related stuff to instruct a gpu to draw the framebuffer into a an egui widget.
 #[derive(Debug)]
-pub struct CanvasRenderer<FB: FrameBuffer> {
-    framebuffer: Arc<FB>,
+pub struct CanvasRenderer<FB: FrameBuffer + PixelColorBytes> {
+    fb: Arc<FB>,
     vertex_array: glow::VertexArray,
     vertex_buffer: glow::Buffer,
     canvas_texture: glow::Texture,
     canvas_shaders: glow::Program,
 }
 
-impl<FB: FrameBuffer> CanvasRenderer<FB> {
-    pub fn new(
-        gl: &eframe::glow::Context,
-        framebuffer: Arc<FB>,
-        view_ports: NonZero<usize>,
-    ) -> Self {
+impl<FB: FrameBuffer + PixelColorBytes> CanvasRenderer<FB> {
+    pub fn new(gl: &eframe::glow::Context, fb: Arc<FB>, view_ports: NonZero<usize>) -> Self {
         let (vertex_array, vertex_buffer) = unsafe { init_vertex_data(gl, view_ports.get()) };
-        let canvas_texture = unsafe {
-            init_canvas_texture(
-                gl,
-                framebuffer.get_width() as i32,
-                framebuffer.get_height() as i32,
-            )
-        };
+        let canvas_texture =
+            unsafe { init_canvas_texture(gl, fb.get_width() as i32, fb.get_height() as i32) };
         let canvas_shaders = unsafe { init_shaders(gl) };
 
         Self {
-            framebuffer,
+            fb,
             vertex_array,
             vertex_buffer,
             canvas_texture,
@@ -70,11 +61,11 @@ impl<FB: FrameBuffer> CanvasRenderer<FB> {
                     0,
                     0,
                     0,
-                    self.framebuffer.get_width() as i32,
-                    self.framebuffer.get_height() as i32,
+                    self.fb.get_width() as i32,
+                    self.fb.get_height() as i32,
                     glow::RGBA,
                     glow::UNSIGNED_BYTE,
-                    glow::PixelUnpackData::Slice(Some(self.framebuffer.pixel_color_bytes())),
+                    glow::PixelUnpackData::Slice(Some(self.fb.pixel_color_bytes())),
                 );
 
                 gl.bind_texture(glow::TEXTURE_2D, None);

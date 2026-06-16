@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use breakwater_parser::FrameBuffer;
+use breakwater_parser::{FrameBuffer, PixelColorBytes};
 use color_eyre::eyre::{self, Context, ContextCompat};
 use ndi_sdk_sys::{
     four_cc::FourCCVideo,
@@ -29,7 +29,7 @@ pub struct NdiSinkCliArgs {
     pub ndi_source_name: String,
 }
 
-pub struct NdiSink<FB: FrameBuffer> {
+pub struct NdiSink<FB: FrameBuffer + PixelColorBytes> {
     fb: Arc<FB>,
     terminate_signal_rx: broadcast::Receiver<()>,
     fps: u32,
@@ -37,7 +37,7 @@ pub struct NdiSink<FB: FrameBuffer> {
     source: Arc<NDISender>,
 }
 
-impl<FB: FrameBuffer + Sync + Send + 'static> NdiSink<FB> {
+impl<FB: FrameBuffer + PixelColorBytes + Sync + Send + 'static> NdiSink<FB> {
     #[instrument(skip_all, err)]
     pub fn new(
         fb: Arc<FB>,
@@ -83,7 +83,7 @@ impl<FB: FrameBuffer + Sync + Send + 'static> NdiSink<FB> {
 }
 
 #[async_trait]
-impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for NdiSink<FB> {
+impl<FB: FrameBuffer + PixelColorBytes + Sync + Send + 'static> DisplaySink<FB> for NdiSink<FB> {
     #[instrument(skip(self), err)]
     async fn run(&mut self) -> eyre::Result<()> {
         let fb = self.fb.clone();

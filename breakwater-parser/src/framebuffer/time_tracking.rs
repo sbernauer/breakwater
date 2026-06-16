@@ -40,6 +40,10 @@ impl TimeTrackingFrameBuffer {
 }
 
 impl FrameBuffer for TimeTrackingFrameBuffer {
+    /// Please note that the timestamp is truncated to [`40`] bits and therefore has a max value of
+    /// [`TIMESTAMP_MAX`].
+    type Timestamp = u64;
+
     fn get_width(&self) -> usize {
         self.width
     }

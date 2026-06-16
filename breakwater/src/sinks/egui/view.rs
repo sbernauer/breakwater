@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use breakwater_parser::FrameBuffer;
+use breakwater_parser::{FrameBuffer, PixelColorBytes};
 use color_eyre::eyre::{self, ContextCompat};
 use eframe::egui_glow;
 use tokio::sync::broadcast;
@@ -12,8 +12,8 @@ use super::{
 };
 use crate::statistics::StatisticsInformationEvent;
 
-pub struct EguiView<FB: FrameBuffer> {
-    framebuffer: Arc<FB>,
+pub struct EguiView<FB: FrameBuffer + PixelColorBytes> {
+    fb: Arc<FB>,
     canvas_renderer: Arc<CanvasRenderer<FB>>,
     viewports: Vec<ViewportConfig>,
     terminate_rx: broadcast::Receiver<()>,
@@ -24,10 +24,10 @@ pub struct EguiView<FB: FrameBuffer> {
     latest_stats: StatisticsInformationEvent,
 }
 
-impl<FB: FrameBuffer + Send + Sync + 'static> EguiView<FB> {
+impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiView<FB> {
     pub fn new<'a>(
         cc: &'a eframe::CreationContext<'a>,
-        framebuffer: Arc<FB>,
+        fb: Arc<FB>,
         viewports: Vec<ViewportConfig>,
         terminate_rx: broadcast::Receiver<()>,
         stats_rx: broadcast::Receiver<StatisticsInformationEvent>,
@@ -41,7 +41,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> EguiView<FB> {
 
         let canvas_renderer = CanvasRenderer::new(
             gl_context,
-            framebuffer.clone(),
+            fb.clone(),
             viewports.len().try_into().expect("at least one viewport"),
         );
         let canvas_renderer = Arc::new(canvas_renderer);
@@ -50,7 +50,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> EguiView<FB> {
             latest_stats: StatisticsInformationEvent::default(),
             ui,
 
-            framebuffer,
+            fb,
             viewports,
             canvas_renderer,
             terminate_rx,
@@ -64,7 +64,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> EguiView<FB> {
         let painter = ctx.layer_painter(egui::LayerId::background());
 
         let canvas_renderer = self.canvas_renderer.clone();
-        let framebuffer = self.framebuffer.clone();
+        let fb = self.fb.clone();
 
         let callback = egui::PaintCallback {
             rect,
@@ -75,7 +75,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> EguiView<FB> {
                         info.viewport_in_pixels().width_px,
                         info.viewport_in_pixels().height_px,
                     ],
-                    [framebuffer.get_width(), framebuffer.get_height()],
+                    [fb.get_width(), fb.get_height()],
                 );
 
                 canvas_renderer.prepare(painter.gl(), view_port_index, Some(new_vertices));
@@ -131,7 +131,7 @@ fn calc_new_vertices(
     ]
 }
 
-impl<FB: FrameBuffer + Send + Sync + 'static> eframe::App for EguiView<FB> {
+impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> eframe::App for EguiView<FB> {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx();
         #[allow(clippy::single_match_else)]

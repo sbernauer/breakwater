@@ -1,5 +1,7 @@
-// Needed for simple implementation
+// Needed for original implementation
 #![feature(portable_simd)]
+// Used in the [`FrameBuffer`] trait
+#![feature(associated_type_defaults)]
 
 use const_format::formatcp;
 
@@ -12,11 +14,12 @@ mod refactored;
 
 #[cfg(target_arch = "x86_64")]
 pub use assembler::AssemblerParser;
-pub use framebuffer::{FB_BYTES_PER_PIXEL, FrameBuffer};
 #[cfg(feature = "time-tracking")]
 pub use framebuffer::time_tracking::{TimeTrackingFrameBuffer, TimeTrackingPixel};
-#[cfg(not(feature = "time-tracking"))]
-pub use framebuffer::{shared_memory::SharedMemoryFrameBuffer, simple::SimpleFrameBuffer};
+pub use framebuffer::{
+    FB_BYTES_PER_PIXEL, FrameBuffer, MultiPixelSet, PixelColorBytes,
+    shared_memory::SharedMemoryFrameBuffer, simple::SimpleFrameBuffer,
+};
 pub use memchr::MemchrParser;
 pub use original::OriginalParser;
 pub use refactored::RefactoredParser;
@@ -58,8 +61,3 @@ pub trait Parser {
     // Sadly this cant be const (yet?) (https://github.com/rust-lang/rust/issues/71971 and https://github.com/rust-lang/rfcs/pull/2632)
     fn parser_lookahead(&self) -> usize;
 }
-
-#[cfg(all(feature = "time-tracking", feature = "alpha"))]
-compile_error!("The features time-tracking and alpha can not be combined");
-#[cfg(all(feature = "time-tracking", feature = "binary-sync-pixels"))]
-compile_error!("The features time-tracking and binary-sync-pixels can not be combined");

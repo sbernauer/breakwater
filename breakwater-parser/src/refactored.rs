@@ -30,7 +30,7 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
     fn handle_pixel(
         &self,
         buffer: &[u8],
-        #[cfg(feature = "time-tracking")] current_ts: u64,
+        current_ts: FB::Timestamp,
         mut idx: usize,
         response: &mut Vec<u8>,
     ) -> (usize, usize) {
@@ -53,40 +53,19 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
                 // Must be followed by 6 bytes RGB and newline or ...
                 if unsafe { *buffer.get_unchecked(idx + 6) } == b'\n' {
                     idx += 7;
-                    self.handle_rgb(
-                        idx,
-                        buffer,
-                        #[cfg(feature = "time-tracking")]
-                        current_ts,
-                        x,
-                        y,
-                    );
+                    self.handle_rgb(idx, buffer, current_ts, x, y);
                     (idx, idx)
                 }
                 // ... or must be followed by 8 bytes RGBA and newline
                 else if unsafe { *buffer.get_unchecked(idx + 8) } == b'\n' {
                     idx += 9;
-                    self.handle_rgba(
-                        idx,
-                        buffer,
-                        #[cfg(feature = "time-tracking")]
-                        current_ts,
-                        x,
-                        y,
-                    );
+                    self.handle_rgba(idx, buffer, current_ts, x, y);
                     (idx, idx)
                 }
                 // ... for the efficient/lazy clients
                 else if unsafe { *buffer.get_unchecked(idx + 2) } == b'\n' {
                     idx += 3;
-                    self.handle_gray(
-                        idx,
-                        buffer,
-                        #[cfg(feature = "time-tracking")]
-                        current_ts,
-                        x,
-                        y,
-                    );
+                    self.handle_gray(idx, buffer, current_ts, x, y);
                     (idx, idx)
                 } else {
                     (idx, previous)
@@ -109,7 +88,7 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
     fn handle_binary_pixel(
         &self,
         buffer: &[u8],
-        #[cfg(feature = "time-tracking")] current_ts: u64,
+        current_ts: FB::Timestamp,
         mut idx: usize,
     ) -> (usize, usize) {
         let previous = idx;
@@ -122,13 +101,8 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
         let rgba = u32::from_le((command_bytes >> 32) as u32);
 
         // TODO: Support alpha channel (behind alpha feature flag)
-        self.fb.set(
-            x as usize,
-            y as usize,
-            rgba & 0x00ff_ffff,
-            #[cfg(feature = "time-tracking")]
-            current_ts,
-        );
+        self.fb
+            .set(x as usize, y as usize, rgba & 0x00ff_ffff, current_ts);
 
         idx += 8;
         (idx, previous)
@@ -158,23 +132,10 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
     }
 
     #[inline(always)]
-    fn handle_rgb(
-        &self,
-        idx: usize,
-        buffer: &[u8],
-        #[cfg(feature = "time-tracking")] current_ts: u64,
-        x: usize,
-        y: usize,
-    ) {
+    fn handle_rgb(&self, idx: usize, buffer: &[u8], current_ts: FB::Timestamp, x: usize, y: usize) {
         let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(idx - 7) });
 
-        self.fb.set(
-            x,
-            y,
-            rgba & 0x00ff_ffff,
-            #[cfg(feature = "time-tracking")]
-            current_ts,
-        );
+        self.fb.set(x, y, rgba & 0x00ff_ffff, current_ts);
     }
 
     #[cfg(not(feature = "alpha"))]
@@ -183,19 +144,13 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
         &self,
         idx: usize,
         buffer: &[u8],
-        #[cfg(feature = "time-tracking")] current_ts: u64,
+        current_ts: FB::Timestamp,
         x: usize,
         y: usize,
     ) {
         let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(idx - 9) });
 
-        self.fb.set(
-            x,
-            y,
-            rgba & 0x00ff_ffff,
-            #[cfg(feature = "time-tracking")]
-            current_ts,
-        );
+        self.fb.set(x, y, rgba & 0x00ff_ffff, current_ts);
     }
 
     #[cfg(feature = "alpha")]
@@ -204,7 +159,7 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
         &self,
         idx: usize,
         buffer: &[u8],
-        #[cfg(feature = "time-tracking")] current_ts: u64,
+        current_ts: FB::Timestamp,
         x: usize,
         y: usize,
     ) {
@@ -226,13 +181,8 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
         let green: u32 = (((current >> 16) & 0xff) * alpha_comp + green * alpha) / 0xff;
         let blue: u32 = (((current >> 8) & 0xff) * alpha_comp + blue * alpha) / 0xff;
 
-        self.fb.set(
-            x,
-            y,
-            (red << 16) | (green << 8) | blue,
-            #[cfg(feature = "time-tracking")]
-            current_ts,
-        );
+        self.fb
+            .set(x, y, (red << 16) | (green << 8) | blue, current_ts);
     }
 
     #[inline(always)]
@@ -240,7 +190,7 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
         &self,
         idx: usize,
         buffer: &[u8],
-        #[cfg(feature = "time-tracking")] current_ts: u64,
+        current_ts: FB::Timestamp,
         x: usize,
         y: usize,
     ) {
@@ -250,13 +200,7 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
 
         let rgba: u32 = (base << 16) | (base << 8) | base;
 
-        self.fb.set(
-            x,
-            y,
-            rgba,
-            #[cfg(feature = "time-tracking")]
-            current_ts,
-        );
+        self.fb.set(x, y, rgba, current_ts);
     }
 
     #[inline(always)]
@@ -282,7 +226,6 @@ impl<FB: FrameBuffer> Parser for RefactoredParser<FB> {
         // All the pixels likely where in the same TCP packets (+- 1/2 or so) it doesn't matter after all
         // Encode the timestamp exactly once here, not per pixel: it's constant for the whole parse
         // call, so computing it per write would just waste throughput on the hot path.
-        #[cfg(feature = "time-tracking")]
         let current_ts = self.fb.current_ts();
 
         let mut last_byte_parsed = 0;
@@ -294,22 +237,11 @@ impl<FB: FrameBuffer> Parser for RefactoredParser<FB> {
             let current_command =
                 unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };
             if current_command & 0x00ff_ffff == PX_PATTERN {
-                (i, last_byte_parsed) = self.handle_pixel(
-                    buffer,
-                    #[cfg(feature = "time-tracking")]
-                    current_ts,
-                    i,
-                    response,
-                );
+                (i, last_byte_parsed) = self.handle_pixel(buffer, current_ts, i, response);
             } else if cfg!(feature = "binary-set-pixel")
                 && current_command & 0x0000_ffff == PB_PATTERN
             {
-                (i, last_byte_parsed) = self.handle_binary_pixel(
-                    buffer,
-                    #[cfg(feature = "time-tracking")]
-                    current_ts,
-                    i,
-                );
+                (i, last_byte_parsed) = self.handle_binary_pixel(buffer, current_ts, i);
             } else if current_command & 0x00ff_ffff_ffff_ffff == OFFSET_PATTERN {
                 i += 7;
                 self.handle_offset(&mut i, buffer);

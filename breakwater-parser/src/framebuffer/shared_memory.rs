@@ -5,6 +5,8 @@ use color_eyre::eyre::{self, Context, bail};
 use shared_memory::{Shmem, ShmemConf, ShmemError};
 use tracing::{debug, info, instrument, warn};
 
+use crate::framebuffer::{MultiPixelSet, PixelColorBytes};
+
 use super::{FB_BYTES_PER_PIXEL, FrameBuffer};
 
 // Width and height, both of type u16.
@@ -179,7 +181,7 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
     }
 
     #[inline(always)]
-    fn set(&self, x: usize, y: usize, rgba: u32) {
+    fn set(&self, x: usize, y: usize, rgba: u32, _ts: ()) {
         // See 'SimpleFrameBuffer::set' for performance consideration
         if x < self.width && y < self.height {
             let offset = (x + y * self.width) * FB_BYTES_PER_PIXEL;
@@ -190,6 +192,10 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
         }
     }
 
+    fn current_ts(&self) -> Self::Timestamp {}
+}
+
+impl MultiPixelSet for SharedMemoryFrameBuffer {
     #[inline(always)]
     fn set_multi_from_start_index(&self, starting_index: usize, pixels: &[u8]) -> usize {
         let num_pixels = pixels.len() / FB_BYTES_PER_PIXEL;
@@ -215,7 +221,9 @@ impl FrameBuffer for SharedMemoryFrameBuffer {
 
         num_pixels
     }
+}
 
+impl PixelColorBytes for SharedMemoryFrameBuffer {
     #[inline(always)]
     fn pixel_color_bytes(&self) -> &[u8] {
         let base_ptr: *const u8 = self.buffer.as_ptr().cast();

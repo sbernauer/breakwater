@@ -1,7 +1,7 @@
 use std::{fmt::Display, net::SocketAddr, str::FromStr, sync::Arc};
 
 use async_trait::async_trait;
-use breakwater_parser::FrameBuffer;
+use breakwater_parser::{FrameBuffer, PixelColorBytes};
 use color_eyre::eyre::{self, Context};
 use dynamic_overlay::UiOverlay;
 use serde::{Deserialize, Serialize};
@@ -80,8 +80,8 @@ impl FromStr for ViewportConfig {
     }
 }
 
-pub struct EguiSink<FB: FrameBuffer> {
-    framebuffer: Arc<FB>,
+pub struct EguiSink<FB: FrameBuffer + PixelColorBytes> {
+    fb: Arc<FB>,
     viewports: Vec<ViewportConfig>,
     terminate_rx: broadcast::Receiver<()>,
     stats_rx: broadcast::Receiver<StatisticsInformationEvent>,
@@ -89,7 +89,7 @@ pub struct EguiSink<FB: FrameBuffer> {
     ui_overlay: Arc<UiOverlay>,
 }
 
-impl<FB: FrameBuffer + Send + Sync + 'static> EguiSink<FB> {
+impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiSink<FB> {
     /// This function can return [`None`] in case this sink is not configured (by looking at the `cli_args`).
     #[instrument(skip_all, err)]
     pub fn new(
@@ -150,7 +150,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> EguiSink<FB> {
         };
 
         Ok(Some(Self {
-            framebuffer: fb,
+            fb,
             viewports,
             terminate_rx: terminate_signal_rx,
             stats_rx: statistics_information_rx,
@@ -161,7 +161,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> EguiSink<FB> {
 }
 
 #[async_trait]
-impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
+impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
     /// This should only run on the main thread
     #[instrument(skip(self), err)]
     async fn run(&mut self) -> eyre::Result<()> {
@@ -181,7 +181,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
     }
 }
 
-impl<FB: FrameBuffer + Send + Sync + 'static> EguiSink<FB> {
+impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiSink<FB> {
     fn run_eframe_display(&self) -> Result<(), eframe::Error> {
         let options = eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default(),
@@ -192,7 +192,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> EguiSink<FB> {
 
         let terminate = self.terminate_rx.resubscribe();
         let stats = self.stats_rx.resubscribe();
-        let framebuffer = self.framebuffer.clone();
+        let fb = self.fb.clone();
         let viewports = self.viewports.clone();
         let advertised_endpoints = self.advertised_endpoints.clone();
         let ui_overlay = self.ui_overlay.clone();
@@ -203,7 +203,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> EguiSink<FB> {
             Box::new(|cc| {
                 let frontend = view::EguiView::new(
                     cc,
-                    framebuffer,
+                    fb,
                     viewports,
                     terminate,
                     stats,
