@@ -5,6 +5,9 @@ pub mod simple;
 #[cfg(feature = "time-tracking")]
 pub mod time_tracking;
 
+/// Non-time-tracking framebuffer use an [`u32`] to store the color value
+pub const FB_BYTES_PER_PIXEL: usize = std::mem::size_of::<u32>();
+
 pub trait FrameBuffer {
     /// Width in pixels
     fn get_width(&self) -> usize;

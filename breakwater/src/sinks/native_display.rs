@@ -1,7 +1,7 @@
 use std::{num::NonZero, sync::Arc};
 
 use async_trait::async_trait;
-use breakwater_parser::FrameBuffer;
+use breakwater_parser::{FB_BYTES_PER_PIXEL, FrameBuffer};
 use color_eyre::eyre::{self, Context};
 use tokio::sync::{broadcast, mpsc};
 use tracing::instrument;
@@ -152,7 +152,7 @@ impl<FB: FrameBuffer> ApplicationHandler for NativeDisplaySink<FB> {
                     &self
                         .fb
                         .pixel_color_bytes()
-                        .chunks_exact(SHARED_MEMORY_FB_BYTES_PER_PIXEL)
+                        .chunks_exact(FB_BYTES_PER_PIXEL)
                         .map(|chunk| u32::from_be_bytes([0, chunk[0], chunk[1], chunk[2]]))
                         .collect::<Vec<_>>(),
                 );

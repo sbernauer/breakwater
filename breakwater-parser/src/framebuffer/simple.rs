@@ -2,9 +2,7 @@ use core::slice;
 
 use tracing::debug;
 
-use super::FrameBuffer;
-
-pub const FB_BYTES_PER_PIXEL: usize = std::mem::size_of::<u32>();
+use super::{FB_BYTES_PER_PIXEL, FrameBuffer};
 
 pub struct SimpleFrameBuffer {
     width: usize,

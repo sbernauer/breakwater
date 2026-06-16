@@ -12,16 +12,11 @@ mod refactored;
 
 #[cfg(target_arch = "x86_64")]
 pub use assembler::AssemblerParser;
-pub use framebuffer::FrameBuffer;
+pub use framebuffer::{FB_BYTES_PER_PIXEL, FrameBuffer};
 #[cfg(feature = "time-tracking")]
 pub use framebuffer::time_tracking::{TimeTrackingFrameBuffer, TimeTrackingPixel};
 #[cfg(not(feature = "time-tracking"))]
-pub use framebuffer::{
-    shared_memory::{
-        FB_BYTES_PER_PIXEL as SHARED_MEMORY_FB_BYTES_PER_PIXEL, SharedMemoryFrameBuffer,
-    },
-    simple::{FB_BYTES_PER_PIXEL as SIMPLE_FB_BYTES_PER_PIXEL, SimpleFrameBuffer},
-};
+pub use framebuffer::{shared_memory::SharedMemoryFrameBuffer, simple::SimpleFrameBuffer};
 pub use memchr::MemchrParser;
 pub use original::OriginalParser;
 pub use refactored::RefactoredParser;

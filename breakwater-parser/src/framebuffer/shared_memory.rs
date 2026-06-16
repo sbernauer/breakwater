@@ -5,9 +5,7 @@ use color_eyre::eyre::{self, Context, bail};
 use shared_memory::{Shmem, ShmemConf, ShmemError};
 use tracing::{debug, info, instrument, warn};
 
-use super::FrameBuffer;
-
-pub const FB_BYTES_PER_PIXEL: usize = std::mem::size_of::<u32>();
+use super::{FB_BYTES_PER_PIXEL, FrameBuffer};
 
 // Width and height, both of type u16.
 const HEADER_SIZE: usize = 2 * std::mem::size_of::<u16>();
