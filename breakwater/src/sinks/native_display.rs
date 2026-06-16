@@ -1,9 +1,9 @@
 use std::{num::NonZero, sync::Arc};
 
 use async_trait::async_trait;
-use breakwater_parser::{FB_BYTES_PER_PIXEL, FrameBuffer};
+use breakwater_parser::{FB_BYTES_PER_PIXEL, FrameBuffer, PixelColorBytes};
 use color_eyre::eyre::{self, Context};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::broadcast;
 use tracing::instrument;
 use winit::{
     application::ApplicationHandler,
@@ -14,11 +14,7 @@ use winit::{
     window::{Window, WindowAttributes, WindowId},
 };
 
-use crate::{
-    cli_args::CliArgs,
-    sinks::DisplaySink,
-    statistics::{StatisticsEvent, StatisticsInformationEvent},
-};
+use crate::{cli_args::CliArgs, sinks::DisplaySink};
 
 // Sorry! Help needed :)
 unsafe impl<FB: FrameBuffer> Send for NativeDisplaySink<FB> {}
@@ -30,7 +26,6 @@ pub struct NativeDisplaySink<FB: FrameBuffer> {
     surface: Option<softbuffer::Surface<DisplayHandle<'static>, Arc<Window>>>,
 }
 
-#[async_trait]
 impl<FB: FrameBuffer + Sync + Send + 'static> NativeDisplaySink<FB> {
     #[instrument(skip_all, err)]
     pub fn new(
@@ -51,7 +46,9 @@ impl<FB: FrameBuffer + Sync + Send + 'static> NativeDisplaySink<FB> {
 }
 
 #[async_trait]
-impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for NativeDisplaySink<FB> {
+impl<FB: FrameBuffer + PixelColorBytes + Sync + Send + 'static> DisplaySink<FB>
+    for NativeDisplaySink<FB>
+{
     #[instrument(skip(self), err)]
     async fn run(&mut self) -> eyre::Result<()> {
         let fb_clone = self.fb.clone();
@@ -84,7 +81,7 @@ impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for NativeDisplayS
     }
 }
 
-impl<FB: FrameBuffer> ApplicationHandler for NativeDisplaySink<FB> {
+impl<FB: FrameBuffer + PixelColorBytes> ApplicationHandler for NativeDisplaySink<FB> {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let window = Arc::new(
             event_loop
@@ -167,7 +164,7 @@ impl<FB: FrameBuffer> ApplicationHandler for NativeDisplaySink<FB> {
             _ => {
                 tracing::debug!(?event, "received window event");
             }
-        };
+        }
     }
 }
 

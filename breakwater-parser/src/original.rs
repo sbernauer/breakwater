@@ -3,7 +3,19 @@ use std::{
     sync::Arc,
 };
 
+#[cfg(all(feature = "binary-sync-pixels", not(feature = "time-tracking")))]
+use crate::framebuffer::MultiPixelSet;
 use crate::{ALT_HELP_TEXT, HELP_TEXT, Parser, framebuffer::FrameBuffer};
+
+/// The framebuffer capabilities [`OriginalParser`] requires.
+///
+/// With `binary-sync-pixels` the parser memcpys whole pixel runs into the framebuffer via
+/// [`MultiPixelSet`], so the framebuffer must expose that. Otherwise plain [`FrameBuffer`] access
+/// is enough.
+#[cfg(all(feature = "binary-sync-pixels", not(feature = "time-tracking")))]
+pub trait OriginalParserFrameBuffer = FrameBuffer + MultiPixelSet;
+#[cfg(not(all(feature = "binary-sync-pixels", not(feature = "time-tracking"))))]
+pub trait OriginalParserFrameBuffer = FrameBuffer;
 
 pub const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
 
@@ -42,7 +54,7 @@ impl<FB: FrameBuffer> OriginalParser<FB> {
     }
 }
 
-impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
+impl<FB: OriginalParserFrameBuffer> Parser for OriginalParser<FB> {
     #[allow(clippy::too_many_lines)]
     fn parse(&mut self, buffer: &[u8], response: &mut Vec<u8>) -> usize {
         // As this is a potentially(?) expensive operation we only call it one in this parsing loop
@@ -163,7 +175,8 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
                             let blue: u32 =
                                 (((current >> 8) & 0xff) * alpha_comp + blue * alpha) / 0xff;
 
-                            self.fb.set(x, y, (red << 16) | (green << 8) | blue);
+                            self.fb
+                                .set(x, y, (red << 16) | (green << 8) | blue, current_ts);
                             continue;
                         }
 

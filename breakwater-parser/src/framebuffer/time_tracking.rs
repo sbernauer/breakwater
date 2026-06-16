@@ -86,6 +86,8 @@ pub struct TimeTrackingPixel(u64);
 
 impl TimeTrackingPixel {
     pub fn new(rgb: u32, timestamp: u64) -> Self {
+        debug_assert!(timestamp <= TIMESTAMP_MAX);
+
         Self((timestamp << RGB_BITS) | (u64::from(rgb) & RGB_MASK))
     }
 

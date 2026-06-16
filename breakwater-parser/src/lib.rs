@@ -2,6 +2,8 @@
 #![feature(portable_simd)]
 // Used in the [`FrameBuffer`] trait
 #![feature(associated_type_defaults)]
+// Used to conditionally require [`MultiPixelSet`] in the [`OriginalParser`]
+#![feature(trait_alias)]
 
 use const_format::formatcp;
 
@@ -21,7 +23,7 @@ pub use framebuffer::{
     shared_memory::SharedMemoryFrameBuffer, simple::SimpleFrameBuffer,
 };
 pub use memchr::MemchrParser;
-pub use original::OriginalParser;
+pub use original::{OriginalParser, OriginalParserFrameBuffer};
 pub use refactored::RefactoredParser;
 
 pub const HELP_TEXT: &[u8] = formatcp!("\

@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use breakwater_parser::{FrameBuffer, OriginalParser, Parser};
+use breakwater_parser::{FrameBuffer, OriginalParser, OriginalParserFrameBuffer, Parser};
 use color_eyre::eyre::{self, Context};
 use futures::{StreamExt, stream::SelectAll};
 use memadvise::Advice;
@@ -39,7 +39,7 @@ pub struct Server<FB: FrameBuffer> {
     max_connections_per_ip: Option<u64>,
 }
 
-impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
+impl<FB: OriginalParserFrameBuffer + Send + Sync + 'static> Server<FB> {
     #[instrument(skip(fb, statistics_tx), err)]
     pub async fn new(
         listen_addresses: &[impl ToSocketAddrs + Debug + Display],
@@ -150,7 +150,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
     skip(stream, fb, statistics_tx, connection_dropped_tx),
     err(level = "debug")
 )]
-pub async fn handle_connection<FB: FrameBuffer>(
+pub async fn handle_connection<FB: OriginalParserFrameBuffer>(
     mut stream: impl AsyncReadExt + AsyncWriteExt + Send + Unpin,
     ip: IpAddr,
     fb: Arc<FB>,
