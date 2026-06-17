@@ -99,15 +99,9 @@ async fn main() -> eyre::Result<()> {
     {
         use crate::sinks::native_display::NativeDisplaySink;
 
-        if let Some(native_display_sink) = NativeDisplaySink::new(
-            fb.clone(),
-            &args,
-            statistics_tx.clone(),
-            statistics_information_rx.resubscribe(),
-            terminate_signal_rx.resubscribe(),
-        )
-        .await
-        .context("failed to create native display sink")?
+        if let Some(native_display_sink) =
+            NativeDisplaySink::new(fb.clone(), &args, terminate_signal_rx.resubscribe())
+                .context("failed to create native display sink")?
         {
             display_sinks.push(Box::new(native_display_sink));
         }
