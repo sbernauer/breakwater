@@ -3,22 +3,23 @@ use std::{num::NonZero, sync::Arc};
 use async_trait::async_trait;
 use breakwater_parser::FrameBuffer;
 use color_eyre::eyre::{self, Context};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::broadcast;
 use tracing::instrument;
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
     event_loop::{self, EventLoop},
-    platform::wayland::EventLoopBuilderExtWayland,
     raw_window_handle::{DisplayHandle, HasDisplayHandle},
     window::{Window, WindowAttributes, WindowId},
 };
 
-use crate::{
-    cli_args::CliArgs,
-    sinks::DisplaySink,
-    statistics::{StatisticsEvent, StatisticsInformationEvent},
-};
+// FIXME: add X11; not really worth it currently since *BSD is not supported in winit
+#[cfg(target_os = "linux")]
+use winit::platform::wayland::EventLoopBuilderExtWayland;
+#[cfg(target_family = "windows")]
+use winit::platform::windows::EventLoopBuilderExtWindows;
+
+use crate::{cli_args::CliArgs, sinks::DisplaySink};
 
 // Sorry! Help needed :)
 unsafe impl<FB: FrameBuffer> Send for NativeDisplaySink<FB> {}
@@ -30,7 +31,6 @@ pub struct NativeDisplaySink<FB: FrameBuffer> {
     surface: Option<softbuffer::Surface<DisplayHandle<'static>, Arc<Window>>>,
 }
 
-#[async_trait]
 impl<FB: FrameBuffer + Sync + Send + 'static> NativeDisplaySink<FB> {
     #[instrument(skip_all, err)]
     pub fn new(
@@ -65,9 +65,13 @@ impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for NativeDisplayS
                 surface: None,
             };
 
-            let event_loop = EventLoop::builder()
+            let mut event_loop_builder = EventLoop::builder();
+            #[cfg(any(target_os = "linux", target_family = "windows"))]
+            {
                 // FIXME: Can we get rid of this?
-                .with_any_thread(true)
+                event_loop_builder.with_any_thread(true);
+            }
+            let event_loop = event_loop_builder
                 .build()
                 .context("failed to create event loop")?;
 

@@ -202,3 +202,9 @@ jobs:
         with:
           command: build
           args: --target=${{ matrix.target }} --no-default-features --features alpha,binary-set-pixel,binary-sync-pixels,egui,native-display
+      # Most of the native-display functionality is not compiled in if egui is also enabled, so we need to check it separately.
+      - name: Build with feature native-display but without egui
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --target=${{ matrix.target }} --no-default-features --features native-display
