@@ -73,6 +73,10 @@ pub struct CliArgs {
     #[clap(long)]
     pub shared_memory_name: Option<String>,
 
+    /// Stream KFSVS to the given address and UDP port.
+    #[clap(long)]
+    pub kfsvs: Option<SocketAddr>,
+
     #[clap(flatten)]
     pub ffmpeg_sink: crate::sinks::ffmpeg::FfmpegSinkCliArgs,
 

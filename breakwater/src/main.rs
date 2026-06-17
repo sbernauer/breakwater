@@ -10,7 +10,7 @@ use tokio::sync::{broadcast, mpsc};
 use crate::prometheus_exporter::PrometheusExporter;
 use crate::{
     cli_args::CliArgs,
-    sinks::{DisplaySink, ffmpeg::FfmpegSink},
+    sinks::{DisplaySink, ffmpeg::FfmpegSink, kfsvs::KfsvsSink},
     statistics::{Statistics, StatisticsEvent, StatisticsInformationEvent, StatisticsSaveMode},
 };
 
@@ -166,6 +166,12 @@ async fn main() -> eyre::Result<()> {
     {
         display_sinks.push(Box::new(ffmpeg_sink));
         ffmpeg_thread_present = true;
+    }
+
+    if let Some(kfsvs_sink) = KfsvsSink::new(fb.clone(), &args, terminate_signal_rx.resubscribe())
+        .context("failed to create kfsvs sink")?
+    {
+        display_sinks.push(Box::new(kfsvs_sink));
     }
 
     let mut sink_threads = Vec::new();
