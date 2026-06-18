@@ -130,6 +130,7 @@ Breakwater also has some compile-time features for dependency or performance rea
 You can get the list of available features by looking at the [Cargo.toml](Cargo.toml).
 As of writing the following features are supported:
 
+* `prometheus` (enabled by default): Enables the Prometheus metrics exporter. Can be disabled to support compilation on 32-bit targets.
 * `egui` (enabled by default): Enables an advanced customizable graphical frontend on your local system. Please note that this requires a graphical environment.
 * `winit` (enabled by default): Enables a minimalist graphical window on your local system. Please note that this requires a graphical environment.
 * `ndi` (disabled by default): Enables NDI video streaming. This requires the proprietary NDI SDK to be installed, see below.
