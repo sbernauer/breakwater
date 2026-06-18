@@ -31,7 +31,7 @@ impl SinkCliArgs {
     ///
     /// clap can not express this natively: its relational checks (`requires`, `conflicts_with`, ...) operate on
     /// argument presence, not on a specific value being contained in a multi-valued enum argument like
-    /// `enabled_sinks`. So we detect explicitly-passed options via [`ArgMatches::value_source`] and validate manually.
+    /// `enabled_sinks`. So we detect explicitly-passed options via [`clap::ArgMatches::value_source`] and validate manually.
     pub fn validate(
         &self,
         cmd: &mut clap::Command,
