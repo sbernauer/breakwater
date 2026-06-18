@@ -195,16 +195,10 @@ jobs:
           command: build
           # ndi-sdk-sys (behind the ndi features) only supports Linux x86 (no aarch64) so far.
           # We already run the tests on x86 Linux with all features above.
-          args: --target=${{ matrix.target }} --features alpha,binary-set-pixel,binary-sync-pixels,egui,native-display,vnc
+          args: --target=${{ matrix.target }} --features alpha,binary-set-pixel,binary-sync-pixels,egui,winit,vnc
       # I couldn't get pkg-config to work on macOS and Windows, so we omit the vnc and ndi feature
       - if: runner.os == 'macOS' || runner.os == 'Windows'
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --target=${{ matrix.target }} --no-default-features --features alpha,binary-set-pixel,binary-sync-pixels,egui,native-display
-      # Most of the native-display functionality is not compiled in if egui is also enabled, so we need to check it separately.
-      - name: Build with feature native-display but without egui
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --target=${{ matrix.target }} --no-default-features --features native-display
+          args: --target=${{ matrix.target }} --no-default-features --features alpha,binary-set-pixel,binary-sync-pixels,egui,winit

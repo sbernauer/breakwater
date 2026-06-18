@@ -23,7 +23,7 @@ pkgs.stdenv.mkDerivation rec {
     libvncserver
     libvncserver.dev
 
-    # Needed for native-display feature
+    # Needed for winit/egui features
     wayland
     libGL
     libxkbcommon
@@ -38,7 +38,7 @@ pkgs.stdenv.mkDerivation rec {
   # ndi-sdk-sys's build.rs looks for Processing.NDI.Lib.h here
   NDI_HEADER_DIR = "${ndi}/include";
 
-  # Needed for native-display feature
+  # Needed for winit/egui features
   WINIT_UNIX_BACKEND = "wayland";
   LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath buildInputs}";
   XDG_DATA_DIRS = builtins.getEnv "XDG_DATA_DIRS";
