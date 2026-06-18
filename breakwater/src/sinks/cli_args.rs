@@ -92,6 +92,14 @@ impl SinkCliArgs {
                 .map_err(|msg| cmd.error(ErrorKind::MissingRequiredArgument, msg))?;
         }
 
+        #[cfg(all(feature = "egui", feature = "winit"))]
+        if self.enabled_sinks.contains(&Sink::Egui) && self.enabled_sinks.contains(&Sink::Winit) {
+            return Err(cmd.error(
+                ErrorKind::ArgumentConflict,
+                "the egui and winit sinks can not be enabled at the same time",
+            ));
+        }
+
         Ok(())
     }
 }
