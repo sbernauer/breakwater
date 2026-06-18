@@ -4,8 +4,6 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [0.21.1] - 2026-06-18
-
 ### Changed
 
 - Bump `ndi-sdk-sys` to `0.1.1` (instead of a forked version) as it now supports Linux.
