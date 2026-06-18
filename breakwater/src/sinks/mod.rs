@@ -50,6 +50,9 @@ pub enum Sink {
     Ndi,
 }
 
+// Several of these parameters are only consumed by feature-gated sinks, so they appear unused when those
+// features are disabled. We can't use `#[expect(...)]` here, as it would fail when all features are enabled.
+#[allow(unused_variables)]
 pub async fn start_sinks<FB: FrameBuffer + Send + Sync + 'static>(
     cli_args: &SinkCliArgs,
     fb: Arc<FB>,
