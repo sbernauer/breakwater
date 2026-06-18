@@ -37,47 +37,45 @@ impl SinkCliArgs {
         cmd: &mut clap::Command,
         matches: &clap::ArgMatches,
     ) -> Result<(), clap::Error> {
-        // (clap arg id [= field name], user-facing flag, sink the option belongs to)
-        #[allow(unused_mut)]
-        let mut checks: Vec<(&str, &str, Sink)> = vec![
-            ("rtmp_address", "--ffmpeg-rtmp-address", Sink::Ffmpeg),
-            ("video_save_folder", "--ffmpeg-video-save-folder", Sink::Ffmpeg),
-        ];
-        #[cfg(feature = "egui")]
-        checks.extend([
-            ("viewports", "--egui-viewport", Sink::Egui),
-            (
-                "advertised_endpoints",
-                "--egui-advertised-endpoint",
-                Sink::Egui,
-            ),
-            ("ui", "--egui-ui", Sink::Egui),
-        ]);
-        #[cfg(feature = "ndi")]
-        checks.push(("source_name", "--ndi-source-name", Sink::Ndi));
-        #[cfg(feature = "vnc")]
-        checks.extend([
-            ("vnc_listen_addresses", "--vnc-listen-address", Sink::Vnc),
-            ("text", "--vnc-text", Sink::Vnc),
-            ("font", "--vnc-font", Sink::Vnc),
-        ]);
-
-        for (arg_id, flag, sink) in checks {
-            let passed = matches.value_source(arg_id) == Some(ValueSource::CommandLine);
-            if passed && !self.enabled_sinks.contains(&sink) {
-                let sink_name = sink
+        // Every sink-specific option is named with its sink as prefix (e.g. `--vnc-text` belongs to the
+        // `vnc` sink). We rely on that convention to detect options that were passed without their sink
+        // being enabled, instead of hardcoding the full list of arguments here.
+        let sink_prefixes: Vec<(String, String, Sink)> = Sink::value_variants()
+            .iter()
+            .map(|sink| {
+                let name = sink
                     .to_possible_value()
                     .expect("every Sink variant has a name")
                     .get_name()
                     .to_owned();
-                return Err(cmd.error(
-                    ErrorKind::ArgumentConflict,
-                    format!(
-                        "the argument '{flag}' can only be used when the '{sink_name}' sink is enabled \
-                         (pass '--enable-sink {sink_name}')"
-                    ),
-                ));
+                (format!("{name}-"), name, *sink)
+            })
+            .collect();
+
+        // We can't call `cmd.error` (needs `&mut cmd`) while iterating `cmd.get_arguments()` (borrows `cmd`),
+        // so we first collect the offending (flag, sink name) and build the error afterwards.
+        let mut conflict = None;
+        'args: for arg in cmd.get_arguments() {
+            let Some(long) = arg.get_long() else { continue };
+            if matches.value_source(arg.get_id().as_str()) != Some(ValueSource::CommandLine) {
+                continue;
             }
+            for (prefix, name, sink) in &sink_prefixes {
+                if long.starts_with(prefix) && !self.enabled_sinks.contains(sink) {
+                    conflict = Some((format!("--{long}"), name.clone()));
+                    break 'args;
+                }
+            }
+        }
+
+        if let Some((flag, sink_name)) = conflict {
+            return Err(cmd.error(
+                ErrorKind::ArgumentConflict,
+                format!(
+                    "the argument '{flag}' can only be used when the '{sink_name}' sink is enabled \
+                     (pass '--enable-sink {sink_name}')"
+                ),
+            ));
         }
 
         // Validate that every enabled sink got the arguments it requires. Each sink encapsulates its own
