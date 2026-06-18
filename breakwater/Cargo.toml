@@ -23,6 +23,7 @@ color-eyre.workspace = true
 const_format.workspace = true
 eframe = { workspace = true, optional = true }
 egui = { workspace = true, optional = true }
+futures.workspace = true
 libloading = { workspace = true, optional = true }
 local-ip-address.workspace = true
 memadvise.workspace = true
@@ -36,26 +37,28 @@ serde.workspace = true
 simple_moving_average.workspace = true
 softbuffer = { workspace = true, optional = true }
 thiserror.workspace = true
+tokio-stream.workspace = true
 tokio.workspace = true
-tracing.workspace = true
 tracing-subscriber.workspace = true
+tracing.workspace = true
 vncserver = { workspace = true, optional = true }
 winit = { workspace = true, optional = true }
-tokio-stream.workspace = true
-futures.workspace = true
 
 [dev-dependencies]
 rstest.workspace = true
 
 [features]
 # We don't enable binary-sync-pixels and binary-set-pixel by default to make it a bit harder for clients ;)
-default = ["egui", "vnc"]
+# VNC and NDI require shared libraries to be installed, so we don't enable them by default
+# Yes, egui and winit require a graphical environment, but many people compile this on a desktop and
+# servers admins generally know what they are doing (tm).
+default = ["egui", "winit"]
 
 alpha = ["breakwater-parser/alpha"]
 binary-set-pixel = ["breakwater-parser/binary-set-pixel"]
 binary-sync-pixels = ["breakwater-parser/binary-sync-pixels"]
 egui = ["dep:breakwater-egui-overlay", "dep:bytemuck", "dep:eframe", "dep:egui", "dep:libloading"]
-native-display = ["dep:softbuffer", "dep:winit"]
+winit = ["dep:softbuffer", "dep:winit"]
 vnc = ["dep:vncserver"]
 ndi = ["dep:ndi-sdk-sys"]
 
