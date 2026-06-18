@@ -57,7 +57,8 @@ impl VncSinkCliArgs {
     pub fn validate(&self) -> Result<(), String> {
         if self.vnc_listen_addresses.is_empty() {
             return Err(
-                "the VNC sink requires at least one '--vnc-listen-address' to be specified".to_owned(),
+                "the VNC sink requires at least one '--vnc-listen-address' to be specified"
+                    .to_owned(),
             );
         }
 
