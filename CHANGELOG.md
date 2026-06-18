@@ -12,7 +12,9 @@ All notable changes to this project will be documented in this file.
   - Rename all existing sink-specific-options to start with <sinkname>. This was notably not the case for ffmpeg, some vnc options, and egui.
   - Made it an error to specify options for sinks that are not enabled. In the same vein, obviously some sinks require certain options to be specified (just like now, except those options currently also usually enable the sink in the first place).
   - In `--help`, the options are now grouped by sink using a standard header.
-  - E.g. instead of `` now use ``
+  - Some typical usage pattern examples:
+    - Instead of `--native-display` now use `--enable-sink egui`
+    - Instead of `--vnc-listen-address 0.0.0.0:5900 --text foo` now use `--enable-sink vnc --vnc-listen-address 0.0.0.0:5900 --vnc-text foo`
 - BREAKING: The default sink feature set has changed: By default we now only enable `winit` and `egui` ([#89]).<br>
   They require a graphical environment, but most people getting started with breakwater will likely do that on a desktop, servers admins generally know what they are doing (tm).
   Once we have a webserver we might want to re-visit that choice.
