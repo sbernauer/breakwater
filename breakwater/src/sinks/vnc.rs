@@ -52,6 +52,19 @@ pub struct VncSinkCliArgs {
     pub font: String,
 }
 
+impl VncSinkCliArgs {
+    /// Validates the arguments under the assumption that the VNC sink is enabled.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.vnc_listen_addresses.is_empty() {
+            return Err(
+                "the VNC sink requires at least one '--vnc-listen-address' to be specified".to_owned(),
+            );
+        }
+
+        Ok(())
+    }
+}
+
 // Sorry! Help needed :)
 unsafe impl<FB: FrameBuffer> Send for VncSink<'_, FB> {}
 

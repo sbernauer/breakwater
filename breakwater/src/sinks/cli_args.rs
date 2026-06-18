@@ -80,6 +80,20 @@ impl SinkCliArgs {
             }
         }
 
+        // Validate that every enabled sink got the arguments it requires. Each sink encapsulates its own
+        // requirements in a `validate` method, which we only invoke when that sink is actually enabled.
+        if self.enabled_sinks.contains(&Sink::Ffmpeg) {
+            self.ffmpeg_sink
+                .validate()
+                .map_err(|msg| cmd.error(ErrorKind::MissingRequiredArgument, msg))?;
+        }
+        #[cfg(feature = "vnc")]
+        if self.enabled_sinks.contains(&Sink::Vnc) {
+            self.vnc_sink
+                .validate()
+                .map_err(|msg| cmd.error(ErrorKind::MissingRequiredArgument, msg))?;
+        }
+
         Ok(())
     }
 }

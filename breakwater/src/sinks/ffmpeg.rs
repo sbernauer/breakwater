@@ -21,6 +21,20 @@ pub struct FfmpegSinkCliArgs {
     pub video_save_folder: Option<String>,
 }
 
+impl FfmpegSinkCliArgs {
+    /// Validates the arguments under the assumption that the ffmpeg sink is enabled.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.rtmp_address.is_none() && self.video_save_folder.is_none() {
+            return Err(
+                "the ffmpeg sink requires either '--ffmpeg-rtmp-address' or '--ffmpeg-video-save-folder' to be specified"
+                    .to_owned(),
+            );
+        }
+
+        Ok(())
+    }
+}
+
 pub struct FfmpegSink<FB: FrameBuffer> {
     cli_args: FfmpegSinkCliArgs,
     fb: Arc<FB>,
