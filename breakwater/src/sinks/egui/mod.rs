@@ -20,12 +20,10 @@ mod view;
 
 #[derive(Clone, Debug, clap::Args)]
 #[command(next_help_heading = "egui sink options")]
-#[allow(clippy::struct_field_names)]
 pub struct EguiSinkCliArgs {
     /// Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`.
     /// Might be specified multiple times for more than one viewport. Useful for multi-projector setups.
     /// Defaults to display the entire canvas.
-    /// Implies --native-display.
     #[clap(long = "egui-viewport")]
     pub viewports: Vec<crate::sinks::egui::ViewportConfig>,
 
@@ -34,7 +32,6 @@ pub struct EguiSinkCliArgs {
     pub advertised_endpoints: Vec<String>,
 
     /// Provide a path to a dylib containing a custom egui overlay.
-    /// Implies --native-display.
     //
     // Qualifying import here to avoid feature-specific imports
     #[clap(long = "egui-ui")]

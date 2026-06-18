@@ -23,7 +23,7 @@ pub struct NdiSinkCliArgs {
     /// Readable NDI source name
     #[clap(
         long = "ndi-source-name",
-        default_value = "Pixelflut server (breakwater="
+        default_value = "Pixelflut server (breakwater)"
     )]
     pub source_name: String,
 }

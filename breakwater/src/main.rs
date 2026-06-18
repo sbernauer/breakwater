@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use breakwater_parser::SharedMemoryFrameBuffer;
-use clap::Parser;
+use clap::{CommandFactory, FromArgMatches};
 use color_eyre::eyre::{self, Context};
 use server::Server;
 use tokio::sync::{broadcast, mpsc};
@@ -39,7 +39,14 @@ async fn main() -> eyre::Result<()> {
         .from_env()?;
     tracing_subscriber::fmt().with_env_filter(filter).init();
 
-    let args = CliArgs::parse();
+    // We parse via `ArgMatches` (instead of `CliArgs::parse()`) so that `SinkCliArgs::validate` can use
+    // `value_source` to tell which sink options were actually passed on the command line.
+    let mut cmd = CliArgs::command();
+    let matches = cmd.get_matches_mut();
+    let args = CliArgs::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
+    if let Err(e) = args.sinks.validate(&mut cmd, &matches) {
+        e.exit();
+    }
 
     // Not using dynamic dispatch here for performance reasons
     let fb = Arc::new(

@@ -32,7 +32,6 @@ const STATS_HEIGHT: usize = 35;
 
 #[derive(Clone, Debug, clap::Args)]
 #[command(next_help_heading = "VNC sink options")]
-#[allow(clippy::struct_field_names)]
 pub struct VncSinkCliArgs {
     /// VNC server listen address to bind to (multiple can be specified).
     /// Only one address of each IP version can be specified
