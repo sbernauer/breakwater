@@ -18,8 +18,11 @@ All notable changes to this project will be documented in this file.
 - BREAKING: The default sink feature set has changed: By default we now only enable `winit` and `egui` ([#89]).<br>
   They require a graphical environment, but most people getting started with breakwater will likely do that on a desktop, servers admins generally know what they are doing (tm).
   Once we have a webserver we might want to re-visit that choice.
+- Bump `ndi-sdk-sys` to `0.1.1` (instead of a forked version) as it now supports Linux.
+  Due to this we now only depend on crates.io crates, so we can push to it again ([#91]).
 
 [#89]: https://github.com/sbernauer/breakwater/pull/89
+[#91]: https://github.com/sbernauer/breakwater/pull/91
 
 ## [0.21.0] - 2026-06-15
 
