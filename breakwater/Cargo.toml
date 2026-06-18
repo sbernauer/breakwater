@@ -50,8 +50,8 @@ rstest.workspace = true
 [features]
 # We don't enable binary-sync-pixels and binary-set-pixel by default to make it a bit harder for clients ;)
 # VNC and NDI require shared libraries to be installed, so we don't enable them by default
-# Yes, egui and winit require a graphical environment, but many people compile this on a desktop and
-# servers admins generally know what they are doing (tm).
+# Yes, egui and winit require a graphical environment, but most people getting started with
+# breakwater will likely do that on a desktop, servers admins generally know what they are doing (tm).
 default = ["egui", "winit"]
 
 alpha = ["breakwater-parser/alpha"]

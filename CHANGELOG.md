@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- BREAKING: Refactor CLI arguments ([#89]).
+  - Add a single option `-s/--enable-sink <sinkname>`, which replaces all the other sink-enabling flags (like --ndi) and can be specified multiple times (once per desired sink).
+    Each sink is disabled by default, but breakwater warns if none is enabled.
+  - Rename all existing sink-specific-options to start with <sinkname>. This was notably not the case for ffmpeg, some vnc options, and egui.
+  - Made it an error to specify options for sinks that are not enabled. In the same vein, obviously some sinks require certain options to be specified (just like now, except those options currently also usually enable the sink in the first place).
+  - In `--help`, the options are now grouped by sink using a standard header.
+  - E.g. instead of `` now use ``
+- BREAKING: The default sink feature set has changed: By default we now only enable `winit` and `egui` ([#89]).<br>
+  They require a graphical environment, but most people getting started with breakwater will likely do that on a desktop, servers admins generally know what they are doing (tm).
+  Once we have a webserver we might want to re-visit that choice.
+
+[#89]: https://github.com/sbernauer/breakwater/pull/89
+
 ## [0.21.0] - 2026-06-15
 
 ### Added
