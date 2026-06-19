@@ -21,7 +21,7 @@ COPY Arial.ttf .
 # Also we can always build with vnc server support as the docker image contains all needed dependencies in any case
 # While the "native-display" feature compiles successfully, we'd rather not offer the CLI option, as it might cause
 # users to think it should work (which it doesn't). So let's not enable that feature
-RUN RUSTFLAGS='' cargo build --release --no-default-features --features vnc,binary-set-pixel
+RUN RUSTFLAGS='' cargo build --release --no-default-features --features prometheus,vnc,binary-set-pixel
 
 FROM debian:bookworm-slim AS final
 RUN apt-get update && \

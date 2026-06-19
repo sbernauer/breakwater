@@ -45,7 +45,7 @@ jobs:
       - if: runner.os != 'Windows'
         name: Build binary (non Windows)
         # We don't want to e.g. set "-C target-cpu=native", so that the binary should run everywhere
-        run: RUSTFLAGS='' cargo build --release --target=${{ matrix.target }} --no-default-features --features egui
+        run: RUSTFLAGS='' cargo build --release --target=${{ matrix.target }} --no-default-features --features prometheus,egui,winit
       - if: runner.os == 'Windows'
         name: Build binary (Windows)
         # Windows is a joke :)
@@ -55,7 +55,7 @@ jobs:
         #      |  ~~~~~~~~~~~~
         #      | The term 'RUSTFLAGS=' is not recognized as a name of a cmdlet, function, script file, or executable program.
         #      | Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-        run: cargo build --release --target=${{ matrix.target }} --no-default-features --features egui
+        run: cargo build --release --target=${{ matrix.target }} --no-default-features --features prometheus,egui,winit
       - name: Rename binary file
         run: mv target/${{ matrix.target }}/release/breakwater${{ matrix.file-suffix }} breakwater-${{ matrix.target }}${{ matrix.file-suffix }}
       - name: Upload Release binaries
@@ -68,7 +68,7 @@ jobs:
       - if: runner.os == 'Linux'
         name: Build binary with VNC support (Linux)
         # We don't want to e.g. set "-C target-cpu=native", so that the binary should run everywhere
-        run: RUSTFLAGS='' cargo build --release --target=${{ matrix.target }} --no-default-features --features egui,vnc
+        run: RUSTFLAGS='' cargo build --release --target=${{ matrix.target }} --no-default-features --features prometheus,egui,winit,vnc
       - if: runner.os == 'Linux'
         name: Rename binary file with VNC support
         run: mv target/${{ matrix.target }}/release/breakwater${{ matrix.file-suffix }} breakwater-with-vnc-support-${{ matrix.target }}${{ matrix.file-suffix }}

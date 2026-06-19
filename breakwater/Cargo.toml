@@ -30,7 +30,7 @@ memadvise.workspace = true
 ndi-sdk-sys = { workspace = true, optional = true }
 number_prefix = { workspace = true, optional = true }
 page_size.workspace = true
-prometheus_exporter.workspace = true
+prometheus_exporter = { workspace = true, optional = true }
 rusttype = { workspace = true, optional = true }
 serde_json.workspace = true
 serde.workspace = true
@@ -52,8 +52,11 @@ rstest.workspace = true
 # VNC and NDI require shared libraries to be installed, so we don't enable them by default
 # Yes, egui and winit require a graphical environment, but most people getting started with
 # breakwater will likely do that on a desktop, servers admins generally know what they are doing (tm).
-default = ["egui", "winit"]
+default = ["prometheus", "egui", "winit"]
 
+# Enables the Prometheus metrics exporter. Can be disabled to support compilation on 32-bit targets.
+# See https://github.com/tikv/rust-prometheus/issues/565
+prometheus = ["dep:prometheus_exporter"]
 alpha = ["breakwater-parser/alpha"]
 binary-set-pixel = ["breakwater-parser/binary-set-pixel"]
 binary-sync-pixels = ["breakwater-parser/binary-sync-pixels"]

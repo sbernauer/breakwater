@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Moved prometheus metric exposition behind the `prometheus` feature.
+  This allows you to build breakwater on platforms where the `prometheus` [currently](https://github.com/tikv/rust-prometheus/issues/565) fails to compile (e.g. 32 bit targets).
+
 ### Changed
 
 - BREAKING: Refactor CLI arguments ([#89]).

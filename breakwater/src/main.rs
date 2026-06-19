@@ -8,13 +8,13 @@ use tokio::sync::{broadcast, mpsc};
 
 use crate::{
     cli_args::CliArgs,
-    prometheus_exporter::PrometheusExporter,
     sinks::start_sinks,
     statistics::{Statistics, StatisticsEvent, StatisticsInformationEvent, StatisticsSaveMode},
 };
 
 mod cli_args;
 mod connection_buffer;
+#[cfg(feature = "prometheus")]
 mod prometheus_exporter;
 mod server;
 mod sinks;
@@ -89,7 +89,8 @@ async fn main() -> eyre::Result<()> {
     .await
     .context("failed to start pixelflut server")?;
 
-    let mut prometheus_exporter = PrometheusExporter::new(
+    #[cfg(feature = "prometheus")]
+    let mut prometheus_exporter = prometheus_exporter::PrometheusExporter::new(
         &args.prometheus_listen_address,
         statistics_information_rx.resubscribe(),
     )
@@ -97,6 +98,7 @@ async fn main() -> eyre::Result<()> {
 
     let server_listener_thread = tokio::spawn(async move { server.start().await });
     let statistics_thread = tokio::spawn(async move { statistics.run().await });
+    #[cfg(feature = "prometheus")]
     let prometheus_exporter_thread = tokio::spawn(async move { prometheus_exporter.run().await });
 
     let (sink_tasks, ffmpeg_thread_present) = start_sinks(
@@ -110,6 +112,7 @@ async fn main() -> eyre::Result<()> {
     .await
     .context("failed to start sinks")?;
 
+    #[cfg(feature = "prometheus")]
     prometheus_exporter_thread.abort();
     server_listener_thread.abort();
 
