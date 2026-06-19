@@ -52,7 +52,7 @@ rstest.workspace = true
 # VNC and NDI require shared libraries to be installed, so we don't enable them by default
 # Yes, egui and winit require a graphical environment, but most people getting started with
 # breakwater will likely do that on a desktop, servers admins generally know what they are doing (tm).
-# default = ["prometheus", "egui", "winit"]
+default = ["prometheus", "egui", "winit"]
 
 # Enables the Prometheus metrics exporter. Can be disabled to support compilation on 32-bit targets.
 # See https://github.com/tikv/rust-prometheus/issues/565
