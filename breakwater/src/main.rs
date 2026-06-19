@@ -82,6 +82,7 @@ async fn main() -> eyre::Result<()> {
                 format!("invalid network buffer size: {}", args.network_buffer_size)
             })?,
         args.connections_per_ip,
+        args.allowed_bytes_per_second,
     )
     .await
     .context("failed to start pixelflut server")?;

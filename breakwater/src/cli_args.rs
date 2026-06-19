@@ -35,6 +35,11 @@ pub struct CliArgs {
     )]
     pub network_buffer_size: i64,
 
+    /// Allowed number of bytes a client can send per second.
+    /// Any additional bytes a client sends are silently dropped.
+    #[clap(long)]
+    pub allowed_bytes_per_second: Option<usize>,
+
     /// Text to display on the screen.
     #[clap(short, long, default_value = "Pixelflut server (breakwater)")]
     pub text: String,

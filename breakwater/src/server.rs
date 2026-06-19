@@ -18,7 +18,7 @@ use tokio::{
     time::Instant,
 };
 use tokio_stream::wrappers::TcpListenerStream;
-use tracing::instrument;
+use tracing::{instrument, warn};
 
 use crate::{
     connection_buffer::ConnectionBuffer,
@@ -37,6 +37,7 @@ pub struct Server<FB: FrameBuffer> {
     network_buffer_size: usize,
     connections_per_ip: HashMap<IpAddr, u64>,
     max_connections_per_ip: Option<u64>,
+    allowed_bytes_per_second: Option<usize>,
 }
 
 impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
@@ -47,6 +48,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
         statistics_tx: mpsc::Sender<StatisticsEvent>,
         network_buffer_size: usize,
         max_connections_per_ip: Option<u64>,
+        allowed_bytes_per_second: Option<usize>,
     ) -> eyre::Result<Self> {
         let mut listener_streams = Vec::with_capacity(listen_addresses.len());
         for addr in listen_addresses {
@@ -68,6 +70,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
             network_buffer_size,
             connections_per_ip: HashMap::new(),
             max_connections_per_ip,
+            allowed_bytes_per_second,
         })
     }
 
@@ -126,6 +129,9 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
             let statistics_tx_for_thread = self.statistics_tx.clone();
             let network_buffer_size = self.network_buffer_size;
             let connection_dropped_tx_clone = connection_dropped_tx.clone();
+            let allowed_bytes_per_interval = self
+                .allowed_bytes_per_second
+                .map(|ab| (ab as usize * 1000) / STATISTICS_REPORT_INTERVAL.as_millis() as usize);
             tokio::spawn(async move {
                 if let Err(error) = handle_connection(
                     stream,
@@ -134,6 +140,7 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
                     statistics_tx_for_thread,
                     network_buffer_size,
                     connection_dropped_tx_clone,
+                    allowed_bytes_per_interval,
                 )
                 .await
                 {
@@ -147,7 +154,13 @@ impl<FB: FrameBuffer + Send + Sync + 'static> Server<FB> {
 }
 
 #[instrument(
-    skip(stream, fb, statistics_tx, connection_dropped_tx),
+    skip(
+        stream,
+        fb,
+        statistics_tx,
+        connection_dropped_tx,
+        allowed_bytes_per_interval
+    ),
     err(level = "debug")
 )]
 pub async fn handle_connection<FB: FrameBuffer>(
@@ -157,6 +170,7 @@ pub async fn handle_connection<FB: FrameBuffer>(
     statistics_tx: mpsc::Sender<StatisticsEvent>,
     network_buffer_size: usize,
     connection_dropped_tx: Option<mpsc::UnboundedSender<IpAddr>>,
+    allowed_bytes_per_interval: Option<usize>,
 ) -> eyre::Result<()> {
     tracing::debug!("handling new connection");
 
@@ -183,6 +197,8 @@ pub async fn handle_connection<FB: FrameBuffer>(
     let mut last_statistics = Instant::now();
     let mut statistics_bytes_read: u64 = 0;
 
+    let mut has_warned_for_connection = false;
+
     // Fill the buffer up with new data from the socket
     // If there are any bytes left over from the previous loop iteration leave them as is and put the new data behind
     while let Ok(bytes_read) = stream
@@ -203,6 +219,18 @@ pub async fn handle_connection<FB: FrameBuffer>(
                 .context(STATISTICS_SEND_ERR)?;
             last_statistics = Instant::now();
             statistics_bytes_read = 0;
+        }
+
+        if let Some(allowed_bytes_per_interval) = allowed_bytes_per_interval
+            && statistics_bytes_read as usize > allowed_bytes_per_interval
+        {
+            if !has_warned_for_connection {
+                warn!("Rate-limiting client due to send capacity exceeded.");
+                has_warned_for_connection = true;
+            }
+            // Discard pending data, since we ignore the data that continues it
+            leftover_bytes_in_buffer = 0;
+            continue;
         }
 
         let data_end = leftover_bytes_in_buffer + bytes_read;
