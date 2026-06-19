@@ -35,6 +35,11 @@ pub struct CliArgs {
     )]
     pub network_buffer_size: i64,
 
+    /// Allowed number of bytes a client can send per second.
+    /// Any additional bytes a client sends are silently dropped.
+    #[clap(long)]
+    pub allowed_bytes_per_second: Option<usize>,
+
     /// Text to display on the screen.
     #[clap(short, long, default_value = "Pixelflut server (breakwater)")]
     pub text: String,
@@ -72,6 +77,10 @@ pub struct CliArgs {
     /// used to persist the canvas across restarts.
     #[clap(long)]
     pub shared_memory_name: Option<String>,
+
+    /// Stream KFSVS to the given address and UDP port.
+    #[clap(long)]
+    pub kfsvs: Option<SocketAddr>,
 
     #[clap(flatten)]
     pub ffmpeg_sink: crate::sinks::ffmpeg::FfmpegSinkCliArgs,

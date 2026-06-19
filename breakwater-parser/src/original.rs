@@ -93,8 +93,9 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
         }
 
         while i < loop_end {
+            // BUG: byte order is inverted on big-endian
             let current_command =
-                unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };
+                unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() }.to_le();
             if current_command & 0x00ff_ffff == PX_PATTERN {
                 i += 3;
 
@@ -189,7 +190,7 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
                                     // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
                                     x - self.connection_x_offset,
                                     y - self.connection_y_offset,
-                                    rgb.to_be() >> 8
+                                    rgb.swap_bytes() >> 8
                                 )
                                 .as_bytes(),
                             );
@@ -201,7 +202,7 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
             #[cfg(feature = "binary-set-pixel")]
             if current_command & 0x0000_ffff == PB_PATTERN {
                 let command_bytes =
-                    unsafe { (buffer.as_ptr().add(i + 2) as *const u64).read_unaligned() };
+                    unsafe { (buffer.as_ptr().add(i + 2) as *const u64).read_unaligned() }.to_le();
 
                 let x = u16::from_le((command_bytes) as u16);
                 let y = u16::from_le((command_bytes >> 16) as u16);
@@ -217,7 +218,7 @@ impl<FB: FrameBuffer> Parser for OriginalParser<FB> {
             #[cfg(feature = "binary-sync-pixels")]
             if current_command & 0x00ff_ffff_ffff_ffff == PXMULTI_PATTERN {
                 i += "PXMULTI".len();
-                let header = unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };
+                let header = unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() }.to_le();
                 i += 8;
 
                 let start_x = u16::from_le((header) as u16);
@@ -356,7 +357,7 @@ pub(crate) fn simd_unhex(value: *const u8) -> u32 {
 
 #[inline(always)]
 fn parse_coordinate(buffer: *const u8, current_index: &mut usize) -> (usize, bool) {
-    let digits = unsafe { (buffer.add(*current_index) as *const usize).read_unaligned() };
+    let digits = unsafe { (buffer.add(*current_index) as *const usize).read_unaligned() }.to_le();
 
     let mut result = 0;
     let mut visited = false;

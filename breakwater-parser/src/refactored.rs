@@ -87,7 +87,7 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
         let previous = idx;
         idx += 2;
 
-        let command_bytes = unsafe { (buffer.as_ptr().add(idx) as *const u64).read_unaligned() };
+        let command_bytes = unsafe { (buffer.as_ptr().add(idx) as *const u64).read_unaligned() }.to_le();
 
         let x = u16::from_le((command_bytes) as u16);
         let y = u16::from_le((command_bytes >> 16) as u16);
@@ -182,7 +182,8 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
                     // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
                     x - self.connection_x_offset,
                     y - self.connection_y_offset,
-                    rgb.to_be() >> 8
+                    // We want big-endian order on all systems
+                    rgb.swap_bytes() >> 8
                 )
                 .as_bytes(),
             );
@@ -199,7 +200,7 @@ impl<FB: FrameBuffer> Parser for RefactoredParser<FB> {
 
         while i < loop_end {
             let current_command =
-                unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };
+                unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() }.to_le();
             if current_command & 0x00ff_ffff == PX_PATTERN {
                 (i, last_byte_parsed) = self.handle_pixel(buffer, i, response);
             } else if cfg!(feature = "binary-set-pixel")

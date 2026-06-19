@@ -29,7 +29,7 @@ memadvise.workspace = true
 ndi-sdk-sys = { workspace = true, optional = true }
 number_prefix.workspace = true
 page_size.workspace = true
-prometheus_exporter.workspace = true
+prometheus_exporter = { workspace = true, optional = true }
 rusttype.workspace = true
 serde_json.workspace = true
 serde.workspace = true
@@ -49,13 +49,14 @@ rstest.workspace = true
 
 [features]
 # We don't enable binary-sync-pixels and binary-set-pixel by default to make it a bit harder for clients ;)
-default = ["egui", "vnc"]
+default = ["egui", "prometheus", "vnc"]
 
 alpha = ["breakwater-parser/alpha"]
 binary-set-pixel = ["breakwater-parser/binary-set-pixel"]
 binary-sync-pixels = ["breakwater-parser/binary-sync-pixels"]
 egui = ["dep:breakwater-egui-overlay", "dep:bytemuck", "dep:eframe", "dep:egui", "dep:libloading"]
 native-display = ["dep:softbuffer", "dep:winit"]
+prometheus = ["dep:prometheus_exporter"]
 vnc = ["dep:vncserver"]
 ndi = ["dep:ndi-sdk-sys"]
 

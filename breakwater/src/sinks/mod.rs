@@ -10,6 +10,7 @@ pub mod native_display;
 pub mod ndi;
 #[cfg(feature = "vnc")]
 pub mod vnc;
+pub mod kfsvs;
 
 // The stabilization of async functions in traits in Rust 1.75 did not include support for using traits containing async
 // functions as dyn Trait, so we still need to use async_trait here.

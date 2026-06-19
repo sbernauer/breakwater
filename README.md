@@ -140,6 +140,7 @@ As of writing the following features are supported:
 * `alpha` (disabled by default): Respect alpha values during `PX` commands. Disabled by default as this can cause performance degradation.
 * `binary-set-pixel` (disabled by default): Allows use of the `PB` command.
 * `binary-sync-pixels`(disabled by default): Allows use of the `PXMULTI` command.
+* `prometheus` (enabled by default): Enables the Prometheus metrics exporter. Can be disabled to compile for 32-bit targets.
 
 To e.g. turn the VNC server off, build with
 

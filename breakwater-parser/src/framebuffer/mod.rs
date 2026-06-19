@@ -31,6 +31,9 @@ pub trait FrameBuffer {
     /// make sure x and y are in bounds
     unsafe fn get_unchecked(&self, x: usize, y: usize) -> u32;
 
+    /// RGBA is always in this order within the byte.
+    /// However, the memory order is reversed for performance reasons (so native u32’s are laid out in memory).
+    /// Big endian in memory: RGBA, little endian in memory: ABGR
     fn set(&self, x: usize, y: usize, rgba: u32);
 
     /// We can *not* take an `&[u32]` for the pixel here, as `std::slice::from_raw_parts` requires the data to be
@@ -38,6 +41,7 @@ pub trait FrameBuffer {
     /// treat the pixels as raw bytes.
     ///
     /// Returns the coordinates where we landed after filling
+    // FIXME: Broken on big-endian
     #[inline(always)]
     fn set_multi(&self, start_x: usize, start_y: usize, pixels: &[u8]) -> (usize, usize) {
         let starting_index = start_x + start_y * self.get_width();

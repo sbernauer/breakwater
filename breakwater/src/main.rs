@@ -6,15 +6,17 @@ use color_eyre::eyre::{self, Context};
 use server::Server;
 use tokio::sync::{broadcast, mpsc};
 
+#[cfg(feature = "prometheus")]
+use crate::prometheus_exporter::PrometheusExporter;
 use crate::{
     cli_args::CliArgs,
-    prometheus_exporter::PrometheusExporter,
-    sinks::{DisplaySink, ffmpeg::FfmpegSink},
+    sinks::{DisplaySink, ffmpeg::FfmpegSink, kfsvs::KfsvsSink},
     statistics::{Statistics, StatisticsEvent, StatisticsInformationEvent, StatisticsSaveMode},
 };
 
 mod cli_args;
 mod connection_buffer;
+#[cfg(feature = "prometheus")]
 mod prometheus_exporter;
 mod server;
 mod sinks;
@@ -50,6 +52,7 @@ async fn main() -> eyre::Result<()> {
     // If we make the channel to big, stats will start to lag behind
     // TODO: Check performance impact in real-world scenario. Maybe the statistics thread blocks the other threads
     let (statistics_tx, statistics_rx) = mpsc::channel::<StatisticsEvent>(100);
+    #[allow(unused)]
     let (statistics_information_tx, statistics_information_rx) =
         broadcast::channel::<StatisticsInformationEvent>(2);
     let (terminate_signal_tx, terminate_signal_rx) = broadcast::channel::<()>(1);
@@ -79,18 +82,23 @@ async fn main() -> eyre::Result<()> {
                 format!("invalid network buffer size: {}", args.network_buffer_size)
             })?,
         args.connections_per_ip,
+        args.allowed_bytes_per_second,
     )
     .await
     .context("failed to start pixelflut server")?;
 
-    let mut prometheus_exporter = PrometheusExporter::new(
-        &args.prometheus_listen_address,
-        statistics_information_rx.resubscribe(),
-    )
-    .context("failed to start prometheus exporter")?;
+    #[cfg(feature = "prometheus")]
+    {
+        let mut prometheus_exporter = PrometheusExporter::new(
+            &args.prometheus_listen_address,
+            statistics_information_rx.resubscribe(),
+        )
+        .context("failed to start prometheus exporter")?;
+    }
 
     let server_listener_thread = tokio::spawn(async move { server.start().await });
     let statistics_thread = tokio::spawn(async move { statistics.run().await });
+    #[cfg(feature = "prometheus")]
     let prometheus_exporter_thread = tokio::spawn(async move { prometheus_exporter.run().await });
 
     let mut display_sinks = Vec::<Box<dyn DisplaySink<SharedMemoryFrameBuffer> + Send>>::new();
@@ -155,6 +163,12 @@ async fn main() -> eyre::Result<()> {
         ffmpeg_thread_present = true;
     }
 
+    if let Some(kfsvs_sink) = KfsvsSink::new(fb.clone(), &args, terminate_signal_rx.resubscribe())
+        .context("failed to create kfsvs sink")?
+    {
+        display_sinks.push(Box::new(kfsvs_sink));
+    }
+
     let mut sink_threads = Vec::new();
     for mut sink in display_sinks {
         sink_threads.push(tokio::spawn(async move {
@@ -194,6 +208,7 @@ async fn main() -> eyre::Result<()> {
     #[cfg(not(feature = "egui"))]
     handle_ctrl_c(terminate_signal_tx).await?;
 
+    #[cfg(feature = "prometheus")]
     prometheus_exporter_thread.abort();
     server_listener_thread.abort();
 
