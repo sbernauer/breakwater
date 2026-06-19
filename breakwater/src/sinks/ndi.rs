@@ -15,18 +15,17 @@ use ndi_sdk_sys::{
 use tokio::sync::broadcast;
 use tracing::{error, info, instrument, trace};
 
-use crate::sinks::DisplaySink;
+use crate::sinks::{DisplaySink, DisplaySinkType, Sink};
 
-#[derive(Clone, Debug, clap::Parser)]
+#[derive(Clone, Debug, clap::Args)]
 #[command(next_help_heading = "NDI sink options")]
 pub struct NdiSinkCliArgs {
-    /// Enable the NDI source
-    #[clap(long)]
-    pub ndi: bool,
-
-    /// Readable NDI source name. Requires --ndi to be set.
-    #[clap(long, default_value = "breakwater canvas", requires = "ndi")]
-    pub ndi_source_name: String,
+    /// Readable NDI source name
+    #[clap(
+        long = "ndi-source-name",
+        default_value = "Pixelflut server (breakwater)"
+    )]
+    pub source_name: String,
 }
 
 pub struct NdiSink<FB: FrameBuffer> {
@@ -41,17 +40,10 @@ impl<FB: FrameBuffer + Sync + Send + 'static> NdiSink<FB> {
     #[instrument(skip_all, err)]
     pub fn new(
         fb: Arc<FB>,
-        NdiSinkCliArgs {
-            ndi,
-            ndi_source_name,
-        }: &NdiSinkCliArgs,
+        NdiSinkCliArgs { source_name }: &NdiSinkCliArgs,
         fps: u32,
         terminate_signal_rx: broadcast::Receiver<()>,
-    ) -> eyre::Result<Option<Self>> {
-        if !ndi {
-            return Ok(None);
-        }
-
+    ) -> eyre::Result<Self> {
         info!(
             version = sdk::version().unwrap_or("NDI SDK version unavailable"),
             "NDI SDK version",
@@ -59,7 +51,7 @@ impl<FB: FrameBuffer + Sync + Send + 'static> NdiSink<FB> {
         sdk::initialize().context("failed to initialize NDI SDK")?;
 
         let source = NDISenderBuilder::new()
-            .name(ndi_source_name)?
+            .name(source_name)?
             .clock_video(true)
             .build()
             .context("failed to build NDI sender")?;
@@ -73,12 +65,18 @@ impl<FB: FrameBuffer + Sync + Send + 'static> NdiSink<FB> {
             "Started NDI source",
         );
 
-        Ok(Some(Self {
+        Ok(Self {
             fb,
             terminate_signal_rx,
             source: Arc::new(source),
             fps,
-        }))
+        })
+    }
+}
+
+impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySinkType<FB> for NdiSink<FB> {
+    fn sink_type() -> Sink {
+        Sink::Ndi
     }
 }
 

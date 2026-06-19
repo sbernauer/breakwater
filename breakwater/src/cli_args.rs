@@ -1,12 +1,13 @@
 use std::net::SocketAddr;
 
-use clap::Parser;
 use const_format::formatcp;
+
+use crate::sinks::cli_args::SinkCliArgs;
 
 pub const DEFAULT_NETWORK_BUFFER_SIZE: usize = 256 * 1024;
 pub const DEFAULT_NETWORK_BUFFER_SIZE_STR: &str = formatcp!("{}", DEFAULT_NETWORK_BUFFER_SIZE);
 
-#[derive(Parser, Debug)]
+#[derive(clap::Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 pub struct CliArgs {
     /// Listen address to bind to (multiple can be specified).
@@ -35,11 +36,7 @@ pub struct CliArgs {
     )]
     pub network_buffer_size: i64,
 
-    /// Text to display on the screen.
-    #[clap(short, long, default_value = "Pixelflut server (breakwater)")]
-    pub text: String,
-
-    /// Listen address the prometheus exporter should listen on.
+    /// Listen address the Prometheus exporter should listen on.
     #[clap(short, long, default_value = "[::]:9100")]
     pub prometheus_listen_address: String,
 
@@ -61,12 +58,6 @@ pub struct CliArgs {
     #[clap(short, long)]
     pub connections_per_ip: Option<u64>,
 
-    /// Enable native display output. This requires some form of graphical system (so will probably not work on your
-    /// server).
-    #[cfg(any(feature = "native-display", feature = "egui"))]
-    #[clap(long)]
-    pub native_display: bool,
-
     /// Create (or use an existing) shared memory region for the framebuffer.
     /// This enables other applications to read and write Pixel values to the framebuffer or can be
     /// used to persist the canvas across restarts.
@@ -74,17 +65,5 @@ pub struct CliArgs {
     pub shared_memory_name: Option<String>,
 
     #[clap(flatten)]
-    pub ffmpeg_sink: crate::sinks::ffmpeg::FfmpegSinkCliArgs,
-
-    #[cfg(feature = "egui")]
-    #[clap(flatten)]
-    pub egui_sink: crate::sinks::egui::EguiSinkCliArgs,
-
-    #[cfg(feature = "ndi")]
-    #[clap(flatten)]
-    pub ndi_sink: crate::sinks::ndi::NdiSinkCliArgs,
-
-    #[cfg(feature = "vnc")]
-    #[clap(flatten)]
-    pub vnc_sink: crate::sinks::vnc::VncSinkCliArgs,
+    pub sinks: SinkCliArgs,
 }

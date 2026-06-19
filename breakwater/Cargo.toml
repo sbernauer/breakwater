@@ -23,40 +23,43 @@ color-eyre.workspace = true
 const_format.workspace = true
 eframe = { workspace = true, optional = true }
 egui = { workspace = true, optional = true }
+futures.workspace = true
 libloading = { workspace = true, optional = true }
 local-ip-address.workspace = true
 memadvise.workspace = true
 ndi-sdk-sys = { workspace = true, optional = true }
-number_prefix.workspace = true
+number_prefix = { workspace = true, optional = true }
 page_size.workspace = true
 prometheus_exporter.workspace = true
-rusttype.workspace = true
+rusttype = { workspace = true, optional = true }
 serde_json.workspace = true
 serde.workspace = true
 simple_moving_average.workspace = true
 softbuffer = { workspace = true, optional = true }
 thiserror.workspace = true
+tokio-stream.workspace = true
 tokio.workspace = true
-tracing.workspace = true
 tracing-subscriber.workspace = true
+tracing.workspace = true
 vncserver = { workspace = true, optional = true }
 winit = { workspace = true, optional = true }
-tokio-stream.workspace = true
-futures.workspace = true
 
 [dev-dependencies]
 rstest.workspace = true
 
 [features]
 # We don't enable binary-sync-pixels and binary-set-pixel by default to make it a bit harder for clients ;)
-default = ["egui", "vnc"]
+# VNC and NDI require shared libraries to be installed, so we don't enable them by default
+# Yes, egui and winit require a graphical environment, but most people getting started with
+# breakwater will likely do that on a desktop, servers admins generally know what they are doing (tm).
+default = ["egui", "winit"]
 
 alpha = ["breakwater-parser/alpha"]
 binary-set-pixel = ["breakwater-parser/binary-set-pixel"]
 binary-sync-pixels = ["breakwater-parser/binary-sync-pixels"]
 egui = ["dep:breakwater-egui-overlay", "dep:bytemuck", "dep:eframe", "dep:egui", "dep:libloading"]
-native-display = ["dep:softbuffer", "dep:winit"]
-vnc = ["dep:vncserver"]
+winit = ["dep:softbuffer", "dep:winit"]
+vnc = ["dep:vncserver", "dep:number_prefix", "dep:rusttype"]
 ndi = ["dep:ndi-sdk-sys"]
 
 [lints]
