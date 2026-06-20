@@ -31,7 +31,6 @@ binary-sync-pixels = []
 time-tracking = []
 
 default = []
-# default = ["time-tracking"] # TEMP for IDE
 
 [lints]
 workspace = true
