@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-06-20
+
 ### Added
 
 - Moved prometheus metric exposition behind the `prometheus` feature.
