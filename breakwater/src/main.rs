@@ -75,16 +75,20 @@ async fn main() -> eyre::Result<()> {
     )?;
 
     let mut server = Server::new(
-        &args.listen_addresses,
+        &args.network_listener.listen_addresses,
         fb.clone(),
         statistics_tx.clone(),
-        args.network_buffer_size
+        args.network_listener
+            .network_buffer_size
             .try_into()
             // This should never happen as clap checks the range for us
             .with_context(|| {
-                format!("invalid network buffer size: {}", args.network_buffer_size)
+                format!(
+                    "invalid network buffer size: {}",
+                    args.network_listener.network_buffer_size
+                )
             })?,
-        args.connections_per_ip,
+        args.network_listener.connections_per_ip,
     )
     .await
     .context("failed to start pixelflut server")?;
@@ -104,7 +108,7 @@ async fn main() -> eyre::Result<()> {
     let (sink_tasks, ffmpeg_thread_present) = start_sinks(
         &args.sinks,
         fb.clone(),
-        &args.listen_addresses,
+        &args.network_listener.listen_addresses,
         args.fps,
         statistics_tx,
         statistics_information_rx,
@@ -123,7 +127,7 @@ async fn main() -> eyre::Result<()> {
             .context("failed to stop sink")?;
     }
 
-    // We need to stop this thread as the last, as others always try to send statistics to it
+    // We need to stop this thread last, as others always try to send statistics to it
     statistics_thread.abort();
 
     if ffmpeg_thread_present {
