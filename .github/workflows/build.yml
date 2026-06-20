@@ -78,31 +78,22 @@ jobs:
       - name: Install NDI SDK
         uses: ./.github/actions/install-ndi
       # We can't use `--all-features`: `time-tracking` is mutually exclusive with `alpha` and
-      # `binary-sync-pixels`, and `egui` is mutually exclusive with `native-display`. `--all-features`
-      # would silently disable the conflicting code paths instead of testing them. So we lint
-      # explicit, valid feature combinations instead.
+      # `binary-sync-pixels`. `--all-features`. So we lint explicit, valid feature combinations
+      # instead.
       - name: Run clippy action to produce annotations (all compatible features)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         uses: actions-rs/clippy-check@v1
         if: env.GITHUB_TOKEN != null
         with:
-          args: --all-targets -p breakwater --features alpha,binary-set-pixel,binary-sync-pixels,egui,vnc,ndi -- -D warnings
+          args: --all-targets -p breakwater --features prometheus,alpha,binary-set-pixel,binary-sync-pixels,egui,winit,vnc,ndi -- -D warnings
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Run clippy manually without annotations (no default features)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        if: env.GITHUB_TOKEN == null
+      - name: Run clippy (no default features)
         run: cargo clippy --all-targets --no-default-features -- -D warnings
-      - name: Run clippy manually without annotations (all compatible features)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        if: env.GITHUB_TOKEN == null
-        run: cargo clippy --all-targets -p breakwater --features alpha,binary-set-pixel,binary-sync-pixels,egui,vnc,ndi -- -D warnings
-      - name: Run clippy on the native-display feature (mutually exclusive with egui)
-        run: cargo clippy --all-targets -p breakwater --no-default-features --features alpha,binary-set-pixel,binary-sync-pixels,native-display,vnc,ndi -- -D warnings
+      - name: Run clippy (all compatible features)
+        run: cargo clippy --all-targets --features prometheus,alpha,binary-set-pixel,binary-sync-pixels,egui,winit,vnc,ndi -- -D warnings
       - name: Run clippy on the time-tracking feature (mutually exclusive with alpha and binary-sync-pixels)
-        run: cargo clippy --all-targets -p breakwater-parser --features time-tracking,binary-set-pixel -- -D warnings
+        run: cargo clippy --all-targets --features prometheus,binary-set-pixel,egui,winit,vnc,ndi,time-tracking -- -D warnings
 
   run_rustdoc:
     name: Run RustDoc
@@ -142,34 +133,17 @@ jobs:
           command: test
           args: --no-default-features --all-targets
       # We can't use `--all-features`: `time-tracking` is mutually exclusive with `alpha` and
-      # `binary-sync-pixels`, and `egui` is mutually exclusive with `native-display`. `--all-features`
-      # would silently disable the conflicting code paths (e.g. `alpha`/`PXMULTI` become no-ops),
-      # which slips past compilation but fails these tests. So we test explicit, valid combinations.
-      - name: Test breakwater with all compatible features (egui variant)
+      # `binary-sync-pixels`. So we test explicit, valid combinations.
+      - name: Test breakwater with all compatible features
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: -p breakwater --features alpha,binary-set-pixel,binary-sync-pixels,egui,vnc,ndi --all-targets
-      - name: Test breakwater with the native-display feature (mutually exclusive with egui)
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: -p breakwater --no-default-features --features alpha,binary-set-pixel,binary-sync-pixels,native-display,vnc,ndi --all-targets
-      - name: Test breakwater-parser with all compatible features
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: -p breakwater-parser --features alpha,binary-set-pixel,binary-sync-pixels --all-targets
+          args: --features prometheus,alpha,binary-set-pixel,binary-sync-pixels,egui,winit,vnc,ndi --all-targets
       - name: Test breakwater-parser with the time-tracking feature (mutually exclusive with alpha and binary-sync-pixels)
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: -p breakwater-parser --features time-tracking,binary-set-pixel --all-targets
-      - name: Test vnc feature
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --no-default-features --features vnc --all-targets
+          args: --features prometheus,binary-set-pixel,egui,winit,vnc,ndi,time-tracking --all-targets
 
   run_build:
     name: Build for ${{ matrix.target }}
