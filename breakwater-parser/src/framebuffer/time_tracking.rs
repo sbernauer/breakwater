@@ -44,19 +44,23 @@ impl FrameBuffer for TimeTrackingFrameBuffer {
     /// max value of [`TIMESTAMP_MAX`].
     type Timestamp = u64;
 
+    #[inline(always)]
     fn get_width(&self) -> usize {
         self.width
     }
 
+    #[inline(always)]
     fn get_height(&self) -> usize {
         self.height
     }
 
+    #[inline(always)]
     unsafe fn get_unchecked(&self, x: usize, y: usize) -> u32 {
         let pixel_index = self.pixel_index(x, y);
         unsafe { self.buffer.get_unchecked(pixel_index).rgb() }
     }
 
+    #[inline(always)]
     fn set(&self, x: usize, y: usize, rgba: u32, ts: u64) {
         if x < self.width && y < self.height {
             let pixel_index = self.pixel_index(x, y);
@@ -85,6 +89,7 @@ impl FrameBuffer for TimeTrackingFrameBuffer {
 pub struct TimeTrackingPixel(u64);
 
 impl TimeTrackingPixel {
+    #[inline(always)]
     pub fn new(rgb: u32, timestamp: u64) -> Self {
         debug_assert!(timestamp <= TIMESTAMP_MAX);
 
@@ -92,11 +97,13 @@ impl TimeTrackingPixel {
     }
 
     /// The 24-bit RGB color (the implicit alpha byte is always zero).
+    #[inline(always)]
     pub fn rgb(self) -> u32 {
         (self.0 & RGB_MASK) as u32
     }
 
     /// The opaque write timestamp (see the type docs); larger is newer, `0` is never written.
+    #[inline(always)]
     pub fn timestamp(self) -> u64 {
         self.0 >> RGB_BITS
     }
