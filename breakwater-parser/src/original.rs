@@ -12,9 +12,9 @@ use crate::{ALT_HELP_TEXT, HELP_TEXT, Parser, framebuffer::FrameBuffer};
 /// With `binary-sync-pixels` the parser memcpys whole pixel runs into the framebuffer via
 /// [`MultiPixelSet`], so the framebuffer must expose that. Otherwise plain [`FrameBuffer`] access
 /// is enough.
-#[cfg(all(feature = "binary-sync-pixels", not(feature = "time-tracking")))]
+#[cfg(feature = "binary-sync-pixels")]
 pub trait OriginalParserFrameBuffer = FrameBuffer + MultiPixelSet;
-#[cfg(not(all(feature = "binary-sync-pixels", not(feature = "time-tracking"))))]
+#[cfg(not(feature = "binary-sync-pixels"))]
 pub trait OriginalParserFrameBuffer = FrameBuffer;
 
 pub const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
@@ -31,11 +31,11 @@ pub struct OriginalParser<FB: FrameBuffer> {
     connection_x_offset: usize,
     connection_y_offset: usize,
     fb: Arc<FB>,
-    #[cfg(all(feature = "binary-sync-pixels", not(feature = "time-tracking")))]
+    #[cfg(feature = "binary-sync-pixels")]
     remaining_pixel_sync: Option<RemainingPixelSync>,
 }
 
-#[cfg(all(feature = "binary-sync-pixels", not(feature = "time-tracking")))]
+#[cfg(feature = "binary-sync-pixels")]
 #[derive(Debug)]
 pub struct RemainingPixelSync {
     current_index: usize,
@@ -48,7 +48,7 @@ impl<FB: FrameBuffer> OriginalParser<FB> {
             connection_x_offset: 0,
             connection_y_offset: 0,
             fb,
-            #[cfg(all(feature = "binary-sync-pixels", not(feature = "time-tracking")))]
+            #[cfg(feature = "binary-sync-pixels")]
             remaining_pixel_sync: None,
         }
     }
@@ -69,7 +69,7 @@ impl<FB: OriginalParserFrameBuffer> Parser for OriginalParser<FB> {
         let mut i = 0; // We can't use a for loop here because Rust don't lets use skip characters by incrementing i
         let loop_end = buffer.len().saturating_sub(PARSER_LOOKAHEAD); // Let's extract the .len() call and the subtraction into it's own variable so we only compute it once
 
-        #[cfg(all(feature = "binary-sync-pixels", not(feature = "time-tracking")))]
+        #[cfg(feature = "binary-sync-pixels")]
         if let Some(remaining) = &self.remaining_pixel_sync {
             let buffer = &buffer[0..loop_end];
 
@@ -232,7 +232,7 @@ impl<FB: OriginalParserFrameBuffer> Parser for OriginalParser<FB> {
                 i += 10;
                 continue;
             }
-            #[cfg(all(feature = "binary-sync-pixels", not(feature = "time-tracking")))]
+            #[cfg(feature = "binary-sync-pixels")]
             if current_command & 0x00ff_ffff_ffff_ffff == PXMULTI_PATTERN {
                 i += "PXMULTI".len();
                 let header = unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };
