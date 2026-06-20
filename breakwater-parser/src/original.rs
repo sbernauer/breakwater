@@ -3,8 +3,6 @@ use std::{
     sync::Arc,
 };
 
-#[cfg(feature = "binary-sync-pixels")]
-use crate::framebuffer::MultiPixelSet;
 use crate::{ALT_HELP_TEXT, HELP_TEXT, Parser, framebuffer::FrameBuffer};
 
 /// The framebuffer capabilities [`OriginalParser`] requires.
@@ -13,7 +11,7 @@ use crate::{ALT_HELP_TEXT, HELP_TEXT, Parser, framebuffer::FrameBuffer};
 /// [`MultiPixelSet`], so the framebuffer must expose that. Otherwise plain [`FrameBuffer`] access
 /// is enough.
 #[cfg(feature = "binary-sync-pixels")]
-pub trait OriginalParserFrameBuffer = FrameBuffer + MultiPixelSet;
+pub trait OriginalParserFrameBuffer = FrameBuffer + crate::framebuffer::MultiPixelSet;
 #[cfg(not(feature = "binary-sync-pixels"))]
 pub trait OriginalParserFrameBuffer = FrameBuffer;
 
@@ -149,7 +147,7 @@ impl<FB: OriginalParserFrameBuffer> Parser for OriginalParser<FB> {
                             self.fb.set(x, y, rgba & 0x00ff_ffff, current_ts);
                             continue;
                         }
-                        #[cfg(all(feature = "alpha", not(feature = "time-tracking")))]
+                        #[cfg(feature = "alpha")]
                         if unsafe { *buffer.get_unchecked(i + 8) } == b'\n' {
                             last_byte_parsed = i + 8;
                             i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
