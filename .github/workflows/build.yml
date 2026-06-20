@@ -162,7 +162,7 @@ jobs:
       - name: Install cargo-hack
         run: cargo +stable install cargo-hack --locked
       - name: Run tests for all feature combinations
-        run: cargo hack check --workspace --feature-powerset --no-dev-deps --mutually-exclusive-features time-tracking,alpha --mutually-exclusive-features time-tracking,binary-sync-pixels
+        run: cargo hack test --workspace --feature-powerset --mutually-exclusive-features time-tracking,alpha --mutually-exclusive-features time-tracking,binary-sync-pixels
 
   run_build:
     name: Build for ${{ matrix.target }}
