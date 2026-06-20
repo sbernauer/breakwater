@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-#[cfg(all(feature = "binary-sync-pixels", not(feature = "time-tracking")))]
+#[cfg(feature = "binary-sync-pixels")]
 use crate::framebuffer::MultiPixelSet;
 use crate::{ALT_HELP_TEXT, HELP_TEXT, Parser, framebuffer::FrameBuffer};
 
@@ -24,7 +24,7 @@ pub(crate) const PB_PATTERN: u64 = string_to_number(b"PB\0\0\0\0\0\0");
 pub(crate) const OFFSET_PATTERN: u64 = string_to_number(b"OFFSET \0\0");
 pub(crate) const SIZE_PATTERN: u64 = string_to_number(b"SIZE\0\0\0\0");
 pub(crate) const HELP_PATTERN: u64 = string_to_number(b"HELP\0\0\0\0");
-#[cfg(all(feature = "binary-sync-pixels", not(feature = "time-tracking")))]
+#[cfg(feature = "binary-sync-pixels")]
 pub(crate) const PXMULTI_PATTERN: u64 = string_to_number(b"PXMULTI\0");
 
 pub struct OriginalParser<FB: FrameBuffer> {
