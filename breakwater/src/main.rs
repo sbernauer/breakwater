@@ -3,27 +3,14 @@ use std::sync::Arc;
 use breakwater_parser::SharedMemoryFrameBuffer;
 use clap::{CommandFactory, FromArgMatches};
 use color_eyre::eyre::{self, Context};
-use server::Server;
 use tokio::sync::{broadcast, mpsc};
 
-use crate::{
+use breakwater::{
     cli_args::CliArgs,
+    server::Server,
     sinks::start_sinks,
     statistics::{Statistics, StatisticsEvent, StatisticsInformationEvent, StatisticsSaveMode},
 };
-
-mod cli_args;
-mod connection_buffer;
-#[cfg(feature = "prometheus")]
-mod prometheus_exporter;
-mod server;
-mod sinks;
-mod statistics;
-#[cfg(test)]
-mod test_helpers;
-
-#[cfg(test)]
-mod tests;
 
 #[tokio::main]
 #[allow(clippy::too_many_lines)]
@@ -90,7 +77,7 @@ async fn main() -> eyre::Result<()> {
     .context("failed to start pixelflut server")?;
 
     #[cfg(feature = "prometheus")]
-    let mut prometheus_exporter = prometheus_exporter::PrometheusExporter::new(
+    let mut prometheus_exporter = breakwater::prometheus_exporter::PrometheusExporter::new(
         &args.prometheus_listen_address,
         statistics_information_rx.resubscribe(),
     )
