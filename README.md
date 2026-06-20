@@ -34,11 +34,23 @@ Note: This command needs to be enabled using the `binary-sync-pixels` feature
 The easiest way is to continue with the provided [Ready to use Docker setup](#run-in-docker-container) below.
 
 If you prefer the manual way (the best performance - as e.g. can use native SIMD instructions) you need to have [Rust installed](https://www.rust-lang.org/tools/install).
+
+## Running on desktop
+
+In case you have an graphical system, you can directly view the canvas using the `egui` (or `winit` sink):
+
+```bash
+cargo run --release -- --enable-sink egui
+```
+
+## Running on server
+
+As servers mostly don't have an graphical system, you can start a VNC server and connect any VNC client to it.
 You may need to install some additional packages with `sudo apt install clang pkg-config libvncserver-dev`
 Then you can directly run the server with
 
 ```bash
-cargo run --release -- --vnc-listen-address 0.0.0.0:5900 --vnc-listen-address '[::]:5900'
+cargo run --release --features vnc -- --enable-sink vnc --vnc-listen-address 0.0.0.0:5900 --vnc-listen-address '[::]:5900'
 ```
 The default settings should provide you with a ready-to-use server.
 
@@ -184,13 +196,13 @@ It touches on SIMD usage for Pixelflut.
 This command will start the Pixelflut server in a docker container
 
 ```bash
-docker run --rm --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 sbernauer/breakwater --vnc-listen-address 0.0.0.0:5900
+docker run --rm --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 sbernauer/breakwater --enable-sink vnc --vnc-listen-address 0.0.0.0:5900
 ```
 
 If you want to permanently save statistics (to keep them between restarts) you can use the following command:
 
 ```bash
-mkdir -p pixelflut && docker run --rm -u 1000:1000 --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 -v "$(pwd)/pixelflut:/pixelflut" sbernauer/breakwater --vnc-listen-address 0.0.0.0:5900 --statistics-save-file /pixelflut/statistics.json
+mkdir -p pixelflut && docker run --rm -u 1000:1000 --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 -v "$(pwd)/pixelflut:/pixelflut" sbernauer/breakwater --enable-sink vnc --vnc-listen-address 0.0.0.0:5900 --statistics-save-file /pixelflut/statistics.json
 ```
 
 # Ready to use Docker compose setup
