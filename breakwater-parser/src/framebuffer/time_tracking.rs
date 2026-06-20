@@ -3,13 +3,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::FrameBuffer;
 
 /// Number of low bits holding the RGB color; the rest hold the timestamp.
-const RGB_BITS: u32 = 24;
-const RGB_MASK: u64 = (1 << RGB_BITS) - 1;
+pub const RGB_BITS: u32 = 24;
+pub const RGB_MASK: u64 = (1 << RGB_BITS) - 1;
 
-/// Largest timestamp we can store in the remaining `64 - RGB_BITS = 40` bits. In microseconds
-/// that's ≈ 12.7 days of collector uptime before it saturates — plenty, and a collector restart
-/// resets the epoch anyway.
-const TIMESTAMP_MAX: u64 = (1 << (u64::BITS - RGB_BITS)) - 1;
+pub const TIMESTAMP_BITS: u32 = u64::BITS - RGB_BITS;
+/// Largest timestamp we can store in the remaining [`TIMESTAMP_BITS`] bits. In microseconds 40
+/// bits are ≈ 12.7 days of collector uptime before it saturates.
+pub const TIMESTAMP_MAX: u64 = (1 << TIMESTAMP_BITS) - 1;
 
 pub struct TimeTrackingFrameBuffer {
     width: usize,
@@ -40,8 +40,8 @@ impl TimeTrackingFrameBuffer {
 }
 
 impl FrameBuffer for TimeTrackingFrameBuffer {
-    /// Please note that the timestamp is truncated to [`40`] bits and therefore has a max value of
-    /// [`TIMESTAMP_MAX`].
+    /// Please note that the timestamp is truncated to [`TIMESTAMP_BITS`] bits and therefore has a
+    /// max value of [`TIMESTAMP_MAX`].
     type Timestamp = u64;
 
     fn get_width(&self) -> usize {

@@ -43,14 +43,18 @@ pub trait FrameBuffer {
     /// microseconds since startup or anything else.
     ///
     /// Will do nothing if the coordinates are out of bounds.
-    //
-    // Performance consideration: We use `#[inline(always)]` and dead-store elimination should
-    // remove any overhead of this additional, unused, function argument.
+    ///
+    /// Performance consideration: We use `#[inline(always)]` and dead-store elimination should
+    /// remove any overhead of this additional, unused, function argument.
     fn set(&self, x: usize, y: usize, rgba: u32, ts: Self::Timestamp);
 
     /// Calculates the timestamp to be used for pixels based on the current time.
     ///
     /// Note that most framebuffers don't care about the timestamp and will just return `()`.
+    ///
+    /// Performance consideration: It's ok to go and fetch the system time, which might take a
+    /// little(!) bit. Parsers are expected to not call this per parsed pixel, but fetch it and
+    /// cache it for a sane amount of time, e.g. per parse invocation.
     fn current_ts(&self) -> Self::Timestamp;
 }
 
@@ -80,7 +84,5 @@ pub trait PixelColorBytes {
     ///
     /// As the pixel memory doesn't necessarily need to be aligned (think of using shared memory for
     /// that), we can only return it as a list of bytes, not a list of pixels.
-    //
-    // We don't have a continues memory representation of the pixels colors.
     fn pixel_color_bytes(&self) -> &[u8];
 }

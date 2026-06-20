@@ -16,7 +16,9 @@ mod refactored;
 
 #[cfg(target_arch = "x86_64")]
 pub use assembler::AssemblerParser;
-pub use framebuffer::time_tracking::{TimeTrackingFrameBuffer, TimeTrackingPixel};
+pub use framebuffer::time_tracking::{
+    RGB_BITS, RGB_MASK, TIMESTAMP_BITS, TIMESTAMP_MAX, TimeTrackingFrameBuffer, TimeTrackingPixel,
+};
 pub use framebuffer::{
     FB_BYTES_PER_PIXEL, FrameBuffer, MultiPixelSet, PixelColorBytes,
     shared_memory::SharedMemoryFrameBuffer, simple::SimpleFrameBuffer,
