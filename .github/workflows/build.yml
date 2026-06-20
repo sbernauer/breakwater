@@ -145,6 +145,23 @@ jobs:
           command: test
           args: --features prometheus,binary-set-pixel,egui,winit,vnc,ndi,time-tracking --all-targets
 
+  run_tests_for_feature_combinations:
+    name: Run tests for all feature combinations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+      - name: Install libvncserver-dev
+        run: sudo apt update && sudo apt install -y libvncserver-dev
+      - name: Install NDI SDK
+        uses: ./.github/actions/install-ndi
+      - name: Run tests for all feature combinations
+        run: cargo hack check --workspace --feature-powerset --no-dev-deps --mutually-exclusive-features time-tracking,alpha --mutually-exclusive-features time-tracking,binary-sync-pixels
+
   run_build:
     name: Build for ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
