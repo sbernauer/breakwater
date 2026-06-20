@@ -63,7 +63,7 @@ pub struct StatisticsInformationEvent {
     pub statistic_events: u64,
 }
 
-#[allow(clippy::struct_field_names)]
+#[expect(clippy::struct_field_names)]
 pub struct Statistics {
     statistics_rx: mpsc::Receiver<StatisticsEvent>,
     statistics_information_tx: broadcast::Sender<StatisticsInformationEvent>,

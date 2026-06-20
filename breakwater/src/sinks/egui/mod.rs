@@ -9,31 +9,32 @@ use tokio::sync::broadcast;
 use tracing::instrument;
 
 use super::DisplaySink;
-use crate::statistics::StatisticsInformationEvent;
+use crate::{
+    sinks::{DisplaySinkType, Sink},
+    statistics::StatisticsInformationEvent,
+};
 
 mod canvas_renderer;
 mod dynamic_overlay;
 mod view;
 
-#[derive(Clone, Debug, clap::Parser)]
+#[derive(Clone, Debug, clap::Args)]
 #[command(next_help_heading = "egui sink options")]
 pub struct EguiSinkCliArgs {
     /// Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`.
     /// Might be specified multiple times for more than one viewport. Useful for multi-projector setups.
     /// Defaults to display the entire canvas.
-    /// Implies --native-display.
-    #[clap(long)]
-    pub viewport: Vec<crate::sinks::egui::ViewportConfig>,
+    #[clap(long = "egui-viewport")]
+    pub viewports: Vec<crate::sinks::egui::ViewportConfig>,
 
     /// Specify one or more pixelflut endpoints to display.
-    #[clap(long)]
+    #[clap(long = "egui-advertised-endpoint")]
     pub advertised_endpoints: Vec<String>,
 
     /// Provide a path to a dylib containing a custom egui overlay.
-    /// Implies --native-display.
     //
     // Qualifying import here to avoid feature-specific imports
-    #[clap(long)]
+    #[clap(long = "egui-ui")]
     pub ui: Option<std::path::PathBuf>,
 }
 
@@ -95,24 +96,23 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiSink<FB> {
     pub fn new(
         fb: Arc<FB>,
         EguiSinkCliArgs {
-            viewport,
+            viewports,
             advertised_endpoints,
             ui,
         }: &EguiSinkCliArgs,
         listen_addresses: &[SocketAddr],
-        native_display: bool,
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
-    ) -> eyre::Result<Option<Self>> {
-        let viewports = match (viewport.as_slice(), native_display, ui.as_ref()) {
-            (vp, _, _) if !vp.is_empty() => Vec::from(vp),
-            ([], _, Some(_)) | ([], true, _) => vec![ViewportConfig {
+    ) -> eyre::Result<Self> {
+        let viewports = if viewports.is_empty() {
+            vec![ViewportConfig {
                 x: 0,
                 y: 0,
                 width: fb.get_width(),
                 height: fb.get_height(),
-            }],
-            _ => return Ok(None),
+            }]
+        } else {
+            viewports.clone()
         };
 
         let ui_overlay = Arc::new({
@@ -149,14 +149,22 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiSink<FB> {
             advertised_endpoints.clone()
         };
 
-        Ok(Some(Self {
+        Ok(Self {
             fb,
             viewports,
             terminate_rx: terminate_signal_rx,
             stats_rx: statistics_information_rx,
             advertised_endpoints,
             ui_overlay,
-        }))
+        })
+    }
+}
+
+impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> DisplaySinkType<FB>
+    for EguiSink<FB>
+{
+    fn sink_type() -> Sink {
+        Sink::Egui
     }
 }
 

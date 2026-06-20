@@ -3,22 +3,36 @@ use std::{process::Stdio, sync::Arc, time::Duration};
 use async_trait::async_trait;
 use breakwater_parser::{FrameBuffer, PixelColorBytes};
 use chrono::Local;
-use color_eyre::eyre::{self, Context};
+use color_eyre::eyre::{self, Context, bail};
 use tokio::{io::AsyncWriteExt, process::Command, sync::broadcast, time};
 use tracing::instrument;
 
-use crate::sinks::DisplaySink;
+use crate::sinks::{DisplaySink, DisplaySinkType, Sink};
 
-#[derive(Clone, Debug, clap::Parser)]
+#[derive(Clone, Debug, clap::Args)]
 #[command(next_help_heading = "ffmpeg sink options")]
 pub struct FfmpegSinkCliArgs {
     /// Enable rtmp streaming to configured address, e.g. `rtmp://127.0.0.1:1935/live/test`
-    #[clap(long)]
+    #[clap(long = "ffmpeg-rtmp-address")]
     pub rtmp_address: Option<String>,
 
     /// Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4`
-    #[clap(long)]
+    #[clap(long = "ffmpeg-video-save-folder")]
     pub video_save_folder: Option<String>,
+}
+
+impl FfmpegSinkCliArgs {
+    /// Validates the arguments under the assumption that the ffmpeg sink is enabled.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.rtmp_address.is_none() && self.video_save_folder.is_none() {
+            return Err(
+                "the ffmpeg sink requires either '--ffmpeg-rtmp-address' or '--ffmpeg-video-save-folder' to be specified"
+                    .to_owned(),
+            );
+        }
+
+        Ok(())
+    }
 }
 
 pub struct FfmpegSink<FB: FrameBuffer + PixelColorBytes> {
@@ -29,23 +43,25 @@ pub struct FfmpegSink<FB: FrameBuffer + PixelColorBytes> {
 }
 
 impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> FfmpegSink<FB> {
-    #[instrument(skip_all, err)]
+    #[instrument(skip_all)]
     pub fn new(
         fb: Arc<FB>,
         cli_args: &FfmpegSinkCliArgs,
         fps: u32,
         terminate_signal_rx: broadcast::Receiver<()>,
-    ) -> eyre::Result<Option<Self>> {
-        if cli_args.rtmp_address.is_some() || cli_args.video_save_folder.is_some() {
-            Ok(Some(Self {
-                cli_args: cli_args.to_owned(),
-                fb,
-                fps,
-                terminate_signal_rx,
-            }))
-        } else {
-            Ok(None)
+    ) -> Self {
+        Self {
+            cli_args: cli_args.clone(),
+            fb,
+            fps,
+            terminate_signal_rx,
         }
+    }
+}
+
+impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> DisplaySinkType<FB> for FfmpegSink<FB> {
+    fn sink_type() -> Sink {
+        Sink::Ffmpeg
     }
 }
 
@@ -102,8 +118,8 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> DisplaySink<FB> for Ffmpeg
                 Some(video_save_folder) => {
                     ffmpeg_args.extend([Self::video_file(video_save_folder)]);
                 }
-                None => unreachable!(
-                    "FfmpegSink can only be created when either rtmp or video file is activated"
+                None => bail!(
+                    "ffmpeg sink can only be used when either RTMP or video file is activated"
                 ),
             },
         }

@@ -22,7 +22,7 @@ use vncserver::{
 };
 
 use crate::{
-    sinks::DisplaySink,
+    sinks::{DisplaySink, DisplaySinkType, Sink},
     statistics::{
         STATISTICS_INFO_RECV_ERR, STATISTICS_SEND_ERR, StatisticsEvent, StatisticsInformationEvent,
     },
@@ -30,19 +30,40 @@ use crate::{
 
 const STATS_HEIGHT: usize = 35;
 
-#[derive(Clone, Debug, clap::Parser)]
+#[derive(Clone, Debug, clap::Args)]
 #[command(next_help_heading = "VNC sink options")]
 pub struct VncSinkCliArgs {
     /// VNC server listen address to bind to (multiple can be specified).
     /// Only one address of each IP version can be specified
+    //
+    // We can't call it listen_addresses because of
+    // Command breakwater: Argument names must be unique, but 'listen_addresses' is in use by more than one argument or group
     #[clap(long = "vnc-listen-address")]
     pub vnc_listen_addresses: Vec<SocketAddr>,
+
+    /// Text to display on the screen.
+    #[clap(long = "vnc-text", default_value = "Pixelflut server (breakwater)")]
+    pub text: String,
 
     /// The font used to render the text on the screen.
     /// Should be a ttf file.
     /// If you use the default value a copy that ships with breakwater will be used - no need to download and provide the font.
-    #[clap(long, default_value = "Arial.ttf")]
+    #[clap(long = "vnc-font", default_value = "Arial.ttf")]
     pub font: String,
+}
+
+impl VncSinkCliArgs {
+    /// Validates the arguments under the assumption that the VNC sink is enabled.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.vnc_listen_addresses.is_empty() {
+            return Err(
+                "the VNC sink requires at least one '--vnc-listen-address' to be specified"
+                    .to_owned(),
+            );
+        }
+
+        Ok(())
+    }
 }
 
 // Sorry! Help needed :)
@@ -64,20 +85,15 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> VncSink<'_, FB> {
     pub fn new(
         fb: Arc<FB>,
         VncSinkCliArgs {
-            vnc_listen_addresses,
+            vnc_listen_addresses: listen_addresses,
+            text,
             font,
         }: &VncSinkCliArgs,
         fps: u32,
-        text: &str,
         statistics_tx: mpsc::Sender<StatisticsEvent>,
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
-    ) -> eyre::Result<Option<Self>> {
-        if vnc_listen_addresses.is_empty() {
-            tracing::debug!("VNC sink not enabled as no vnc addresses are specified");
-            return Ok(None);
-        }
-
+    ) -> eyre::Result<Self> {
         // We ship our own copy of Arial.ttf, so that users don't need to download and provide it
         let font = if font.as_str() == "Arial.ttf" {
             let font_bytes = include_bytes!("../../../Arial.ttf");
@@ -101,7 +117,7 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> VncSink<'_, FB> {
             (*screen).ipv6port = -1;
         }
 
-        let (v4, v6) = vnc_listen_addresses_v4_v6(vnc_listen_addresses)?;
+        let (v4, v6) = vnc_listen_addresses_v4_v6(listen_addresses)?;
 
         if let Some(v4) = v4 {
             unsafe {
@@ -129,8 +145,7 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> VncSink<'_, FB> {
             }
         }
 
-        // FIXME: Only return Some in case VNC is enabled
-        Ok(Some(Self {
+        Ok(Self {
             fb,
             statistics_tx,
             statistics_information_rx,
@@ -139,7 +154,13 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> VncSink<'_, FB> {
             fps,
             text: text.to_owned(),
             font,
-        }))
+        })
+    }
+}
+
+impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> DisplaySinkType<FB> for VncSink<'_, FB> {
+    fn sink_type() -> Sink {
+        Sink::Vnc
     }
 }
 

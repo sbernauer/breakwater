@@ -9,46 +9,49 @@ use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
     event_loop::{self, EventLoop},
-    platform::wayland::EventLoopBuilderExtWayland,
     raw_window_handle::{DisplayHandle, HasDisplayHandle},
     window::{Window, WindowAttributes, WindowId},
 };
 
-use crate::{cli_args::CliArgs, sinks::DisplaySink};
+// FIXME: add X11; not really worth it currently since *BSD is not supported in winit
+#[cfg(target_os = "linux")]
+use winit::platform::wayland::EventLoopBuilderExtWayland;
+#[cfg(target_family = "windows")]
+use winit::platform::windows::EventLoopBuilderExtWindows;
+
+use crate::sinks::{DisplaySink, DisplaySinkType, Sink};
 
 // Sorry! Help needed :)
-unsafe impl<FB: FrameBuffer> Send for NativeDisplaySink<FB> {}
+unsafe impl<FB: FrameBuffer> Send for WinitSink<FB> {}
 
-pub struct NativeDisplaySink<FB: FrameBuffer> {
+pub struct WinitSink<FB: FrameBuffer> {
     fb: Arc<FB>,
     terminate_signal_rx: broadcast::Receiver<()>,
 
     surface: Option<softbuffer::Surface<DisplayHandle<'static>, Arc<Window>>>,
 }
 
-impl<FB: FrameBuffer + Sync + Send + 'static> NativeDisplaySink<FB> {
-    #[instrument(skip_all, err)]
-    pub fn new(
-        fb: Arc<FB>,
-        cli_args: &CliArgs,
-        terminate_signal_rx: broadcast::Receiver<()>,
-    ) -> eyre::Result<Option<Self>> {
-        if !cli_args.native_display {
-            return Ok(None);
-        }
-
-        Ok(Some(Self {
+impl<FB: FrameBuffer + Sync + Send + 'static> WinitSink<FB> {
+    #[instrument(skip_all)]
+    pub fn new(fb: Arc<FB>, terminate_signal_rx: broadcast::Receiver<()>) -> Self {
+        Self {
             fb,
             terminate_signal_rx,
             surface: None,
-        }))
+        }
+    }
+}
+
+impl<FB: FrameBuffer + PixelColorBytes + Sync + Send + 'static> DisplaySinkType<FB>
+    for WinitSink<FB>
+{
+    fn sink_type() -> Sink {
+        Sink::Winit
     }
 }
 
 #[async_trait]
-impl<FB: FrameBuffer + PixelColorBytes + Sync + Send + 'static> DisplaySink<FB>
-    for NativeDisplaySink<FB>
-{
+impl<FB: FrameBuffer + PixelColorBytes + Sync + Send + 'static> DisplaySink<FB> for WinitSink<FB> {
     #[instrument(skip(self), err)]
     async fn run(&mut self) -> eyre::Result<()> {
         let fb_clone = self.fb.clone();
@@ -62,9 +65,13 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send + 'static> DisplaySink<FB>
                 surface: None,
             };
 
-            let event_loop = EventLoop::builder()
+            let mut event_loop_builder = EventLoop::builder();
+            #[cfg(any(target_os = "linux", target_family = "windows"))]
+            {
                 // FIXME: Can we get rid of this?
-                .with_any_thread(true)
+                event_loop_builder.with_any_thread(true);
+            }
+            let event_loop = event_loop_builder
                 .build()
                 .context("failed to create event loop")?;
 
@@ -75,13 +82,13 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send + 'static> DisplaySink<FB>
             eyre::Result::<()>::Ok(())
         })
         .await
-        .context("failed to join native display thread")??;
+        .context("failed to join winit display thread")??;
 
         Ok(())
     }
 }
 
-impl<FB: FrameBuffer + PixelColorBytes> ApplicationHandler for NativeDisplaySink<FB> {
+impl<FB: FrameBuffer + PixelColorBytes> ApplicationHandler for WinitSink<FB> {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let window = Arc::new(
             event_loop
@@ -168,7 +175,7 @@ impl<FB: FrameBuffer + PixelColorBytes> ApplicationHandler for NativeDisplaySink
     }
 }
 
-impl<FB: FrameBuffer> NativeDisplaySink<FB> {
+impl<FB: FrameBuffer> WinitSink<FB> {
     fn window_attributes(&self) -> WindowAttributes {
         Window::default_attributes()
             .with_title("Pixelflut server (breakwater)")

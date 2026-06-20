@@ -7,7 +7,7 @@ It claims to be the fastest Pixelflut server in existence - at least at the time
 # Features
 1. Accepts Pixelflut commands
 2. Many possible outputs:
-  - Start a native display window in your graphical environment
+  - Start a native display window in your graphical environment (using either winit or egui)
   - Start a VNC server so that everybody can watch
   - Stream to an RTMP sink, so that you can e.g. directly live-stream into Twitch or YouTube
   - Provide an [NDI](https://ndi.video) source
@@ -76,10 +76,8 @@ Options:
           Frames per second the server should aim for [default: 30]
       --network-buffer-size <NETWORK_BUFFER_SIZE>
           The size in bytes of the network buffer used for each open TCP connection. Please use at least 64 KB (64_000 bytes) [default: 262144]
-  -t, --text <TEXT>
-          Text to display on the screen [default: "Pixelflut server (breakwater)"]
   -p, --prometheus-listen-address <PROMETHEUS_LISTEN_ADDRESS>
-          Listen address the prometheus exporter should listen on [default: [::]:9100]
+          Listen address the Prometheus exporter should listen on [default: [::]:9100]
       --statistics-save-file <STATISTICS_SAVE_FILE>
           Save file where statistics are periodically saved. The save file will be read during startup and statistics are restored. To reset the statistics simply remove the file [default: statistics.json]
       --statistics-save-interval-s <STATISTICS_SAVE_INTERVAL_S>
@@ -88,39 +86,38 @@ Options:
           Disable periodical saving of statistics into save file
   -c, --connections-per-ip <CONNECTIONS_PER_IP>
           Allow only a certain number of connections per ip address
-      --native-display
-          Enable native display output. This requires some form of graphical system (so will probably not work on your server)
       --shared-memory-name <SHARED_MEMORY_NAME>
           Create (or use an existing) shared memory region for the framebuffer. This enables other applications to read and write Pixel values to the framebuffer or can be used to persist the canvas across restarts
+  -s, --enable-sink <ENABLED_SINKS>
+          Enable an arbitrary number of sinks (argument can be repeated). The availability of sinks depends on the enabled features [possible values: ffmpeg, egui, winit, vnc, ndi]
   -h, --help
           Print help
   -V, --version
           Print version
 
 ffmpeg sink options:
-      --rtmp-address <RTMP_ADDRESS>
+      --ffmpeg-rtmp-address <RTMP_ADDRESS>
           Enable rtmp streaming to configured address, e.g. `rtmp://127.0.0.1:1935/live/test`
-      --video-save-folder <VIDEO_SAVE_FOLDER>
+      --ffmpeg-video-save-folder <VIDEO_SAVE_FOLDER>
           Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4`
 
 egui sink options:
-      --viewport <VIEWPORT>
-          Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`. Might be specified multiple times for more than one viewport. Useful for multi-projector setups. Defaults to display the entire canvas. Implies --native-display
-      --advertised-endpoints <ADVERTISED_ENDPOINTS>
+      --egui-viewport <VIEWPORTS>
+          Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`. Might be specified multiple times for more than one viewport. Useful for multi-projector setups. Defaults to display the entire canvas
+      --egui-advertised-endpoint <ADVERTISED_ENDPOINTS>
           Specify one or more pixelflut endpoints to display
-      --ui <UI>
-          Provide a path to a dylib containing a custom egui overlay. Implies --native-display
+      --egui-ui <UI>
+          Provide a path to a dylib containing a custom egui overlay
 
 NDI sink options:
-      --ndi
-          Enable the NDI source
-      --ndi-source-name <NDI_SOURCE_NAME>
-          Readable NDI source name. Requires --ndi to be set [default: "breakwater canvas"]
+      --ndi-source-name <SOURCE_NAME>  Readable NDI source name [default: "Pixelflut server (breakwater)"]
 
 VNC sink options:
       --vnc-listen-address <VNC_LISTEN_ADDRESSES>
           VNC server listen address to bind to (multiple can be specified). Only one address of each IP version can be specified
-      --font <FONT>
+      --vnc-text <TEXT>
+          Text to display on the screen [default: "Pixelflut server (breakwater)"]
+      --vnc-font <FONT>
           The font used to render the text on the screen. Should be a ttf file. If you use the default value a copy that ships with breakwater will be used - no need to download and provide the font [default: Arial.ttf]
 ```
 </details>
@@ -133,10 +130,11 @@ Breakwater also has some compile-time features for dependency or performance rea
 You can get the list of available features by looking at the [Cargo.toml](Cargo.toml).
 As of writing the following features are supported:
 
+* `prometheus` (enabled by default): Enables the Prometheus metrics exporter. Can be disabled to support compilation on 32-bit targets.
 * `egui` (enabled by default): Enables an advanced customizable graphical frontend on your local system. Please note that this requires a graphical environment.
-* `native-display` (disabled by default): Enables a minimalist graphical window on your local system. Please note that this requires a graphical environment.
+* `winit` (enabled by default): Enables a minimalist graphical window on your local system. Please note that this requires a graphical environment.
 * `ndi` (disabled by default): Enables NDI video streaming. This requires the proprietary NDI SDK to be installed, see below.
-* `vnc` (enabled by default): Starts a VNC server, where users can connect to. Needs `libvncserver-dev` to be installed. Please note that the VNC server offers basically no latency, but consumes quite some CPU.
+* `vnc` (disabled by default): Starts a VNC server, where users can connect to. Needs `libvncserver-dev` to be installed. Please note that the VNC server offers basically no latency, but consumes quite some CPU.
 * `alpha` (disabled by default): Respect alpha values during `PX` commands. Disabled by default as this can cause performance degradation.
 * `binary-set-pixel` (disabled by default): Allows use of the `PB` command.
 * `binary-sync-pixels`(disabled by default): Allows use of the `PXMULTI` command.
@@ -144,7 +142,7 @@ As of writing the following features are supported:
 
 Some features are mutually exclusive and will fail to compile when combined (with an explanatory error). In particular, `time-tracking` cannot be combined with `alpha` (a distributed setup can't guarantee correct alpha) or with `binary-sync-pixels` (the time-tracking framebuffer has a different memory layout than `PXMULTI` expects). For this reason `--all-features` does not compile; enable explicit, compatible feature sets instead.
 
-To e.g. turn the VNC server off, build with
+To e.g. turn the local display windows off, build with
 
 ```bash
 cargo run --release --no-default-features
@@ -153,7 +151,7 @@ cargo run --release --no-default-features
 Enable (any number of) desired features with
 
 ```bash
-cargo run --release --features vnc,native-display,alpha
+cargo run --release --features vnc,alpha
 ```
 
 ## NDI
