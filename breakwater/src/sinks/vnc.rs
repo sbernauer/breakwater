@@ -8,7 +8,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use breakwater_parser::{FB_BYTES_PER_PIXEL, FrameBuffer};
+use breakwater_parser::{FB_BYTES_PER_PIXEL, FrameBuffer, PixelColorBytes};
 use color_eyre::eyre::{self, Context, ContextCompat, ensure};
 use number_prefix::NumberPrefix;
 use rusttype::{Font, Scale, point};
@@ -67,9 +67,9 @@ impl VncSinkCliArgs {
 }
 
 // Sorry! Help needed :)
-unsafe impl<FB: FrameBuffer> Send for VncSink<'_, FB> {}
+unsafe impl<FB: FrameBuffer + PixelColorBytes> Send for VncSink<'_, FB> {}
 
-pub struct VncSink<'a, FB: FrameBuffer> {
+pub struct VncSink<'a, FB: FrameBuffer + PixelColorBytes> {
     fb: Arc<FB>,
     statistics_tx: mpsc::Sender<StatisticsEvent>,
     statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
@@ -81,7 +81,7 @@ pub struct VncSink<'a, FB: FrameBuffer> {
     font: Font<'a>,
 }
 
-impl<FB: FrameBuffer + Sync + Send> VncSink<'_, FB> {
+impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> VncSink<'_, FB> {
     pub fn new(
         fb: Arc<FB>,
         VncSinkCliArgs {
@@ -158,14 +158,14 @@ impl<FB: FrameBuffer + Sync + Send> VncSink<'_, FB> {
     }
 }
 
-impl<FB: FrameBuffer + Sync + Send> DisplaySinkType<FB> for VncSink<'_, FB> {
+impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> DisplaySinkType<FB> for VncSink<'_, FB> {
     fn sink_type() -> Sink {
         Sink::Vnc
     }
 }
 
 #[async_trait]
-impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
+impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
     async fn run(&mut self) -> eyre::Result<()> {
         let vnc_fb_slice: &mut [u8] = unsafe {
             slice::from_raw_parts_mut(
@@ -187,7 +187,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
             // I don't think we need to use spawn_blocking or something like that, as this operation should hopefully be
             // a quick memcpy. But I'm no expert on this.
             vnc_fb_slice[0..fb_size_up_to_stats_text * FB_BYTES_PER_PIXEL].copy_from_slice(
-                &self.fb.as_bytes()[0..fb_size_up_to_stats_text * FB_BYTES_PER_PIXEL],
+                &self.fb.pixel_color_bytes()[0..fb_size_up_to_stats_text * FB_BYTES_PER_PIXEL],
             );
 
             // Only refresh the drawing surface, not the stats surface
@@ -216,7 +216,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for VncSink<'_, FB> {
     }
 }
 
-impl<FB: FrameBuffer> VncSink<'_, FB> {
+impl<FB: FrameBuffer + PixelColorBytes> VncSink<'_, FB> {
     fn display_stats(&mut self, stats: &StatisticsInformationEvent) {
         self.draw_rect(
             0,

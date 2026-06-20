@@ -27,6 +27,8 @@ rstest.workspace = true
 alpha = []
 binary-set-pixel = []
 binary-sync-pixels = []
+# For ever pixel on the framebuffer the write timestamp is tracked
+time-tracking = []
 
 default = []
 

@@ -1,7 +1,7 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use async_trait::async_trait;
-use breakwater_parser::FrameBuffer;
+use breakwater_parser::{FrameBuffer, PixelColorBytes};
 use color_eyre::eyre::{self, Context};
 use tokio::{
     sync::{broadcast, mpsc},
@@ -53,7 +53,7 @@ pub enum Sink {
 // Several of these parameters are only consumed by feature-gated sinks, so they appear unused when those
 // features are disabled. We can't use `#[expect(...)]` here, as it would fail when all features are enabled.
 #[allow(unused_variables)]
-pub async fn start_sinks<FB: FrameBuffer + Send + Sync + 'static>(
+pub async fn start_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static>(
     cli_args: &SinkCliArgs,
     fb: Arc<FB>,
     listen_addresses: &[SocketAddr],

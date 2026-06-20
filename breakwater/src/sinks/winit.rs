@@ -1,7 +1,7 @@
 use std::{num::NonZero, sync::Arc};
 
 use async_trait::async_trait;
-use breakwater_parser::FrameBuffer;
+use breakwater_parser::{FB_BYTES_PER_PIXEL, FrameBuffer, PixelColorBytes};
 use color_eyre::eyre::{self, Context};
 use tokio::sync::broadcast;
 use tracing::instrument;
@@ -42,14 +42,16 @@ impl<FB: FrameBuffer + Sync + Send + 'static> WinitSink<FB> {
     }
 }
 
-impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySinkType<FB> for WinitSink<FB> {
+impl<FB: FrameBuffer + PixelColorBytes + Sync + Send + 'static> DisplaySinkType<FB>
+    for WinitSink<FB>
+{
     fn sink_type() -> Sink {
         Sink::Winit
     }
 }
 
 #[async_trait]
-impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for WinitSink<FB> {
+impl<FB: FrameBuffer + PixelColorBytes + Sync + Send + 'static> DisplaySink<FB> for WinitSink<FB> {
     #[instrument(skip(self), err)]
     async fn run(&mut self) -> eyre::Result<()> {
         let fb_clone = self.fb.clone();
@@ -86,7 +88,7 @@ impl<FB: FrameBuffer + Sync + Send + 'static> DisplaySink<FB> for WinitSink<FB> 
     }
 }
 
-impl<FB: FrameBuffer> ApplicationHandler for WinitSink<FB> {
+impl<FB: FrameBuffer + PixelColorBytes> ApplicationHandler for WinitSink<FB> {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let window = Arc::new(
             event_loop
@@ -153,8 +155,8 @@ impl<FB: FrameBuffer> ApplicationHandler for WinitSink<FB> {
                 buffer.copy_from_slice(
                     &self
                         .fb
-                        .as_bytes()
-                        .chunks_exact(4)
+                        .pixel_color_bytes()
+                        .chunks_exact(FB_BYTES_PER_PIXEL)
                         .map(|chunk| u32::from_be_bytes([0, chunk[0], chunk[1], chunk[2]]))
                         .collect::<Vec<_>>(),
                 );

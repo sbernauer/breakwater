@@ -2,6 +2,8 @@ use core::slice;
 
 use tracing::debug;
 
+use crate::framebuffer::{MultiPixelSet, PixelColorBytes};
+
 use super::{FB_BYTES_PER_PIXEL, FrameBuffer};
 
 pub struct SimpleFrameBuffer {
@@ -39,7 +41,7 @@ impl FrameBuffer for SimpleFrameBuffer {
     }
 
     #[inline(always)]
-    fn set(&self, x: usize, y: usize, rgba: u32) {
+    fn set(&self, x: usize, y: usize, rgba: u32, _ts: ()) {
         // https://github.com/sbernauer/breakwater/pull/11
         // If we make the FrameBuffer large enough (e.g. 10_000 x 10_000) we don't need to check the bounds here
         // (x and y are max 4 digit numbers). Flamegraph has shown 5.21% of runtime in this bound check. On the other
@@ -53,6 +55,10 @@ impl FrameBuffer for SimpleFrameBuffer {
         }
     }
 
+    fn current_ts(&self) -> Self::Timestamp {}
+}
+
+impl MultiPixelSet for SimpleFrameBuffer {
     #[inline(always)]
     fn set_multi_from_start_index(&self, starting_index: usize, pixels: &[u8]) -> usize {
         let num_pixels = pixels.len() / FB_BYTES_PER_PIXEL;
@@ -75,9 +81,11 @@ impl FrameBuffer for SimpleFrameBuffer {
 
         num_pixels
     }
+}
 
+impl PixelColorBytes for SimpleFrameBuffer {
     #[inline(always)]
-    fn as_bytes(&self) -> &[u8] {
+    fn pixel_color_bytes(&self) -> &[u8] {
         let len = self.buffer.len() * FB_BYTES_PER_PIXEL;
         let ptr = self.buffer.as_ptr() as *const u8;
         unsafe { std::slice::from_raw_parts(ptr, len) }
@@ -107,7 +115,7 @@ mod tests {
         #[case] y: usize,
         #[case] rgba: u32,
     ) {
-        fb.set(x, y, rgba);
+        fb.set(x, y, rgba, ());
         assert_eq!(fb.get(x, y), Some(rgba));
     }
 

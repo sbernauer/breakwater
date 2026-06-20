@@ -6,7 +6,9 @@ use std::{
     sync::Arc,
 };
 
-use breakwater_parser::{FrameBuffer, HELP_TEXT, SharedMemoryFrameBuffer};
+use breakwater_parser::{
+    FrameBuffer, HELP_TEXT, OriginalParserFrameBuffer, SharedMemoryFrameBuffer,
+};
 use rstest::{fixture, rstest};
 use tokio::sync::mpsc;
 
@@ -104,7 +106,7 @@ async fn test_setting_pixel(#[case] input: &str, #[case] expected: &str) {
 #[case("PX 0 0 aaaaaa\n")]
 #[case("PX 0 0 aa\n")]
 #[tokio::test]
-async fn test_safe<FB: FrameBuffer>(
+async fn test_safe<FB: OriginalParserFrameBuffer>(
     #[case] input: &str,
     ip: IpAddr,
     fb: Arc<FB>,
@@ -146,7 +148,7 @@ async fn test_safe<FB: FrameBuffer>(
 // Yes, this exceeds the framebuffer size
 #[case(10, 10, fb().get_width() - 5, fb().get_height() - 5)]
 #[tokio::test]
-async fn test_drawing_rect<FB: FrameBuffer>(
+async fn test_drawing_rect<FB: OriginalParserFrameBuffer>(
     #[case] width: usize,
     #[case] height: usize,
     #[case] offset_x: usize,
@@ -260,7 +262,7 @@ async fn test_drawing_rect<FB: FrameBuffer>(
     "PX 0 0 000000\nPX 0 0 313233\n"
 )]
 #[tokio::test]
-async fn test_binary_set_pixel<FB: FrameBuffer>(
+async fn test_binary_set_pixel<FB: OriginalParserFrameBuffer>(
     #[case] input: &str,
     #[case] expected: &str,
     ip: IpAddr,
@@ -323,7 +325,7 @@ async fn test_binary_sync_pixels() {
 #[rstest]
 #[tokio::test]
 /// Try painting the very last pixel of the screen. There is only space for a single pixel left.
-async fn test_binary_sync_pixels_last_pixel<FB: FrameBuffer>(fb: Arc<FB>) {
+async fn test_binary_sync_pixels_last_pixel<FB: OriginalParserFrameBuffer>(fb: Arc<FB>) {
     let mut input = Vec::new();
     let x = fb.get_width() as u16 - 1;
     let y = fb.get_height() as u16 - 1;
@@ -348,7 +350,7 @@ async fn test_binary_sync_pixels_last_pixel<FB: FrameBuffer>(fb: Arc<FB>) {
 #[rstest]
 #[tokio::test]
 /// Try painting some pixels in the middle of the screen
-async fn test_binary_sync_pixels_in_the_middle<FB: FrameBuffer>(fb: Arc<FB>) {
+async fn test_binary_sync_pixels_in_the_middle<FB: OriginalParserFrameBuffer>(fb: Arc<FB>) {
     let mut input = Vec::new();
     let mut expected = String::new();
 
@@ -387,7 +389,7 @@ async fn test_binary_sync_pixels_in_the_middle<FB: FrameBuffer>(fb: Arc<FB>) {
 #[rstest]
 #[tokio::test]
 /// Try painting too much pixels, so it overflows the framebuffer.
-async fn test_binary_sync_pixels_exceeding_screen<FB: FrameBuffer>(fb: Arc<FB>) {
+async fn test_binary_sync_pixels_exceeding_screen<FB: OriginalParserFrameBuffer>(fb: Arc<FB>) {
     let mut input = Vec::new();
     let x = fb.get_width() as u16 - 1;
     let y = fb.get_height() as u16 - 1;
@@ -408,7 +410,7 @@ async fn test_binary_sync_pixels_exceeding_screen<FB: FrameBuffer>(fb: Arc<FB>) 
 #[tokio::test]
 /// Try painting more pixels that fit in the buffer. This checks if the parse correctly keeps track of the command
 /// across multiple parse calls as the pixel screen send is bigger than the buffer.
-async fn test_binary_sync_pixels_larger_than_buffer<FB: FrameBuffer>(fb: Arc<FB>) {
+async fn test_binary_sync_pixels_larger_than_buffer<FB: OriginalParserFrameBuffer>(fb: Arc<FB>) {
     // let fb = Arc::new(FrameBuffer::new(50, 30)); // For testing
 
     let num_pixels = (fb.get_width() * fb.get_height()) as u32;

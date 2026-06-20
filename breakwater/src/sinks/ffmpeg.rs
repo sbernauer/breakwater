@@ -1,7 +1,7 @@
 use std::{process::Stdio, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use breakwater_parser::FrameBuffer;
+use breakwater_parser::{FrameBuffer, PixelColorBytes};
 use chrono::Local;
 use color_eyre::eyre::{self, Context, bail};
 use tokio::{io::AsyncWriteExt, process::Command, sync::broadcast, time};
@@ -35,14 +35,14 @@ impl FfmpegSinkCliArgs {
     }
 }
 
-pub struct FfmpegSink<FB: FrameBuffer> {
+pub struct FfmpegSink<FB: FrameBuffer + PixelColorBytes> {
     cli_args: FfmpegSinkCliArgs,
     fb: Arc<FB>,
     fps: u32,
     terminate_signal_rx: broadcast::Receiver<()>,
 }
 
-impl<FB: FrameBuffer + Sync + Send> FfmpegSink<FB> {
+impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> FfmpegSink<FB> {
     #[instrument(skip_all)]
     pub fn new(
         fb: Arc<FB>,
@@ -59,14 +59,14 @@ impl<FB: FrameBuffer + Sync + Send> FfmpegSink<FB> {
     }
 }
 
-impl<FB: FrameBuffer + Sync + Send> DisplaySinkType<FB> for FfmpegSink<FB> {
+impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> DisplaySinkType<FB> for FfmpegSink<FB> {
     fn sink_type() -> Sink {
         Sink::Ffmpeg
     }
 }
 
 #[async_trait]
-impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
+impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
     #[instrument(skip(self), err)]
     async fn run(&mut self) -> eyre::Result<()> {
         let mut ffmpeg_args: Vec<String> = self
@@ -174,7 +174,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
 
                 return Ok(());
             }
-            let bytes = self.fb.as_bytes();
+            let bytes = self.fb.pixel_color_bytes();
             stdin
                 .write_all(bytes)
                 .await
@@ -184,7 +184,7 @@ impl<FB: FrameBuffer + Sync + Send> DisplaySink<FB> for FfmpegSink<FB> {
     }
 }
 
-impl<FB: FrameBuffer> FfmpegSink<FB> {
+impl<FB: FrameBuffer + PixelColorBytes> FfmpegSink<FB> {
     fn ffmpeg_input_args(&self) -> Vec<(String, String)> {
         let video_size = format!("{}x{}", self.fb.get_width(), self.fb.get_height());
         [

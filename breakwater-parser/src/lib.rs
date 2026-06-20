@@ -1,5 +1,9 @@
-// Needed for simple implementation
+// Needed for original implementation
 #![feature(portable_simd)]
+// Used in the [`FrameBuffer`] trait
+#![feature(associated_type_defaults)]
+// Used to conditionally require [`MultiPixelSet`] in the [`OriginalParser`]
+#![feature(trait_alias)]
 
 use const_format::formatcp;
 
@@ -12,12 +16,16 @@ mod refactored;
 
 #[cfg(target_arch = "x86_64")]
 pub use assembler::AssemblerParser;
+pub use framebuffer::time_tracking::{
+    RGB_BITS, RGB_MASK, TIMESTAMP_BITS, TIMESTAMP_MAX, TimeTrackingFrameBuffer, TimeTrackingPixel,
+    get_current_ns_since_unix_epoch,
+};
 pub use framebuffer::{
-    FB_BYTES_PER_PIXEL, FrameBuffer, shared_memory::SharedMemoryFrameBuffer,
-    simple::SimpleFrameBuffer,
+    FB_BYTES_PER_PIXEL, FrameBuffer, MultiPixelSet, PixelColorBytes,
+    shared_memory::SharedMemoryFrameBuffer, simple::SimpleFrameBuffer,
 };
 pub use memchr::MemchrParser;
-pub use original::OriginalParser;
+pub use original::{OriginalParser, OriginalParserFrameBuffer};
 pub use refactored::RefactoredParser;
 
 pub const HELP_TEXT: &[u8] = formatcp!("\
@@ -57,3 +65,12 @@ pub trait Parser {
     // Sadly this cant be const (yet?) (https://github.com/rust-lang/rust/issues/71971 and https://github.com/rust-lang/rfcs/pull/2632)
     fn parser_lookahead(&self) -> usize;
 }
+
+#[cfg(all(feature = "time-tracking", feature = "alpha"))]
+compile_error!(
+    "The features `time-tracking` and `alpha` are mutually exclusive, as the time-tracking framebuffer is used in distributed pixelflut installation where a correct alpha functionality can not be guaranteed."
+);
+#[cfg(all(feature = "time-tracking", feature = "binary-sync-pixels"))]
+compile_error!(
+    "The features `time-tracking` and `binary-sync-pixels` are mutually exclusive, as the time-tracking framebuffer has an entirely different memory layout than PXMULTI."
+);
