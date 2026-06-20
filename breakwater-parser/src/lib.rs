@@ -18,6 +18,7 @@ mod refactored;
 pub use assembler::AssemblerParser;
 pub use framebuffer::time_tracking::{
     RGB_BITS, RGB_MASK, TIMESTAMP_BITS, TIMESTAMP_MAX, TimeTrackingFrameBuffer, TimeTrackingPixel,
+    get_current_ns_since_unix_epoch,
 };
 pub use framebuffer::{
     FB_BYTES_PER_PIXEL, FrameBuffer, MultiPixelSet, PixelColorBytes,
