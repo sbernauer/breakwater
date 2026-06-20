@@ -1,4 +1,4 @@
-FROM rust:1.86.0-bookworm AS builder
+FROM rust:1.96.0-trixie AS builder
 
 RUN apt-get update && \
     apt-get install -y clang libvncserver-dev && \
@@ -23,7 +23,7 @@ COPY Arial.ttf .
 # users to think it should work (which it doesn't). So let's not enable that feature
 RUN RUSTFLAGS='' cargo build --release --no-default-features --features prometheus,vnc,binary-set-pixel
 
-FROM debian:bookworm-slim AS final
+FROM debian:trixie-slim AS final
 RUN apt-get update && \
     apt-get install -y libvncserver1 ffmpeg && \
     rm -rf /var/lib/apt/lists/*
