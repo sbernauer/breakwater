@@ -25,6 +25,7 @@ criterion = { version = "0.8", features = ["async_tokio"] }
 eframe = { version = "0.34", default-features = false, features = ["glow", "default_fonts", "persistence", "wayland", "x11"] }
 egui = "0.34"
 futures = "0.3"
+humantime = "2.3"
 libloading = "0.9"
 local-ip-address = "0.6.3"
 memadvise = "0.1"

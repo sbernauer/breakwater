@@ -15,6 +15,8 @@ use tokio::{
     time::interval,
 };
 
+use crate::cli_args::StatisticsSaveFileCliArgs;
+
 pub const STATS_REPORT_INTERVAL: Duration = Duration::from_secs(1);
 pub const STATS_SLIDING_WINDOW_SIZE: usize = 5;
 pub const STATISTICS_SEND_ERR: &str = "failed to send on statistics channel";
@@ -43,7 +45,23 @@ pub enum StatisticsEvent {
 
 pub enum StatisticsSaveMode {
     Disabled,
-    Enabled { save_file: String, interval_s: u64 },
+    Enabled {
+        save_file: String,
+        interval: Duration,
+    },
+}
+
+impl From<StatisticsSaveFileCliArgs> for StatisticsSaveMode {
+    fn from(cli_args: StatisticsSaveFileCliArgs) -> Self {
+        if cli_args.disable_statistics_save_file {
+            StatisticsSaveMode::Disabled
+        } else {
+            StatisticsSaveMode::Enabled {
+                save_file: cli_args.statistics_save_file,
+                interval: *cli_args.statistics_save_interval,
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -156,11 +174,8 @@ impl Statistics {
             StatisticsSaveMode::Disabled => (interval(Duration::MAX), None),
             StatisticsSaveMode::Enabled {
                 save_file,
-                interval_s,
-            } => (
-                interval(Duration::from_secs(*interval_s)),
-                Some(save_file.clone()),
-            ),
+                interval: interval_duration,
+            } => (interval(*interval_duration), Some(save_file.clone())),
         };
 
         loop {
