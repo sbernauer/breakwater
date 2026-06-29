@@ -12,10 +12,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Let breakwater exit as soon as a sink reports an error ([#XX]).
+- Let breakwater exit as soon as a sink reports an error ([#95]).
 
 [#84]: https://github.com/sbernauer/breakwater/pull/84
-[#XX]: https://github.com/sbernauer/breakwater/pull/XX
+[#95]: https://github.com/sbernauer/breakwater/pull/95
 
 ## [0.22.0] - 2026-06-20
 
