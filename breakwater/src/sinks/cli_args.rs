@@ -3,6 +3,7 @@ use clap::{ValueEnum, error::ErrorKind, parser::ValueSource};
 use crate::sinks::Sink;
 
 #[derive(clap::Args, Debug)]
+#[command(next_help_heading = "Sink options")]
 pub struct SinkCliArgs {
     /// Enable an arbitrary number of sinks (argument can be repeated). The availability of sinks depends on the enabled features.
     #[clap(short = 's', long = "enable-sink")]

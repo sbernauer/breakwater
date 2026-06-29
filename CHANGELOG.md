@@ -10,12 +10,18 @@ All notable changes to this project will be documented in this file.
   As this feature is mutually exclusive with `alpha` and `binary-pixel-sync`, `--all-features` will now fail to compile.
   Please choose the required features explicitly instead.
 
+### Changed
+
+- BREAKING: The CLI argument `--statistics-save-interval-s` was renamed to `--statistics-save-interval` and now accepts a human time duration.
+  E.g. instead of `--statistics-save-interval-s 20` now use `--statistics-save-interval 20s` ([#96]).
+
 ### Fixed
 
 - Let breakwater exit as soon as a sink reports an error ([#95]).
 
 [#84]: https://github.com/sbernauer/breakwater/pull/84
 [#95]: https://github.com/sbernauer/breakwater/pull/95
+[#96]: https://github.com/sbernauer/breakwater/pull/96
 
 ## [0.22.0] - 2026-06-20
 

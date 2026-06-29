@@ -10,9 +10,6 @@ pub const DEFAULT_NETWORK_BUFFER_SIZE_STR: &str = formatcp!("{}", DEFAULT_NETWOR
 #[derive(clap::Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 pub struct CliArgs {
-    #[clap(flatten)]
-    pub network_listener: NetworkListenerCliArgs,
-
     /// Width of the drawing surface.
     #[clap(long, default_value_t = 1280)]
     pub width: usize,
@@ -29,20 +26,6 @@ pub struct CliArgs {
     #[clap(short, long, default_value = "[::]:9100")]
     pub prometheus_listen_address: String,
 
-    /// Save file where statistics are periodically saved.
-    /// The save file will be read during startup and statistics are restored.
-    /// To reset the statistics simply remove the file.
-    #[clap(long, default_value = "statistics.json")]
-    pub statistics_save_file: String,
-
-    /// Interval (in seconds) in which the statistics save file should be updated.
-    #[clap(long, default_value = "10")]
-    pub statistics_save_interval_s: u64,
-
-    /// Disable periodical saving of statistics into save file.
-    #[clap(long)]
-    pub disable_statistics_save_file: bool,
-
     /// Create (or use an existing) shared memory region for the framebuffer.
     /// This enables other applications to read and write Pixel values to the framebuffer or can be
     /// used to persist the canvas across restarts.
@@ -50,10 +33,17 @@ pub struct CliArgs {
     pub shared_memory_name: Option<String>,
 
     #[clap(flatten)]
+    pub network_listener: NetworkListenerCliArgs,
+
+    #[clap(flatten)]
+    pub statistics_save_file: StatisticsSaveFileCliArgs,
+
+    #[clap(flatten)]
     pub sinks: SinkCliArgs,
 }
 
 #[derive(clap::Args, Debug)]
+#[command(next_help_heading = "Network listener options")]
 pub struct NetworkListenerCliArgs {
     /// Listen address to bind to (multiple can be specified).
     /// The default value will listen on all interfaces for IPv4 and IPv6 packets.
@@ -72,4 +62,24 @@ pub struct NetworkListenerCliArgs {
     /// Allow only a certain number of connections per ip address
     #[clap(short, long)]
     pub connections_per_ip: Option<u64>,
+}
+
+#[derive(clap::Args, Debug)]
+#[command(next_help_heading = "Statistics save file options")]
+pub struct StatisticsSaveFileCliArgs {
+    /// Disable periodical saving of statistics into save file.
+    #[clap(long)]
+    pub disable_statistics_save_file: bool,
+
+    /// Save file where statistics are periodically saved.
+    /// The save file will be read during startup and statistics are restored.
+    /// To reset the statistics simply remove the file.
+    #[clap(long, default_value = "statistics.json")]
+    pub statistics_save_file: String,
+
+    /// Interval in which the statistics save file should be updated.
+    ///
+    /// Supports human durations such `10s` or `5m`.
+    #[clap(long, default_value = "10s")]
+    pub statistics_save_interval: humantime::Duration,
 }
