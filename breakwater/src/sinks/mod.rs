@@ -128,9 +128,14 @@ pub async fn start_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'stat
 
     let mut sink_tasks = Vec::new();
     for mut sink in sinks {
+        let terminate_signal_tx = terminate_signal_tx.clone();
         sink_tasks.push(tokio::spawn(async move {
-            sink.run().await?;
-            eyre::Ok(())
+            let result = sink.run().await;
+            // A sink exiting - whether because it crashed or stopped normally - should bring the
+            // whole server down, so signal termination to all other tasks (and the shutdown
+            // handler). Best-effort: ignore the error if there are no receivers left.
+            let _ = terminate_signal_tx.send(());
+            result
         }));
     }
 
@@ -148,31 +153,46 @@ pub async fn start_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'stat
             )
             .context("failed to create egui sink")?;
 
-            tokio::spawn(handle_ctrl_c(terminate_signal_tx));
+            tokio::spawn(wait_for_shutdown(
+                terminate_signal_tx.clone(),
+                terminate_signal_rx,
+            ));
 
             // Some platforms require opening windows from the main thread.
             // The tokio::main macro uses Runtime::block_on(future) which runs the future on
             // the current thread, which should be the main thread right now.
             egui_sink.run().await.context("failed to run egui sink")?;
+
+            // The egui window was closed - bring the rest of the server down too.
+            let _ = terminate_signal_tx.send(());
         } else {
-            handle_ctrl_c(terminate_signal_tx).await?;
+            wait_for_shutdown(terminate_signal_tx, terminate_signal_rx).await?;
         }
     }
 
     #[cfg(not(feature = "egui"))]
-    handle_ctrl_c(terminate_signal_tx).await?;
+    wait_for_shutdown(terminate_signal_tx, terminate_signal_rx).await?;
 
     Ok((sink_tasks, ffmpeg_thread_present))
 }
 
-async fn handle_ctrl_c(terminate_signal_tx: broadcast::Sender<()>) -> eyre::Result<()> {
-    tokio::signal::ctrl_c()
-        .await
-        .context("failed to wait for ctrl + c")?;
+/// Blocks until either the user requests a shutdown via Ctrl+C, or one of the sinks signals
+/// termination (e.g. because it crashed). Afterwards all remaining sinks are told to terminate.
+async fn wait_for_shutdown(
+    terminate_signal_tx: broadcast::Sender<()>,
+    mut terminate_signal_rx: broadcast::Receiver<()>,
+) -> eyre::Result<()> {
+    tokio::select! {
+        result = tokio::signal::ctrl_c() => {
+            result.context("failed to wait for ctrl + c")?;
+        }
+        // A sink signalled termination, e.g. because it crashed.
+        _ = terminate_signal_rx.recv() => {}
+    }
 
-    terminate_signal_tx
-        .send(())
-        .context("failed to signal termination")?;
+    // Tell all remaining sinks to terminate. Best-effort: this fails if all other receivers are
+    // already gone (e.g. the only sink crashed and dropped its receiver), which is fine here.
+    let _ = terminate_signal_tx.send(());
 
     Ok(())
 }

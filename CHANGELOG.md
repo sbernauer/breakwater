@@ -10,7 +10,12 @@ All notable changes to this project will be documented in this file.
   As this feature is mutually exclusive with `alpha` and `binary-pixel-sync`, `--all-features` will now fail to compile.
   Please choose the required features explicitly instead.
 
+### Fixed
+
+- Let breakwater exit as soon as a sink reports an error ([#XX]).
+
 [#84]: https://github.com/sbernauer/breakwater/pull/84
+[#XX]: https://github.com/sbernauer/breakwater/pull/XX
 
 ## [0.22.0] - 2026-06-20
 
