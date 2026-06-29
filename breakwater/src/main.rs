@@ -9,7 +9,7 @@ use breakwater::{
     cli_args::CliArgs,
     server::Server,
     sinks::start_sinks,
-    statistics::{Statistics, StatisticsEvent, StatisticsInformationEvent, StatisticsSaveMode},
+    statistics::{Statistics, StatisticsEvent, StatisticsInformationEvent},
 };
 
 #[tokio::main]
@@ -47,18 +47,10 @@ async fn main() -> eyre::Result<()> {
     let (statistics_information_tx, statistics_information_rx) =
         broadcast::channel::<StatisticsInformationEvent>(2);
 
-    let statistics_save_mode = if args.disable_statistics_save_file {
-        StatisticsSaveMode::Disabled
-    } else {
-        StatisticsSaveMode::Enabled {
-            save_file: args.statistics_save_file.clone(),
-            interval_s: args.statistics_save_interval_s,
-        }
-    };
     let mut statistics = Statistics::new(
         statistics_rx,
         statistics_information_tx,
-        statistics_save_mode,
+        args.statistics_save_file.into(),
     )?;
 
     let mut server = Server::new(

@@ -78,34 +78,39 @@ Pixelflut server
 Usage: breakwater [OPTIONS]
 
 Options:
-  -l, --listener-address <LISTEN_ADDRESSES>
-          Listen address to bind to (multiple can be specified). The default value will listen on all interfaces for IPv4 and IPv6 packets [default: [::]:1234]
       --width <WIDTH>
           Width of the drawing surface [default: 1280]
       --height <HEIGHT>
           Height of the drawing surface [default: 720]
   -f, --fps <FPS>
           Frames per second the server should aim for [default: 30]
-      --network-buffer-size <NETWORK_BUFFER_SIZE>
-          The size in bytes of the network buffer used for each open TCP connection. Please use at least 64 KB (64_000 bytes) [default: 262144]
   -p, --prometheus-listen-address <PROMETHEUS_LISTEN_ADDRESS>
           Listen address the Prometheus exporter should listen on [default: [::]:9100]
-      --statistics-save-file <STATISTICS_SAVE_FILE>
-          Save file where statistics are periodically saved. The save file will be read during startup and statistics are restored. To reset the statistics simply remove the file [default: statistics.json]
-      --statistics-save-interval-s <STATISTICS_SAVE_INTERVAL_S>
-          Interval (in seconds) in which the statistics save file should be updated [default: 10]
-      --disable-statistics-save-file
-          Disable periodical saving of statistics into save file
-  -c, --connections-per-ip <CONNECTIONS_PER_IP>
-          Allow only a certain number of connections per ip address
       --shared-memory-name <SHARED_MEMORY_NAME>
           Create (or use an existing) shared memory region for the framebuffer. This enables other applications to read and write Pixel values to the framebuffer or can be used to persist the canvas across restarts
-  -s, --enable-sink <ENABLED_SINKS>
-          Enable an arbitrary number of sinks (argument can be repeated). The availability of sinks depends on the enabled features [possible values: ffmpeg, egui, winit, vnc, ndi]
   -h, --help
-          Print help
+          Print help (see more with '--help')
   -V, --version
           Print version
+
+Network listener options:
+  -l, --listener-address <LISTEN_ADDRESSES>
+          Listen address to bind to (multiple can be specified). The default value will listen on all interfaces for IPv4 and IPv6 packets [default: [::]:1234]
+      --network-buffer-size <NETWORK_BUFFER_SIZE>
+          The size in bytes of the network buffer used for each open TCP connection. Please use at least 64 KB (64_000 bytes) [default: 262144]
+  -c, --connections-per-ip <CONNECTIONS_PER_IP>
+          Allow only a certain number of connections per ip address
+
+Statistics save file options:
+      --disable-statistics-save-file
+          Disable periodical saving of statistics into save file
+      --statistics-save-file <STATISTICS_SAVE_FILE>
+          Save file where statistics are periodically saved. The save file will be read during startup and statistics are restored. To reset the statistics simply remove the file [default: statistics.json]
+      --statistics-save-interval <STATISTICS_SAVE_INTERVAL>
+          Interval in which the statistics save file should be updated [default: 10s]
+
+Sink options:
+  -s, --enable-sink <ENABLED_SINKS>  Enable an arbitrary number of sinks (argument can be repeated). The availability of sinks depends on the enabled features [possible values: ffmpeg, egui, winit, vnc, ndi]
 
 ffmpeg sink options:
       --ffmpeg-rtmp-address <RTMP_ADDRESS>
