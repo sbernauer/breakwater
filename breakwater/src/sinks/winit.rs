@@ -152,11 +152,13 @@ impl<FB: FrameBuffer + PixelColorBytes> ApplicationHandler for WinitSink<FB> {
                     return;
                 }
 
+                let (pixels, _remainer) = self
+                    .fb
+                    .pixel_color_bytes()
+                    .as_chunks::<FB_BYTES_PER_PIXEL>();
                 buffer.copy_from_slice(
-                    &self
-                        .fb
-                        .pixel_color_bytes()
-                        .chunks_exact(FB_BYTES_PER_PIXEL)
+                    &pixels
+                        .iter()
                         .map(|chunk| u32::from_be_bytes([0, chunk[0], chunk[1], chunk[2]]))
                         .collect::<Vec<_>>(),
                 );
