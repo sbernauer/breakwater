@@ -13,7 +13,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - BREAKING: The CLI argument `--statistics-save-interval-s` was renamed to `--statistics-save-interval` and now accepts a human time duration.
-  E.g. instead of `--statistics-save-interval-s 20` now use `--statistics-save-interval 20s` ([#XX]).
+  E.g. instead of `--statistics-save-interval-s 20` now use `--statistics-save-interval 20s` ([#96]).
 
 ### Fixed
 
@@ -21,7 +21,7 @@ All notable changes to this project will be documented in this file.
 
 [#84]: https://github.com/sbernauer/breakwater/pull/84
 [#95]: https://github.com/sbernauer/breakwater/pull/95
-[#XX]: https://github.com/sbernauer/breakwater/pull/XX
+[#96]: https://github.com/sbernauer/breakwater/pull/96
 
 ## [0.22.0] - 2026-06-20
 
