@@ -7,13 +7,19 @@
 //! and starts a fresh session, which transparently picks up a changed config (geometry, fps, or a
 //! new epoch after a collector restart).
 
-use std::{fs, io, net::SocketAddr, path::Path, sync::Arc, time::Duration};
+use std::{
+    fs, io,
+    net::SocketAddr,
+    path::Path,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use breakwater::{
     server::Server,
     statistics::{Statistics, StatisticsEvent, StatisticsInformationEvent, StatisticsSaveMode},
 };
-use breakwater_parser::TimeTrackingFrameBuffer;
+use breakwater_parser::{TimeTrackingFrameBuffer, get_current_ns_since_unix_epoch};
 use color_eyre::eyre::{self, Context};
 use tokio::{
     net::TcpStream,
@@ -25,6 +31,7 @@ use uuid::Uuid;
 
 use crate::{
     cli_args::WorkerCliArgs,
+    metrics::{self, METRICS_LOG_INTERVAL, WorkerMetrics},
     protocol::{self, Connection, WorkerConfig, frame_period},
 };
 
@@ -36,9 +43,15 @@ pub async fn run(args: WorkerCliArgs) -> eyre::Result<()> {
     let worker_id = load_or_create_worker_id(&args.worker_id_file)?;
     info!(%worker_id, "Starting worker");
 
+    // Created once for the whole process so the metrics accumulate across sessions.
+    let metrics = WorkerMetrics::new().context("failed to register worker metrics")?;
+    metrics::serve(args.prometheus.prometheus_listen_address)?;
+
     tokio::select! {
         // `session_loop` never returns on its own — it just keeps (re)starting sessions.
-        result = session_loop(&args, worker_id) => result,
+        result = session_loop(&args, worker_id, &metrics) => result,
+        // Neither does the metrics logger; it just runs alongside.
+        () = log_metrics(&metrics) => unreachable!("metrics log loop never returns"),
         result = tokio::signal::ctrl_c() => {
             result.context("failed to wait for CTRL + C")?;
             info!("Received CTRL + C, shutting down");
@@ -47,11 +60,41 @@ pub async fn run(args: WorkerCliArgs) -> eyre::Result<()> {
     }
 }
 
+/// Logs a per-interval summary of the worker's send metrics (mean push time and frames lagged),
+/// diffing the cumulative Prometheus counters between ticks. Never returns.
+async fn log_metrics(metrics: &WorkerMetrics) {
+    let mut ticker = interval(METRICS_LOG_INTERVAL);
+    let (mut prev_count, mut prev_sum, mut prev_lagged) = (0u64, 0.0, 0u64);
+
+    loop {
+        ticker.tick().await;
+        let (count, sum) = metrics.send_totals();
+        let lagged = metrics.lagged_total();
+        let frames = count - prev_count;
+        let mean_ms = if frames > 0 {
+            (sum - prev_sum) / frames as f64 * 1000.0
+        } else {
+            0.0
+        };
+        info!(
+            frames,
+            mean_send_ms = format!("{mean_ms:.1}"),
+            lagged = lagged - prev_lagged,
+            "Worker send metrics (last interval)"
+        );
+        (prev_count, prev_sum, prev_lagged) = (count, sum, lagged);
+    }
+}
+
 /// Runs sessions back-to-back forever; a session ending (connection lost, config change, error) is
 /// just logged and followed by a fresh one after a short backoff.
-async fn session_loop(args: &WorkerCliArgs, worker_id: Uuid) -> eyre::Result<()> {
+async fn session_loop(
+    args: &WorkerCliArgs,
+    worker_id: Uuid,
+    metrics: &WorkerMetrics,
+) -> eyre::Result<()> {
     loop {
-        match run_session(args, worker_id).await {
+        match run_session(args, worker_id, metrics).await {
             Ok(()) => info!("Collector connection ended; restarting worker session"),
             Err(error) => warn!(%error, "Worker session failed; restarting"),
         }
@@ -65,7 +108,11 @@ async fn session_loop(args: &WorkerCliArgs, worker_id: Uuid) -> eyre::Result<()>
 /// The server, stats aggregator and push loop all run as `select!` arms (not detached tasks), so
 /// when the session ends — here, or because the whole worker is cancelled on Ctrl-C — they're all
 /// dropped together. No teardown bookkeeping, no leaked tasks.
-async fn run_session(args: &WorkerCliArgs, worker_id: Uuid) -> eyre::Result<()> {
+async fn run_session(
+    args: &WorkerCliArgs,
+    worker_id: Uuid,
+    metrics: &WorkerMetrics,
+) -> eyre::Result<()> {
     let (mut connection, config) = connect_to_collector(args.collector_address, worker_id).await;
     info!(?config, "Received configuration from collector");
 
@@ -113,7 +160,7 @@ async fn run_session(args: &WorkerCliArgs, worker_id: Uuid) -> eyre::Result<()> 
     tokio::select! {
         result = server.start() => result.context("pixelflut server stopped")?,
         result = statistics.run() => result.context("statistics aggregator stopped")?,
-        result = push_frames(&mut connection, &fb, config.fps, statistics_information_tx.subscribe()) => {
+        result = push_frames(&mut connection, &fb, config.fps, statistics_information_tx.subscribe(), metrics) => {
             result.context("framebuffer and statistics sync to the collector stopped")?;
         }
     }
@@ -133,15 +180,28 @@ async fn push_frames(
     fb: &TimeTrackingFrameBuffer,
     fps: u32,
     mut statistics_rx: broadcast::Receiver<StatisticsInformationEvent>,
+    metrics: &WorkerMetrics,
 ) -> io::Result<()> {
-    let mut ticker = interval(frame_period(fps));
+    let period = frame_period(fps);
+    let mut ticker = interval(period);
     // If a push runs long (slow network), don't burst to catch up — just space the next one a full
     // period out. The collector only cares about the latest frame anyway.
     ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
     loop {
         tokio::select! {
-            _ = ticker.tick() => connection.send_framebuffer(fb.as_raw_bytes()).await?,
+            _ = ticker.tick() => {
+                let sent_at_ns = get_current_ns_since_unix_epoch();
+                let started = Instant::now();
+                connection.send_framebuffer(sent_at_ns, fb.as_raw_bytes()).await?;
+                let elapsed = started.elapsed();
+
+                metrics.observe_send(elapsed);
+                // A send spanning N whole frame-periods means the N-1 slots after the first went
+                // unsent — i.e. we couldn't keep up with the target FPS.
+                let spanned = (elapsed.as_nanos() / period.as_nanos().max(1)) as u64;
+                metrics.add_lagged(spanned.saturating_sub(1));
+            }
             event = statistics_rx.recv() => match event {
                 Ok(event) => connection.send_statistics(event).await?,
                 // Lagged: snapshots are emitted ~once per second into a small buffer with a single

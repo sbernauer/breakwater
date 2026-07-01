@@ -523,6 +523,7 @@ dependencies = [
  "clap",
  "color-eyre",
  "postcard",
+ "prometheus_exporter",
  "serde",
  "tokio",
  "tracing",

@@ -11,10 +11,14 @@
 //! followed on the wire by [`WorkerConfig::frame_size_bytes`] raw bytes. [`Connection`] owns that
 //! "marker then raw blob" contract, so no caller has to remember it.
 
-use std::{io, net::SocketAddr, time::Duration};
+use std::{
+    io,
+    net::SocketAddr,
+    time::{Duration, Instant},
+};
 
 use breakwater::statistics::StatisticsInformationEvent;
-use breakwater_parser::{TimeTrackingPixel, pixels_as_bytes_mut};
+use breakwater_parser::{TimeTrackingPixel, get_current_ns_since_unix_epoch, pixels_as_bytes_mut};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
@@ -47,7 +51,11 @@ pub enum WorkerMessage {
     /// Marker that a full framebuffer follows on the wire as [`WorkerConfig::frame_size_bytes`] raw
     /// bytes (not part of this serialized message). The per-pixel write timestamps live in the blob
     /// itself (absolute, relative to the shared epoch), so nothing else needs to travel with it.
-    Framebuffer,
+    ///
+    /// `sent_at_ns` is the worker's wall-clock send-start time (ns since the UNIX epoch), used by the
+    /// collector to measure end-to-end latency. It relies on the same worker/collector clock sync the
+    /// per-pixel timestamps already assume.
+    Framebuffer { sent_at_ns: u64 },
 
     /// A periodic statistics snapshot, already aggregated per IP by the worker (~once per second)
     /// and cumulative within this connection's session. Self-contained — no raw bytes follow.
@@ -92,7 +100,15 @@ pub fn frame_period(fps: u32) -> Duration {
 /// What a worker sent us: either a full framebuffer (already read off the wire into an owned buffer)
 /// or a statistics snapshot. The one-shot [`WorkerMessage::Hello`] is consumed at [`accept`] time.
 pub enum WorkerData {
-    Framebuffer(Vec<TimeTrackingPixel>),
+    Framebuffer {
+        pixels: Vec<TimeTrackingPixel>,
+        /// Time spent reading the blob off the wire — the transfer itself, not the idle wait for the
+        /// next frame that precedes it.
+        recv_duration: Duration,
+        /// Worker send-start to collector recv-done latency. Saturates to zero under clock skew (a
+        /// worker clock ahead of the collector's).
+        latency: Duration,
+    },
     Statistics(StatisticsInformationEvent),
 }
 
@@ -113,10 +129,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Connection<S> {
         self.send_message(&CollectorMessage::Config(config)).await
     }
 
-    /// Worker side: push a full framebuffer — the marker immediately followed by its raw bytes,
-    /// flushed together so a statistics message can never slip between the two.
-    pub async fn send_framebuffer(&mut self, bytes: &[u8]) -> io::Result<()> {
-        self.write_message(&WorkerMessage::Framebuffer).await?;
+    /// Worker side: push a full framebuffer — the marker (stamped with `sent_at_ns`) immediately
+    /// followed by its raw bytes, flushed together so a statistics message can never slip between the
+    /// two.
+    pub async fn send_framebuffer(&mut self, sent_at_ns: u64, bytes: &[u8]) -> io::Result<()> {
+        self.write_message(&WorkerMessage::Framebuffer { sent_at_ns })
+            .await?;
         self.stream.write_all(bytes).await?;
         self.stream.flush().await
     }
@@ -132,12 +150,23 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Connection<S> {
     /// second [`WorkerMessage::Hello`] mid-stream is a protocol error.
     pub async fn recv_worker_data(&mut self, pixel_count: usize) -> io::Result<WorkerData> {
         match self.recv_message::<WorkerMessage>().await? {
-            WorkerMessage::Framebuffer => {
-                let mut frame = vec![TimeTrackingPixel::default(); pixel_count];
+            WorkerMessage::Framebuffer { sent_at_ns } => {
+                let mut pixels = vec![TimeTrackingPixel::default(); pixel_count];
+                // Time only the blob read (the transfer), not the idle wait that `recv_message`
+                // above spent blocking for the next frame.
+                let started = Instant::now();
                 self.stream
-                    .read_exact(pixels_as_bytes_mut(&mut frame))
+                    .read_exact(pixels_as_bytes_mut(&mut pixels))
                     .await?;
-                Ok(WorkerData::Framebuffer(frame))
+                let recv_duration = started.elapsed();
+                let latency = Duration::from_nanos(
+                    get_current_ns_since_unix_epoch().saturating_sub(sent_at_ns),
+                );
+                Ok(WorkerData::Framebuffer {
+                    pixels,
+                    recv_duration,
+                    latency,
+                })
             }
             WorkerMessage::Statistics(event) => Ok(WorkerData::Statistics(event)),
             WorkerMessage::Hello { worker_id } => Err(io::Error::new(
@@ -223,7 +252,7 @@ pub async fn accept(stream: TcpStream) -> io::Result<(Connection<TcpStream>, Uui
 
     let worker_id = match connection.recv_message::<WorkerMessage>().await? {
         WorkerMessage::Hello { worker_id } => worker_id,
-        WorkerMessage::Framebuffer => {
+        WorkerMessage::Framebuffer { .. } => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "expected a hello message but got a framebuffer",
@@ -258,7 +287,11 @@ mod tests {
         let fb = TimeTrackingFrameBuffer::new(2, 1, 0);
         fb.set(0, 0, 0x00_00ff, 42);
 
-        worker.send_framebuffer(fb.as_raw_bytes()).await.unwrap();
+        let sent_at_ns = get_current_ns_since_unix_epoch();
+        worker
+            .send_framebuffer(sent_at_ns, fb.as_raw_bytes())
+            .await
+            .unwrap();
         worker
             .send_statistics(StatisticsInformationEvent {
                 bytes: 1234,
@@ -268,17 +301,17 @@ mod tests {
             .unwrap();
 
         match collector.recv_worker_data(2).await.unwrap() {
-            WorkerData::Framebuffer(frame) => {
-                assert_eq!(frame.len(), 2);
-                assert_eq!(frame[0].rgb(), 0x00_00ff);
-                assert_eq!(frame[0].timestamp(), 42);
+            WorkerData::Framebuffer { pixels, .. } => {
+                assert_eq!(pixels.len(), 2);
+                assert_eq!(pixels[0].rgb(), 0x00_00ff);
+                assert_eq!(pixels[0].timestamp(), 42);
             }
             WorkerData::Statistics(_) => panic!("expected a framebuffer first"),
         }
 
         match collector.recv_worker_data(2).await.unwrap() {
             WorkerData::Statistics(event) => assert_eq!(event.bytes, 1234),
-            WorkerData::Framebuffer(_) => panic!("expected statistics second"),
+            WorkerData::Framebuffer { .. } => panic!("expected statistics second"),
         }
     }
 }

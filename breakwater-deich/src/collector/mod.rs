@@ -39,6 +39,7 @@ use uuid::Uuid;
 use crate::{
     cli_args::CollectorCliArgs,
     collector::{canvas::Canvas, stats::CollectorStatistics},
+    metrics::{self, CollectorMetrics, METRICS_LOG_INTERVAL},
     protocol::{self, Connection, WorkerConfig, WorkerData, frame_period},
 };
 
@@ -95,6 +96,9 @@ pub async fn run(args: CollectorCliArgs) -> eyre::Result<()> {
     };
     let statistics: SharedStatistics = Arc::new(Mutex::new(statistics));
 
+    let metrics = Arc::new(CollectorMetrics::new().context("failed to register collector metrics")?);
+    metrics::serve(args.prometheus.prometheus_listen_address)?;
+
     // The breakwater sinks expect the memory layout of a [`SimpleFrameBuffer`], so the render loop
     // draws the merged canvas into one for them to consume.
     let render_fb = Arc::new(SimpleFrameBuffer::new(
@@ -116,6 +120,7 @@ pub async fn run(args: CollectorCliArgs) -> eyre::Result<()> {
         listener,
         workers.clone(),
         statistics.clone(),
+        metrics.clone(),
         config,
     ));
     let render_task = tokio::spawn(render_loop(workers.clone(), render_fb.clone(), config));
@@ -124,6 +129,7 @@ pub async fn run(args: CollectorCliArgs) -> eyre::Result<()> {
         statistics_information_tx,
         statistics_save_mode,
     ));
+    let metrics_task = tokio::spawn(log_metrics(metrics.clone(), workers.clone()));
 
     let (sink_tasks, ffmpeg_thread_present) = start_sinks(
         &args.sinks,
@@ -143,6 +149,7 @@ pub async fn run(args: CollectorCliArgs) -> eyre::Result<()> {
     accept_task.abort();
     render_task.abort();
     publish_task.abort();
+    metrics_task.abort();
 
     for sink_task in sink_tasks {
         sink_task
@@ -168,6 +175,7 @@ async fn accept_workers(
     listener: TcpListener,
     workers: Workers,
     statistics: SharedStatistics,
+    metrics: Arc<CollectorMetrics>,
     config: WorkerConfig,
 ) -> eyre::Result<()> {
     loop {
@@ -178,8 +186,9 @@ async fn accept_workers(
 
         let workers = workers.clone();
         let statistics = statistics.clone();
+        let metrics = metrics.clone();
         tokio::spawn(async move {
-            match handle_worker(stream, peer, config, &workers, &statistics).await {
+            match handle_worker(stream, peer, config, &workers, &statistics, &metrics).await {
                 // The read loop only ever returns on error; a clean disconnect shows up as EOF.
                 Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => {
                     debug!(%peer, "Worker connection closed");
@@ -199,6 +208,7 @@ async fn handle_worker(
     config: WorkerConfig,
     workers: &Workers,
     statistics: &SharedStatistics,
+    metrics: &CollectorMetrics,
 ) -> io::Result<()> {
     let (mut connection, worker_id) = protocol::accept(stream).await?;
 
@@ -212,7 +222,8 @@ async fn handle_worker(
         return Ok(());
     }
 
-    let result = serve_worker(&mut connection, worker_id, config, workers, statistics).await;
+    let result =
+        serve_worker(&mut connection, worker_id, config, workers, statistics, metrics).await;
 
     deregister(workers, worker_id, peer);
     // Drop this worker's baseline so its next session accumulates from zero; its already-folded
@@ -232,13 +243,22 @@ async fn serve_worker(
     config: WorkerConfig,
     workers: &Workers,
     statistics: &SharedStatistics,
+    metrics: &CollectorMetrics,
 ) -> io::Result<()> {
     connection.send_config(config).await?;
     let pixel_count = config.pixel_count();
+    let frame_size_bytes = config.frame_size_bytes() as u64;
+    // Cache this worker's metric handles once, so the per-frame path skips the label lookup.
+    let recorder = metrics.recorder(worker_id);
 
     loop {
         match connection.recv_worker_data(pixel_count).await? {
-            WorkerData::Framebuffer(frame) => {
+            WorkerData::Framebuffer {
+                pixels,
+                recv_duration,
+                latency,
+            } => {
+                recorder.observe_frame(recv_duration, latency, frame_size_bytes);
                 // Keep only this worker's latest frame; the render loop merges it. A full frame
                 // supersedes the worker's earlier ones, so there is nothing to accumulate here.
                 if let Some(slot) = workers
@@ -246,7 +266,7 @@ async fn serve_worker(
                     .expect("workers lock poisoned")
                     .get_mut(&worker_id)
                 {
-                    *slot = Some(Arc::new(frame));
+                    *slot = Some(Arc::new(pixels));
                 }
             }
             WorkerData::Statistics(event) => {
@@ -289,6 +309,32 @@ async fn render_loop(workers: Workers, render_fb: Arc<SimpleFrameBuffer>, config
             canvas.merge(frame);
         }
         canvas.draw_to_framebuffer(&render_fb);
+    }
+}
+
+/// Logs a per-interval summary of collector ingress (bytes/s and the implied link utilisation) plus
+/// the live worker count. Per-worker receive time and end-to-end latency live in the Prometheus
+/// histograms; this is just the at-a-glance "is the collector link keeping up" line. Never returns.
+async fn log_metrics(metrics: Arc<CollectorMetrics>, workers: Workers) {
+    let mut ticker = interval(METRICS_LOG_INTERVAL);
+    let interval_secs = METRICS_LOG_INTERVAL.as_secs().max(1);
+    let mut previous_bytes = 0u64;
+
+    loop {
+        ticker.tick().await;
+
+        let bytes = metrics.ingress_bytes_total();
+        let delta = bytes.saturating_sub(previous_bytes);
+        previous_bytes = bytes;
+        let mb_per_s = delta as f64 / interval_secs as f64 / 1_000_000.0;
+        let connected = workers.lock().expect("workers lock poisoned").len();
+
+        info!(
+            connected_workers = connected,
+            ingress_mb_s = format!("{mb_per_s:.1}"),
+            ingress_gbit_s = format!("{:.2}", mb_per_s * 8.0 / 1000.0),
+            "Collector ingress metrics (last interval)"
+        );
     }
 }
 

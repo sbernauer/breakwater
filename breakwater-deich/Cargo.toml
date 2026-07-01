@@ -18,6 +18,7 @@ breakwater.workspace = true
 clap.workspace = true
 color-eyre.workspace = true
 postcard.workspace = true
+prometheus_exporter.workspace = true
 serde.workspace = true
 tokio.workspace = true
 tracing.workspace = true

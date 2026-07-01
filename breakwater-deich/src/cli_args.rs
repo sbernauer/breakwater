@@ -35,6 +35,9 @@ pub struct WorkerCliArgs {
     /// worker to the collector across restarts, which keeps per-worker stats stable over time.
     #[clap(long, default_value = "worker-id")]
     pub worker_id_file: PathBuf,
+
+    #[clap(flatten)]
+    pub prometheus: PrometheusCliArgs,
 }
 
 #[derive(clap::Args, Debug)]
@@ -57,8 +60,23 @@ pub struct CollectorCliArgs {
     pub fps: u32,
 
     #[clap(flatten)]
+    pub prometheus: PrometheusCliArgs,
+
+    #[clap(flatten)]
     pub statistics_save_file: StatisticsSaveFileCliArgs,
 
     #[clap(flatten)]
     pub sinks: SinkCliArgs,
+}
+
+/// Prometheus metrics options, shared by both roles. Enabled by default (like breakwater): each node
+/// serves `/metrics` on this address. Metrics are also summarized to the log on an interval, so
+/// they're available even without a scraper.
+#[derive(clap::Args, Debug)]
+#[command(next_help_heading = "Prometheus options")]
+pub struct PrometheusCliArgs {
+    /// Address to serve Prometheus metrics on. Workers and the collector run on separate hosts, so
+    /// the same default port is fine for all of them; override it if you colocate roles on one host.
+    #[clap(long, default_value = "[::]:9100")]
+    pub prometheus_listen_address: SocketAddr,
 }
