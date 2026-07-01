@@ -119,6 +119,7 @@ async fn run_session(args: &WorkerCliArgs, worker_id: Uuid) -> eyre::Result<()> 
 
     Ok(())
 }
+
 /// Connects to the collector, retrying with a backoff until it succeeds.
 async fn connect_to_collector(
     collector_address: SocketAddr,

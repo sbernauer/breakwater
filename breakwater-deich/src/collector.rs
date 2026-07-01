@@ -567,7 +567,9 @@ async fn serve_worker(
     let mut discard = vec![0u8; config.frame_size_bytes()];
 
     loop {
-        match sync::receive_worker_message(stream).await? {
+        // A `Frame` header is followed on the wire by its raw framebuffer blob, which each arm below
+        // must consume (store or discard) before the next message to keep the stream aligned.
+        match sync::read_message::<_, WorkerMessage>(stream).await? {
             WorkerMessage::Frame { frame_number } => match frame_store.classify(frame_number) {
                 FrameInterest::Wanted => {
                     // Read straight into a fresh pixel buffer (outside any lock) so we can hand

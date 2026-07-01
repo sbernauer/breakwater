@@ -152,17 +152,6 @@ pub async fn accept_worker<R: AsyncRead + Unpin>(reader: &mut R) -> io::Result<U
     }
 }
 
-/// Collector side: read the next message from a worker. For a [`WorkerMessage::Frame`] the caller
-/// must then read exactly [`WorkerConfig::frame_size_bytes`] bytes with [`receive_frame_body`]
-/// before the next message (or discard them) — splitting the two lets the caller decide whether to
-/// keep the blob. A [`WorkerMessage::Statistics`] is self-contained, and a second
-/// [`WorkerMessage::Hello`] mid-stream is a protocol error for the caller to reject.
-pub async fn receive_worker_message<R: AsyncRead + Unpin>(
-    reader: &mut R,
-) -> io::Result<WorkerMessage> {
-    read_message(reader).await
-}
-
 /// Collector side: send the worker its config in reply to the hello.
 pub async fn send_config<W: AsyncWrite + Unpin>(
     writer: &mut W,
@@ -173,7 +162,7 @@ pub async fn send_config<W: AsyncWrite + Unpin>(
 
 /// Collector side: read a frame's raw blob into `pixels` (which must be
 /// [`WorkerConfig::frame_size_bytes`] long), following a [`WorkerMessage::Frame`] from
-/// [`receive_worker_message`].
+/// [`read_message`].
 pub async fn receive_frame_body<R: AsyncRead + Unpin>(
     reader: &mut R,
     pixels: &mut [u8],
@@ -270,7 +259,15 @@ async fn write_message<W: AsyncWrite + Unpin, M: Serialize>(
 }
 
 /// Reads a length-delimited, postcard-encoded control message.
-async fn read_message<R: AsyncRead + Unpin, M: DeserializeOwned>(reader: &mut R) -> io::Result<M> {
+///
+/// Collector side, this reads the next [`WorkerMessage`]. For a [`WorkerMessage::Frame`] the caller
+/// must then read exactly [`WorkerConfig::frame_size_bytes`] bytes with [`receive_frame_body`]
+/// before the next message (or discard them) — splitting the two lets the caller decide whether to
+/// keep the blob. A [`WorkerMessage::Statistics`] is self-contained, and a second
+/// [`WorkerMessage::Hello`] mid-stream is a protocol error for the caller to reject.
+pub(crate) async fn read_message<R: AsyncRead + Unpin, M: DeserializeOwned>(
+    reader: &mut R,
+) -> io::Result<M> {
     let len = reader.read_u32_le().await? as usize;
     if len > MAX_MESSAGE_SIZE {
         return Err(io::Error::new(

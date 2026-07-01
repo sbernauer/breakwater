@@ -45,6 +45,8 @@ impl TimeTrackingFrameBuffer {
         // may be mutating concurrently — fine for a lossy, best-effort sync.
         let len = self.buffer.len() * size_of::<TimeTrackingPixel>();
         let ptr = self.buffer.as_ptr().cast::<u8>();
+        // SAFETY: `TimeTrackingPixel` is `repr(transparent)` over a `u64` (all bit patterns valid),
+        // so its bytes are a valid `[u8]` of the same length and lifetime as the shared borrow.
         unsafe { std::slice::from_raw_parts(ptr, len) }
     }
 }
