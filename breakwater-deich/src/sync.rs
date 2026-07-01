@@ -12,6 +12,7 @@
 
 use std::{io, net::SocketAddr, time::Duration};
 
+use breakwater::statistics::StatisticsInformationEvent;
 use breakwater_parser::{
     TimeTrackingFrameBuffer, TimeTrackingPixel, get_current_ns_since_unix_epoch,
 };
@@ -19,6 +20,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::TcpStream,
+    sync::broadcast,
 };
 use uuid::Uuid;
 
@@ -51,6 +53,12 @@ pub enum WorkerMessage {
     /// frame belongs to. The per-pixel write timestamps live in the blob itself (absolute, set by
     /// the framebuffer), so no base needs to travel with the frame.
     Frame { frame_number: u64 },
+
+    /// A periodic statistics snapshot, already aggregated per IP by the worker's statistics
+    /// aggregator (roughly once per second). The collector merges these across all connected
+    /// workers for display. Unlike [`WorkerMessage::Frame`] this is self-contained — no raw bytes
+    /// follow it on the wire.
+    Statistics(StatisticsInformationEvent),
 }
 
 /// The wall-clock frame schedule shared by every worker and the collector. Frames are numbered by
@@ -137,20 +145,22 @@ pub async fn accept_worker<R: AsyncRead + Unpin>(reader: &mut R) -> io::Result<U
             io::ErrorKind::InvalidData,
             "expected a hello message but got a frame",
         )),
+        WorkerMessage::Statistics(_) => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "expected a hello message but got statistics",
+        )),
     }
 }
 
-/// Collector side: read a frame's `frame_number`. The caller must then read exactly
-/// [`WorkerConfig::frame_size_bytes`] bytes with [`receive_frame_body`] before the next message, or
-/// discard them — splitting the two lets the caller decide whether to keep the blob.
-pub async fn receive_frame_number<R: AsyncRead + Unpin>(reader: &mut R) -> io::Result<u64> {
-    match read_message(reader).await? {
-        WorkerMessage::Frame { frame_number } => Ok(frame_number),
-        WorkerMessage::Hello { worker_id } => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("expected a frame but got another hello from {worker_id}"),
-        )),
-    }
+/// Collector side: read the next message from a worker. For a [`WorkerMessage::Frame`] the caller
+/// must then read exactly [`WorkerConfig::frame_size_bytes`] bytes with [`receive_frame_body`]
+/// before the next message (or discard them) — splitting the two lets the caller decide whether to
+/// keep the blob. A [`WorkerMessage::Statistics`] is self-contained, and a second
+/// [`WorkerMessage::Hello`] mid-stream is a protocol error for the caller to reject.
+pub async fn receive_worker_message<R: AsyncRead + Unpin>(
+    reader: &mut R,
+) -> io::Result<WorkerMessage> {
+    read_message(reader).await
 }
 
 /// Collector side: send the worker its config in reply to the hello.
@@ -162,7 +172,8 @@ pub async fn send_config<W: AsyncWrite + Unpin>(
 }
 
 /// Collector side: read a frame's raw blob into `pixels` (which must be
-/// [`WorkerConfig::frame_size_bytes`] long), following a [`receive_frame_header`].
+/// [`WorkerConfig::frame_size_bytes`] long), following a [`WorkerMessage::Frame`] from
+/// [`receive_worker_message`].
 pub async fn receive_frame_body<R: AsyncRead + Unpin>(
     reader: &mut R,
     pixels: &mut [u8],
@@ -171,42 +182,58 @@ pub async fn receive_frame_body<R: AsyncRead + Unpin>(
     Ok(())
 }
 
-/// Worker side: stream the framebuffer to the collector forever, reconnecting as needed.
+/// Worker side: stream frames and periodic statistics to the collector over the one connection,
+/// until it fails (then the error is returned).
 ///
-/// `stream`/`config` are the live connection and config from the initial [`connect`]. On every
-/// (re)connect the collector re-sends the config; we honour the frame rate, but since the
-/// framebuffer is already allocated we only warn if the geometry changed (live resize is not
-/// supported yet).
-/// Streams frames aligned to the shared [`FrameSchedule`] until the connection fails, returning the
-/// error. The worker treats that as a signal to tear down and start a fresh session (reconnect, get
-/// new config, rebuild the framebuffer), so there is no reconnection logic here.
+/// Both kinds of message share this connection *and this task*, so their writes can never
+/// interleave — a statistics message can't slip between a [`WorkerMessage::Frame`] header and its
+/// raw blob. The worker treats a returned error as a signal to tear down and start a fresh session
+/// (reconnect, get new config, rebuild the framebuffer), so there is no reconnection logic here.
 ///
-/// Each iteration sleeps until the current slot ends and sends the framebuffer, tagged with the
-/// just-completed slot number. Per-pixel timestamps are absolute (set by the framebuffer at write
-/// time), so there's nothing to re-base — the worker only has to pick the right slot number, which
-/// it recomputes from the clock so a worker that falls behind simply skips missed slots.
-pub async fn sync_framebuffer(
+/// `stream`/`config` are the live connection and config from the initial [`connect`]. Frames are
+/// aligned to the shared [`FrameSchedule`]: each tick sleeps until the current slot ends and sends
+/// the framebuffer, tagged with the just-completed slot number. Per-pixel timestamps are absolute
+/// (set by the framebuffer at write time), so there's nothing to re-base — the worker only picks
+/// the slot number, recomputed from the clock so a worker that falls behind simply skips missed
+/// slots. Statistics snapshots arrive on `statistics_rx` (~once per second) and are forwarded as
+/// they come.
+pub async fn sync(
     fb: &TimeTrackingFrameBuffer,
     stream: &mut TcpStream,
     config: WorkerConfig,
+    mut statistics_rx: broadcast::Receiver<StatisticsInformationEvent>,
 ) -> io::Result<()> {
     let schedule = FrameSchedule::new(config.sync_fps);
     let mut frame_number = schedule.frame_number_at(get_current_ns_since_unix_epoch());
 
     loop {
-        // Sleep until the current slot ends.
+        // Sleep until the current slot ends, but wake early to forward a statistics snapshot.
         let slot_end = schedule.frame_start_ns(frame_number + 1);
         let now = get_current_ns_since_unix_epoch();
-        tokio::time::sleep(Duration::from_nanos(slot_end.saturating_sub(now))).await;
+        let slot_sleep = tokio::time::sleep(Duration::from_nanos(slot_end.saturating_sub(now)));
+        tokio::pin!(slot_sleep);
 
-        write_message(stream, &WorkerMessage::Frame { frame_number }).await?;
-        stream.write_all(fb.as_raw_bytes()).await?;
-        stream.flush().await?;
+        tokio::select! {
+            () = &mut slot_sleep => {
+                write_message(stream, &WorkerMessage::Frame { frame_number }).await?;
+                stream.write_all(fb.as_raw_bytes()).await?;
+                stream.flush().await?;
 
-        // Advance to the current slot, skipping any we fell behind on, always moving forward.
-        frame_number = schedule
-            .frame_number_at(get_current_ns_since_unix_epoch())
-            .max(frame_number + 1);
+                // Advance to the current slot, skipping any we fell behind on, always moving forward.
+                frame_number = schedule
+                    .frame_number_at(get_current_ns_since_unix_epoch())
+                    .max(frame_number + 1);
+            }
+            event = statistics_rx.recv() => match event {
+                Ok(event) => write_message(stream, &WorkerMessage::Statistics(event)).await?,
+                // Lagged: snapshots are emitted ~once per second into a small buffer with a single
+                // consumer, so lagging shouldn't happen; if it somehow does, skip the dropped ones.
+                // Closed: the aggregator is gone, but the whole session is torn down at that point
+                // (it runs as a sibling `select!` arm in the worker), so this is effectively
+                // unreachable. Either way: keep streaming frames rather than failing the sync.
+                Err(broadcast::error::RecvError::Lagged(_) | broadcast::error::RecvError::Closed) => {}
+            },
+        }
     }
 }
 

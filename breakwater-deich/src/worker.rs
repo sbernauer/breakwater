@@ -9,10 +9,16 @@
 
 use std::{fs, io, net::SocketAddr, path::Path, sync::Arc, time::Duration};
 
-use breakwater::{server::Server, statistics::StatisticsEvent};
+use breakwater::{
+    server::Server,
+    statistics::{Statistics, StatisticsEvent, StatisticsInformationEvent, StatisticsSaveMode},
+};
 use breakwater_parser::TimeTrackingFrameBuffer;
 use color_eyre::eyre::{self, Context};
-use tokio::{net::TcpStream, sync::mpsc};
+use tokio::{
+    net::TcpStream,
+    sync::{broadcast, mpsc},
+};
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -69,6 +75,18 @@ async fn run_session(args: &WorkerCliArgs, worker_id: Uuid) -> eyre::Result<()> 
     ));
     let (statistics_tx, statistics_rx) = mpsc::channel::<StatisticsEvent>(100);
 
+    // Worker-local aggregator: it folds the server's raw per-connection events into a periodic,
+    // per-IP snapshot (~once per second) that we forward to the collector, which in turn merges the
+    // snapshots across all workers. Persisting/merging across workers is the collector's job, so the
+    // worker runs the aggregator with saving disabled.
+    let (statistics_information_tx, _) = broadcast::channel::<StatisticsInformationEvent>(2);
+    let mut statistics = Statistics::new(
+        statistics_rx,
+        statistics_information_tx.clone(),
+        StatisticsSaveMode::Disabled,
+    )
+    .context("failed to create statistics aggregator")?;
+
     let network_buffer_size = args
         .network_listener
         .network_buffer_size
@@ -93,9 +111,9 @@ async fn run_session(args: &WorkerCliArgs, worker_id: Uuid) -> eyre::Result<()> 
 
     tokio::select! {
         result = server.start() => result.context("pixelflut server stopped")?,
-        () = drain_stats(statistics_rx) => {}
-        result = sync::sync_framebuffer(&fb, &mut stream, config) => {
-            result.context("framebuffer sync to the collector stopped")?;
+        result = statistics.run() => result.context("statistics aggregator stopped")?,
+        result = sync::sync(&fb, &mut stream, config, statistics_information_tx.subscribe()) => {
+            result.context("framebuffer and statistics sync to the collector stopped")?;
         }
     }
 
@@ -137,15 +155,6 @@ fn load_or_create_worker_id(path: &Path) -> eyre::Result<Uuid> {
         }
         Err(error) => {
             Err(error).with_context(|| format!("failed to read worker id from {}", path.display()))
-        }
-    }
-}
-
-/// Currently we don't care about stats, so let's just drain them
-async fn drain_stats(mut statistics_rx: mpsc::Receiver<StatisticsEvent>) {
-    loop {
-        if statistics_rx.recv().await.is_none() {
-            return;
         }
     }
 }

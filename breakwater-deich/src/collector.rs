@@ -13,7 +13,7 @@
 use std::{
     collections::HashMap,
     io,
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     ops::RangeInclusive,
     sync::{Arc, Mutex, RwLock},
     time::Duration,
@@ -21,7 +21,9 @@ use std::{
 
 use breakwater::{
     sinks::start_sinks,
-    statistics::{StatisticsEvent, StatisticsInformationEvent},
+    statistics::{
+        STATS_REPORT_INTERVAL, StatisticsEvent, StatisticsInformationEvent, StatisticsSaveMode,
+    },
 };
 use breakwater_parser::{
     FrameBuffer, MultiPixelSet, SimpleFrameBuffer, TimeTrackingPixel,
@@ -31,13 +33,14 @@ use color_eyre::eyre::{self, Context};
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::{broadcast, mpsc},
+    time::interval,
 };
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::{
     cli_args::CollectorCliArgs,
-    sync::{self, FrameSchedule, WorkerConfig},
+    sync::{self, FrameSchedule, WorkerConfig, WorkerMessage},
 };
 
 /// How long we assume a worker needs to stream a frame to us (on top of the slot the worker spends
@@ -53,6 +56,130 @@ const FRAME_STREAM_BUDGET: Duration = Duration::from_millis(50);
 /// `RwLock`. It's a `std` (sync) lock on purpose: the critical sections are a single map op and
 /// never cross an `.await`, so an async `tokio::sync::RwLock` would only add overhead.
 type ConnectedWorkers = Arc<RwLock<HashMap<Uuid, SocketAddr>>>;
+
+/// Collector-wide statistics, shared between the worker-connection tasks (which feed it) and
+/// [`publish_aggregated_statistics`] (which reads it). A `std` (sync) `Mutex` like [`FrameStore`]'s
+/// frame map: the critical sections are plain map ops and never cross an `.await`.
+type SharedStatistics = Arc<Mutex<CollectorStatistics>>;
+
+/// Holds both the live, per-worker view and the persistent grand totals.
+///
+/// Each worker reports a snapshot whose `bytes_for_ip` / `denied_connections_for_ip` are cumulative
+/// *within its current collector-connection session* — monotonic until the connection drops, then
+/// reset to zero on reconnect (the worker rebuilds its aggregator per session). So we turn each
+/// worker's counter into deltas and fold them into monotonic grand totals that survive both worker
+/// and collector restarts. The per-worker baseline is cleared on disconnect (see [`Self::forget`]),
+/// so a reconnecting worker's first snapshot counts in full from zero.
+#[derive(Default)]
+struct CollectorStatistics {
+    /// The latest snapshot from each connected worker, keyed by UUID. Used for the live connection
+    /// gauge and as the per-worker baseline for delta accumulation. Removed on disconnect.
+    latest_per_worker: HashMap<Uuid, StatisticsInformationEvent>,
+
+    /// Monotonic grand totals, accumulated from per-worker deltas. Persisted to the save file and
+    /// seeded from it on startup, so the "big numbers" outlive any restart.
+    total_bytes_for_ip: HashMap<IpAddr, u64>,
+    total_denied_for_ip: HashMap<IpAddr, u32>,
+}
+
+impl CollectorStatistics {
+    /// Seeds the grand totals from a previously saved snapshot (the live per-worker view always
+    /// starts empty — it's rebuilt as workers (re)connect).
+    fn from_save_point(save_point: StatisticsInformationEvent) -> Self {
+        Self {
+            total_bytes_for_ip: save_point.bytes_for_ip,
+            total_denied_for_ip: save_point.denied_connections_for_ip,
+            ..Default::default()
+        }
+    }
+
+    /// Records a worker's fresh snapshot: folds the per-IP increase since its previous snapshot
+    /// (zero if this is its first) into the grand totals, then stores it as the new baseline.
+    fn record(&mut self, worker_id: Uuid, event: StatisticsInformationEvent) {
+        let previous = self.latest_per_worker.get(&worker_id);
+
+        for (&ip, &bytes) in &event.bytes_for_ip {
+            let baseline = previous
+                .and_then(|p| p.bytes_for_ip.get(&ip))
+                .copied()
+                .unwrap_or(0);
+            // Monotonic within a session, so `bytes >= baseline`; `saturating_sub` only guards the
+            // (shouldn't-happen) case of a counter going backwards without a disconnect in between.
+            *self.total_bytes_for_ip.entry(ip).or_default() += bytes.saturating_sub(baseline);
+        }
+        for (&ip, &denied) in &event.denied_connections_for_ip {
+            let baseline = previous
+                .and_then(|p| p.denied_connections_for_ip.get(&ip))
+                .copied()
+                .unwrap_or(0);
+            let total = self.total_denied_for_ip.entry(ip).or_default();
+            *total = total.saturating_add(denied.saturating_sub(baseline));
+        }
+
+        self.latest_per_worker.insert(worker_id, event);
+    }
+
+    /// Drops a disconnected worker's baseline so its next session accumulates from zero again. Its
+    /// already-folded bytes stay in the grand totals.
+    fn forget(&mut self, worker_id: Uuid) {
+        self.latest_per_worker.remove(&worker_id);
+    }
+
+    /// Builds the event published to the sinks: persistent grand totals for bytes/denied, plus the
+    /// live connection gauge summed across currently-connected workers. `previous_bytes` carries
+    /// the last tick's total so we can derive a per-second rate at the collector.
+    fn published_event(&self, previous_bytes: &mut u64) -> StatisticsInformationEvent {
+        let mut connections_for_ip: HashMap<IpAddr, u32> = HashMap::new();
+        let mut statistic_events = 0;
+        for snapshot in self.latest_per_worker.values() {
+            for (&ip, &connections) in &snapshot.connections_for_ip {
+                *connections_for_ip.entry(ip).or_default() += connections;
+            }
+            statistic_events += snapshot.statistic_events;
+        }
+
+        let connections = connections_for_ip.values().sum();
+        let [ips_v6, ips_v4] = connections_for_ip
+            .keys()
+            .fold([0u32, 0u32], |[v6, v4], ip| match ip {
+                IpAddr::V6(_) => [v6 + 1, v4],
+                IpAddr::V4(_) => [v6, v4 + 1],
+            });
+
+        let bytes: u64 = self.total_bytes_for_ip.values().sum();
+        // Rate over one report interval, saturating since a worker dropping out can't shrink the
+        // (monotonic) total, but a freshly seeded total on startup can jump the first `previous`.
+        let elapsed_secs = STATS_REPORT_INTERVAL.as_secs().max(1);
+        let bytes_per_s = bytes.saturating_sub(*previous_bytes) / elapsed_secs;
+        *previous_bytes = bytes;
+
+        StatisticsInformationEvent {
+            connections,
+            ips_v6,
+            ips_v4,
+            bytes,
+            bytes_per_s,
+            connections_for_ip,
+            denied_connections_for_ip: self.total_denied_for_ip.clone(),
+            bytes_for_ip: self.total_bytes_for_ip.clone(),
+            statistic_events,
+            // Workers don't render, so there's no frame/fps to report at the collector.
+            frame: 0,
+            fps: 0,
+        }
+    }
+
+    /// Builds the event written to the save file: only the persistent grand totals matter (the live
+    /// view is rebuilt from reconnecting workers), so the other fields stay at their defaults.
+    fn save_point(&self) -> StatisticsInformationEvent {
+        StatisticsInformationEvent {
+            bytes: self.total_bytes_for_ip.values().sum(),
+            bytes_for_ip: self.total_bytes_for_ip.clone(),
+            denied_connections_for_ip: self.total_denied_for_ip.clone(),
+            ..Default::default()
+        }
+    }
+}
 
 /// The long-term merged canvas, held by the master for the whole process lifetime.
 ///
@@ -191,6 +318,23 @@ pub async fn run(args: CollectorCliArgs) -> eyre::Result<()> {
     let connected_workers: ConnectedWorkers = Arc::new(RwLock::new(HashMap::new()));
     let frame_store = Arc::new(FrameStore::new());
 
+    // Persistent per-IP statistics: seed the grand totals from the save file (if any) so the "big
+    // numbers" survive restarts; the live per-worker view is rebuilt as workers (re)connect.
+    let statistics_save_mode = StatisticsSaveMode::from(args.statistics_save_file);
+    let statistics = match &statistics_save_mode {
+        StatisticsSaveMode::Enabled { save_file, .. } => {
+            match StatisticsInformationEvent::load_from_file(save_file)? {
+                Some(save_point) => {
+                    info!(%save_file, "Restored statistics from save file");
+                    CollectorStatistics::from_save_point(save_point)
+                }
+                None => CollectorStatistics::default(),
+            }
+        }
+        StatisticsSaveMode::Disabled => CollectorStatistics::default(),
+    };
+    let statistics: SharedStatistics = Arc::new(Mutex::new(statistics));
+
     // Most of the time we want to render the screen to *something*, otherwise the game is boring
     // As the breakwater sinks expect the memory layout of the [`SimpleFrameBuffer`] we need to
     // create and maintain one.
@@ -201,14 +345,15 @@ pub async fn run(args: CollectorCliArgs) -> eyre::Result<()> {
 
     // If we make the channel to big, stats will start to lag behind
     // TODO: Check performance impact in real-world scenario. Maybe the statistics thread blocks the other threads
-    #[allow(unused_variables)]
     let (statistics_tx, mut statistics_rx) = mpsc::channel::<StatisticsEvent>(100);
-    #[allow(unused_variables)]
-    let (_statistics_information_tx, statistics_information_rx) =
+    // The aggregated, per-IP statistics we publish for the sinks to render. Fed by
+    // `publish_aggregated_statistics` below from the snapshots workers stream in.
+    let (statistics_information_tx, statistics_information_rx) =
         broadcast::channel::<StatisticsInformationEvent>(2);
     let (_terminate_signal_tx, _terminate_signal_rx) = broadcast::channel::<()>(1);
 
-    // FIXME: For now we need to drain the statistics
+    // The collector itself produces no raw statistics events; only sinks (e.g. the VNC sink's
+    // rendered-frame counter) might. We don't surface those yet, so drain them.
     let stats_task = tokio::spawn(async move { while statistics_rx.recv().await.is_some() {} });
 
     {
@@ -220,9 +365,16 @@ pub async fn run(args: CollectorCliArgs) -> eyre::Result<()> {
         });
     }
 
+    tokio::spawn(publish_aggregated_statistics(
+        statistics.clone(),
+        statistics_information_tx,
+        statistics_save_mode,
+    ));
+
     let accept_task = tokio::spawn(accept_workers(
         listener,
         connected_workers,
+        statistics,
         frame_store,
         config,
     ));
@@ -267,6 +419,7 @@ pub async fn run(args: CollectorCliArgs) -> eyre::Result<()> {
 async fn accept_workers(
     listener: TcpListener,
     connected_workers: ConnectedWorkers,
+    statistics: SharedStatistics,
     frame_store: Arc<FrameStore>,
     config: WorkerConfig,
 ) -> eyre::Result<()> {
@@ -277,9 +430,19 @@ async fn accept_workers(
             .context("failed to accept worker connection")?;
 
         let connected_workers = connected_workers.clone();
+        let statistics = statistics.clone();
         let frame_store = frame_store.clone();
         tokio::spawn(async move {
-            match handle_worker(stream, peer, config, &connected_workers, &frame_store).await {
+            match handle_worker(
+                stream,
+                peer,
+                config,
+                &connected_workers,
+                &statistics,
+                &frame_store,
+            )
+            .await
+            {
                 // The read loop only ever returns on error; a clean disconnect shows up as EOF.
                 Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => {
                     debug!(%peer, "Worker connection closed");
@@ -356,6 +519,7 @@ async fn handle_worker(
     peer: SocketAddr,
     config: WorkerConfig,
     connected_workers: &ConnectedWorkers,
+    statistics: &SharedStatistics,
     frame_store: &FrameStore,
 ) -> io::Result<()> {
     let worker_id = sync::accept_worker(&mut stream).await?;
@@ -370,18 +534,26 @@ async fn handle_worker(
         return Ok(());
     }
 
-    let result = serve_frames(&mut stream, peer, worker_id, config, frame_store).await;
+    let result = serve_worker(&mut stream, peer, worker_id, config, statistics, frame_store).await;
 
     deregister(connected_workers, worker_id, peer);
+    // Drop this worker's baseline so its next session accumulates from zero; its already-folded
+    // grand totals stay.
+    statistics
+        .lock()
+        .expect("collector statistics lock poisoned")
+        .forget(worker_id);
     result
 }
 
-/// Sends the worker its config, then reads its frames forever, storing the ones the master wants.
-async fn serve_frames(
+/// Sends the worker its config, then reads its messages forever: storing the frames the master
+/// wants and recording each statistics snapshot, until the connection drops.
+async fn serve_worker(
     stream: &mut TcpStream,
     peer: SocketAddr,
     worker_id: Uuid,
     config: WorkerConfig,
+    statistics: &SharedStatistics,
     frame_store: &FrameStore,
 ) -> io::Result<()> {
     sync::send_config(stream, config).await?;
@@ -392,20 +564,36 @@ async fn serve_frames(
     let mut discard = vec![0u8; config.frame_size_bytes()];
 
     loop {
-        let frame_number = sync::receive_frame_number(stream).await?;
-
-        match frame_store.classify(frame_number) {
-            FrameInterest::Wanted => {
-                // Read straight into a fresh pixel buffer (outside any lock) so we can hand
-                // ownership to the store; `read_exact` writes directly into its bytes, no extra copy.
-                let mut buffer = vec![TimeTrackingPixel::default(); pixel_count];
-                sync::receive_frame_body(stream, pixels_as_bytes_mut(&mut buffer)).await?;
-                frame_store.store(frame_number, worker_id, buffer);
+        match sync::receive_worker_message(stream).await? {
+            WorkerMessage::Frame { frame_number } => match frame_store.classify(frame_number) {
+                FrameInterest::Wanted => {
+                    // Read straight into a fresh pixel buffer (outside any lock) so we can hand
+                    // ownership to the store; `read_exact` writes directly into its bytes, no copy.
+                    let mut buffer = vec![TimeTrackingPixel::default(); pixel_count];
+                    sync::receive_frame_body(stream, pixels_as_bytes_mut(&mut buffer)).await?;
+                    frame_store.store(frame_number, worker_id, buffer);
+                }
+                other => {
+                    // Still consume the blob so the stream stays aligned for the next message.
+                    sync::receive_frame_body(stream, &mut discard).await?;
+                    log_dropped_frame(peer, frame_number, &other, schedule);
+                }
+            },
+            WorkerMessage::Statistics(event) => {
+                // Fold this snapshot's increase into the grand totals and store it as the new
+                // baseline; the publisher reads the result on its next tick.
+                statistics
+                    .lock()
+                    .expect("collector statistics lock poisoned")
+                    .record(worker_id, event);
             }
-            other => {
-                // Still consume the blob so the stream stays aligned for the next message.
-                sync::receive_frame_body(stream, &mut discard).await?;
-                log_dropped_frame(peer, frame_number, &other, schedule);
+            // The hello is a one-shot handshake consumed in `accept_worker`; a second one is a
+            // protocol violation.
+            WorkerMessage::Hello { worker_id: duplicate } => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("unexpected second hello (worker id {duplicate}) mid-stream"),
+                ));
             }
         }
     }
@@ -487,6 +675,55 @@ fn deregister(connected_workers: &ConnectedWorkers, worker_id: Uuid, peer: Socke
     );
 }
 
+/// Runs for the whole process lifetime, doing two things on their own intervals:
+/// - every [`STATS_REPORT_INTERVAL`], publishes the aggregated event on the broadcast channel the
+///   sinks already consume — so the overlay renders the merged, per-IP view with no extra work;
+/// - every configured save interval (when enabled), persists the grand totals to the save file so
+///   the "big numbers" survive a collector restart.
+async fn publish_aggregated_statistics(
+    statistics: SharedStatistics,
+    statistics_information_tx: broadcast::Sender<StatisticsInformationEvent>,
+    save_mode: StatisticsSaveMode,
+) {
+    let mut report = interval(STATS_REPORT_INTERVAL);
+    // Mirror breakwater's `Statistics`: when saving is disabled, an effectively-never timer keeps
+    // the `select!` arm valid without firing.
+    let (mut save, save_file) = match &save_mode {
+        StatisticsSaveMode::Disabled => (interval(Duration::MAX), None),
+        StatisticsSaveMode::Enabled {
+            save_file,
+            interval: save_interval,
+        } => (interval(*save_interval), Some(save_file.clone())),
+    };
+
+    // Previous tick's total byte count, so we can derive a per-second rate at the collector.
+    let mut previous_bytes = 0u64;
+
+    loop {
+        tokio::select! {
+            _ = report.tick() => {
+                let event = statistics
+                    .lock()
+                    .expect("collector statistics lock poisoned")
+                    .published_event(&mut previous_bytes);
+                // A send error just means no sink is currently subscribed; nothing to do about it.
+                let _ = statistics_information_tx.send(event);
+            }
+            _ = save.tick() => {
+                if let Some(save_file) = &save_file {
+                    let save_point = statistics
+                        .lock()
+                        .expect("collector statistics lock poisoned")
+                        .save_point();
+                    if let Err(error) = save_point.save_to_file(save_file) {
+                        warn!(%save_file, %error, "Failed to save statistics");
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -497,6 +734,108 @@ mod tests {
             .iter()
             .map(|&(rgb, timestamp)| TimeTrackingPixel::new(rgb, timestamp))
             .collect()
+    }
+
+    /// Builds a worker snapshot carrying per-IP byte and (live) connection counts.
+    fn snapshot(
+        bytes_for_ip: &[(IpAddr, u64)],
+        connections_for_ip: &[(IpAddr, u32)],
+    ) -> StatisticsInformationEvent {
+        StatisticsInformationEvent {
+            bytes_for_ip: bytes_for_ip.iter().copied().collect(),
+            connections_for_ip: connections_for_ip.iter().copied().collect(),
+            statistic_events: 1,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn accumulates_per_ip_totals_and_live_connections_across_workers() {
+        let v4: IpAddr = "1.2.3.4".parse().unwrap();
+        let v6: IpAddr = "::1".parse().unwrap();
+        let (w1, w2) = (Uuid::from_u128(1), Uuid::from_u128(2));
+
+        // `v4` hit both workers; `v6` only the second. Totals and the shared IP must add up.
+        let mut stats = CollectorStatistics::default();
+        stats.record(w1, snapshot(&[(v4, 100)], &[(v4, 2)]));
+        stats.record(w2, snapshot(&[(v4, 50), (v6, 7)], &[(v4, 1), (v6, 3)]));
+
+        let mut previous_bytes = 0;
+        let event = stats.published_event(&mut previous_bytes);
+
+        // Bytes are the persistent grand total.
+        assert_eq!(event.bytes_for_ip[&v4], 150);
+        assert_eq!(event.bytes_for_ip[&v6], 7);
+        assert_eq!(event.bytes, 157);
+        // Connections are the live gauge, summed across currently-connected workers.
+        assert_eq!(event.connections_for_ip[&v4], 3);
+        assert_eq!(event.connections, 6);
+        assert_eq!(event.ips_v4, 1);
+        assert_eq!(event.ips_v6, 1);
+        assert_eq!(event.statistic_events, 2);
+        // First tick: the whole total counts as this interval's throughput.
+        assert_eq!(event.bytes_per_s, 157 / STATS_REPORT_INTERVAL.as_secs().max(1));
+        assert_eq!(previous_bytes, 157);
+    }
+
+    #[test]
+    fn folds_deltas_so_a_cumulative_counter_is_not_double_counted() {
+        let v4: IpAddr = "1.2.3.4".parse().unwrap();
+        let w = Uuid::from_u128(1);
+        let mut stats = CollectorStatistics::default();
+
+        // A worker's counter is cumulative within a session: only the increase between consecutive
+        // snapshots is folded into the grand total.
+        stats.record(w, snapshot(&[(v4, 100)], &[]));
+        stats.record(w, snapshot(&[(v4, 175)], &[]));
+        assert_eq!(stats.total_bytes_for_ip[&v4], 175);
+    }
+
+    #[test]
+    fn worker_restart_keeps_totals_without_dipping_or_double_counting() {
+        let v4: IpAddr = "1.2.3.4".parse().unwrap();
+        let w = Uuid::from_u128(1);
+        let mut stats = CollectorStatistics::default();
+
+        stats.record(w, snapshot(&[(v4, 100)], &[(v4, 1)]));
+        // Worker disconnects: its baseline is dropped, but its folded bytes stay in the total.
+        stats.forget(w);
+        assert_eq!(stats.total_bytes_for_ip[&v4], 100);
+
+        // It reconnects (same UUID) with a counter reset to zero. The first post-restart snapshot
+        // counts in full, so the total grows by exactly the new traffic — no dip, no double count.
+        stats.record(w, snapshot(&[(v4, 30)], &[(v4, 1)]));
+        assert_eq!(stats.total_bytes_for_ip[&v4], 130);
+    }
+
+    #[test]
+    fn accumulates_denied_connections() {
+        let v4: IpAddr = "1.2.3.4".parse().unwrap();
+        let w = Uuid::from_u128(1);
+        let denied = |n: u32| StatisticsInformationEvent {
+            denied_connections_for_ip: [(v4, n)].into_iter().collect(),
+            ..Default::default()
+        };
+
+        let mut stats = CollectorStatistics::default();
+        stats.record(w, denied(3));
+        stats.record(w, denied(5)); // cumulative -> grand total +2
+        assert_eq!(stats.total_denied_for_ip[&v4], 5);
+        assert_eq!(stats.published_event(&mut 0).denied_connections_for_ip[&v4], 5);
+    }
+
+    #[test]
+    fn save_point_seeds_grand_totals_on_restart() {
+        let v4: IpAddr = "1.2.3.4".parse().unwrap();
+        let w = Uuid::from_u128(1);
+        let mut stats = CollectorStatistics::default();
+        stats.record(w, snapshot(&[(v4, 4096)], &[]));
+
+        // Collector restart: persist, then seed a fresh instance from the save point.
+        let reseeded = CollectorStatistics::from_save_point(stats.save_point());
+        assert_eq!(reseeded.total_bytes_for_ip[&v4], 4096);
+        // The live view starts empty; workers reconnect from zero and accumulate on top of the seed.
+        assert!(reseeded.latest_per_worker.is_empty());
     }
 
     #[test]

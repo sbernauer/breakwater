@@ -1,6 +1,9 @@
 use std::{net::SocketAddr, path::PathBuf};
 
-use breakwater::{cli_args::NetworkListenerCliArgs, sinks::cli_args::SinkCliArgs};
+use breakwater::{
+    cli_args::{NetworkListenerCliArgs, StatisticsSaveFileCliArgs},
+    sinks::cli_args::SinkCliArgs,
+};
 
 #[derive(clap::Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -52,6 +55,9 @@ pub struct CollectorCliArgs {
     /// Must stay well below the ~536 ms window the per-pixel timestamp can represent.
     #[clap(long, default_value_t = 30, value_parser = clap::value_parser!(u32).range(1..=60))]
     pub fps: u32,
+
+    #[clap(flatten)]
+    pub statistics_save_file: StatisticsSaveFileCliArgs,
 
     #[clap(flatten)]
     pub sinks: SinkCliArgs,
