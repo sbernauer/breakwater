@@ -10,7 +10,7 @@ async fn main() -> eyre::Result<()> {
     let matches = cmd.get_matches_mut();
     let args = CliArgs::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
 
-    breakwater_deich::init_telemetry()?;
+    breakwater::init_telemetry()?;
 
     match args.role {
         Role::Worker(args) => breakwater_deich::worker::run(args).await,

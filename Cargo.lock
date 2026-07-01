@@ -526,7 +526,6 @@ dependencies = [
  "serde",
  "tokio",
  "tracing",
- "tracing-subscriber",
  "uuid",
 ]
 

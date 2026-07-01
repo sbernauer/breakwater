@@ -26,7 +26,7 @@ use breakwater::{
     },
 };
 use breakwater_parser::{
-    FrameBuffer, MultiPixelSet, SimpleFrameBuffer, TimeTrackingPixel,
+    FB_BYTES_PER_PIXEL, FrameBuffer, MultiPixelSet, SimpleFrameBuffer, TimeTrackingPixel,
     get_current_ns_since_unix_epoch, pixels_as_bytes_mut,
 };
 use color_eyre::eyre::{self, Context};
@@ -188,12 +188,17 @@ impl CollectorStatistics {
 /// It's a flat pixel vector — no width/height; merging is purely per-index.
 struct Canvas {
     pixels: Vec<TimeTrackingPixel>,
+    /// Reused scratch for [`Self::draw_to_framebuffer`]'s RGB byte layout, so the per-tick draw
+    /// doesn't allocate a fresh multi-megabyte buffer at the frame rate.
+    rgb_scratch: Vec<u8>,
 }
 
 impl Canvas {
     fn new(width: usize, height: usize) -> Self {
+        let pixel_count = width * height;
         Self {
-            pixels: vec![TimeTrackingPixel::default(); width * height],
+            pixels: vec![TimeTrackingPixel::default(); pixel_count],
+            rgb_scratch: Vec::with_capacity(pixel_count * FB_BYTES_PER_PIXEL),
         }
     }
 
@@ -208,13 +213,11 @@ impl Canvas {
         }
     }
 
-    fn draw_to_framebuffer<FB: FrameBuffer + MultiPixelSet>(&self, fb: &Arc<FB>) {
-        let pixels = self
-            .pixels
-            .iter()
-            .flat_map(|pixel| pixel.rgb().to_le_bytes())
-            .collect::<Vec<_>>();
-        fb.set_multi_from_start_index(0, &pixels);
+    fn draw_to_framebuffer<FB: FrameBuffer + MultiPixelSet>(&mut self, fb: &Arc<FB>) {
+        self.rgb_scratch.clear();
+        self.rgb_scratch
+            .extend(self.pixels.iter().flat_map(|pixel| pixel.rgb().to_le_bytes()));
+        fb.set_multi_from_start_index(0, &self.rgb_scratch);
     }
 }
 
@@ -350,7 +353,6 @@ pub async fn run(args: CollectorCliArgs) -> eyre::Result<()> {
     // `publish_aggregated_statistics` below from the snapshots workers stream in.
     let (statistics_information_tx, statistics_information_rx) =
         broadcast::channel::<StatisticsInformationEvent>(2);
-    let (_terminate_signal_tx, _terminate_signal_rx) = broadcast::channel::<()>(1);
 
     // The collector itself produces no raw statistics events; only sinks (e.g. the VNC sink's
     // rendered-frame counter) might. We don't surface those yet, so drain them.
@@ -393,8 +395,6 @@ pub async fn run(args: CollectorCliArgs) -> eyre::Result<()> {
     .context("failed to start sinks")?;
 
     accept_task.abort();
-    // We need to stop this task last, as others always try to send statistics to it
-    stats_task.abort();
 
     for sink_task in sink_tasks {
         sink_task
@@ -402,6 +402,9 @@ pub async fn run(args: CollectorCliArgs) -> eyre::Result<()> {
             .context("failed to join sink task")?
             .context("failed to stop sink")?;
     }
+
+    // We need to stop this task last, as others (the sinks) always try to send statistics to it
+    stats_task.abort();
 
     if ffmpeg_thread_present {
         tracing::info!(
@@ -498,7 +501,7 @@ async fn run_master(
 
         canvas.draw_to_framebuffer(&render_fb);
 
-        info!(
+        debug!(
             render_frame,
             frames_merged = frames.len(),
             connected_workers = connected,
