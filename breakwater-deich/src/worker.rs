@@ -1,8 +1,8 @@
-//! The worker role: runs a Pixelflut server into a time-tracking framebuffer and syncs that
+//! The worker role: runs a Pixelflut server into a time-tracking framebuffer and streams that
 //! framebuffer to the collector.
 //!
-//! The collector owns the canvas geometry, frame rate and timestamp epoch, so the worker fetches
-//! its config from the collector before it can allocate the framebuffer and start serving. Each
+//! The collector owns the canvas geometry, frame rate and timestamp epoch, so the worker fetches its
+//! config from the collector before it can allocate the framebuffer and start serving. Each
 //! [`run_session`] runs until the collector connection drops; the worker then tears everything down
 //! and starts a fresh session, which transparently picks up a changed config (geometry, fps, or a
 //! new epoch after a collector restart).
@@ -18,13 +18,14 @@ use color_eyre::eyre::{self, Context};
 use tokio::{
     net::TcpStream,
     sync::{broadcast, mpsc},
+    time::{MissedTickBehavior, interval},
 };
 use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::{
     cli_args::WorkerCliArgs,
-    sync::{self, WorkerConfig},
+    protocol::{self, Connection, WorkerConfig, frame_period},
 };
 
 /// Backoff between worker sessions (also used while waiting for the collector to become reachable).
@@ -59,13 +60,13 @@ async fn session_loop(args: &WorkerCliArgs, worker_id: Uuid) -> eyre::Result<()>
 }
 
 /// One worker session: connect to the collector, build the framebuffer from its config, serve
-/// Pixelflut into it, and sync it — until the collector connection drops (or the server stops).
+/// Pixelflut into it, and stream it — until the collector connection drops (or the server stops).
 ///
-/// The server, stats drain and sync all run as `select!` arms (not detached tasks), so when the
-/// session ends — here, or because the whole worker is cancelled on Ctrl-C — they're all dropped
-/// together. No teardown bookkeeping, no leaked tasks.
+/// The server, stats aggregator and push loop all run as `select!` arms (not detached tasks), so
+/// when the session ends — here, or because the whole worker is cancelled on Ctrl-C — they're all
+/// dropped together. No teardown bookkeeping, no leaked tasks.
 async fn run_session(args: &WorkerCliArgs, worker_id: Uuid) -> eyre::Result<()> {
-    let (mut stream, config) = connect_to_collector(args.collector_address, worker_id).await;
+    let (mut connection, config) = connect_to_collector(args.collector_address, worker_id).await;
     info!(?config, "Received configuration from collector");
 
     let fb = Arc::new(TimeTrackingFrameBuffer::new(
@@ -112,7 +113,7 @@ async fn run_session(args: &WorkerCliArgs, worker_id: Uuid) -> eyre::Result<()> 
     tokio::select! {
         result = server.start() => result.context("pixelflut server stopped")?,
         result = statistics.run() => result.context("statistics aggregator stopped")?,
-        result = sync::sync(&fb, &mut stream, config, statistics_information_tx.subscribe()) => {
+        result = push_frames(&mut connection, &fb, config.fps, statistics_information_tx.subscribe()) => {
             result.context("framebuffer and statistics sync to the collector stopped")?;
         }
     }
@@ -120,13 +121,47 @@ async fn run_session(args: &WorkerCliArgs, worker_id: Uuid) -> eyre::Result<()> 
     Ok(())
 }
 
+/// Streams the framebuffer and periodic statistics to the collector over the one connection, until
+/// it fails. Frames go out on a local timer at the configured rate; per-pixel timestamps are
+/// absolute (set by the framebuffer at write time), so nothing needs re-basing and the collector
+/// resolves ordering itself. Statistics snapshots (~once per second) are forwarded as they arrive.
+///
+/// Both message kinds share this one task, so their writes can never interleave — a statistics
+/// message can't slip between a framebuffer's marker and its raw blob.
+async fn push_frames(
+    connection: &mut Connection<TcpStream>,
+    fb: &TimeTrackingFrameBuffer,
+    fps: u32,
+    mut statistics_rx: broadcast::Receiver<StatisticsInformationEvent>,
+) -> io::Result<()> {
+    let mut ticker = interval(frame_period(fps));
+    // If a push runs long (slow network), don't burst to catch up — just space the next one a full
+    // period out. The collector only cares about the latest frame anyway.
+    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+    loop {
+        tokio::select! {
+            _ = ticker.tick() => connection.send_framebuffer(fb.as_raw_bytes()).await?,
+            event = statistics_rx.recv() => match event {
+                Ok(event) => connection.send_statistics(event).await?,
+                // Lagged: snapshots are emitted ~once per second into a small buffer with a single
+                // consumer, so lagging shouldn't happen; if it somehow does, skip the dropped ones.
+                // Closed: the aggregator is gone, but the whole session is torn down at that point
+                // (it runs as a sibling `select!` arm), so this is effectively unreachable. Either
+                // way: keep streaming frames rather than failing the sync.
+                Err(broadcast::error::RecvError::Lagged(_) | broadcast::error::RecvError::Closed) => {}
+            },
+        }
+    }
+}
+
 /// Connects to the collector, retrying with a backoff until it succeeds.
 async fn connect_to_collector(
     collector_address: SocketAddr,
     worker_id: Uuid,
-) -> (TcpStream, WorkerConfig) {
+) -> (Connection<TcpStream>, WorkerConfig) {
     loop {
-        match sync::connect(collector_address, worker_id).await {
+        match protocol::connect(collector_address, worker_id).await {
             Ok(result) => return result,
             Err(error) => {
                 warn!(
