@@ -15,9 +15,8 @@ use std::{net::SocketAddr, time::Duration};
 use breakwater::statistics::StatisticsInformationEvent;
 use color_eyre::eyre::{self, Context};
 use prometheus_exporter::prometheus::{
-    Histogram, HistogramOpts, HistogramVec, IntCounter, IntGauge, IntGaugeVec, exponential_buckets,
-    register_histogram, register_histogram_vec, register_int_counter, register_int_gauge,
-    register_int_gauge_vec,
+    Histogram, HistogramOpts, HistogramVec, IntCounter, IntGauge, IntGaugeVec, register_histogram,
+    register_histogram_vec, register_int_counter, register_int_gauge, register_int_gauge_vec,
 };
 use tokio::sync::broadcast;
 use tracing::info;
@@ -26,10 +25,23 @@ use uuid::Uuid;
 /// How often each role logs a metrics summary.
 pub const METRICS_LOG_INTERVAL: Duration = Duration::from_secs(10);
 
-/// Buckets for frame-timing histograms: 0.5 ms … ~1 s, doubling. Covers the expected ~1–50 ms send
-/// times with headroom to catch pathological tails.
+/// Buckets for frame-timing histograms (seconds). A coarse spread covers the fast path (sub-ms
+/// frames) and the pathological tail, but the bulk is a fine 20 ms grid across 60–300 ms — the range
+/// where real send/receive/latency times actually cluster.
+///
+/// Without that grid nearly every sample lands in a single 64–128 ms bucket, so `histogram_quantile`
+/// interpolates across its whole 64 ms width: the quantile curve sits pinned near the bucket edge
+/// and then jumps in coarse steps instead of tracking the real latency. The 20 ms grid resolves it.
 fn frame_timing_buckets() -> Vec<f64> {
-    exponential_buckets(0.0005, 2.0, 12).expect("valid bucket parameters")
+    let mut buckets = vec![0.001, 0.005, 0.01, 0.025, 0.05];
+    // Fine 20 ms grid, 60 ms ..= 300 ms.
+    let mut ms: u32 = 60;
+    while ms <= 300 {
+        buckets.push(f64::from(ms) / 1000.0);
+        ms += 20;
+    }
+    buckets.extend([0.4, 0.5, 0.75, 1.0, 2.0]);
+    buckets
 }
 
 /// Histogram options for a per-frame duration metric (in seconds), with the shared timing buckets.
