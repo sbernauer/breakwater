@@ -39,8 +39,11 @@ impl Canvas {
 
     pub fn draw_to_framebuffer<FB: FrameBuffer + MultiPixelSet>(&mut self, fb: &Arc<FB>) {
         self.rgb_scratch.clear();
-        self.rgb_scratch
-            .extend(self.pixels.iter().flat_map(|pixel| pixel.rgb().to_le_bytes()));
+        self.rgb_scratch.extend(
+            self.pixels
+                .iter()
+                .flat_map(|pixel| pixel.rgb().to_le_bytes()),
+        );
         fb.set_multi_from_start_index(0, &self.rgb_scratch);
     }
 }

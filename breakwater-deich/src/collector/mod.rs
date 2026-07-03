@@ -24,9 +24,7 @@ use breakwater::{
         STATS_REPORT_INTERVAL, StatisticsEvent, StatisticsInformationEvent, StatisticsSaveMode,
     },
 };
-use breakwater_parser::{
-    SimpleFrameBuffer, TimeTrackingPixel, get_current_ns_since_unix_epoch,
-};
+use breakwater_parser::{SimpleFrameBuffer, TimeTrackingPixel, get_current_ns_since_unix_epoch};
 use color_eyre::eyre::{self, Context};
 use tokio::{
     net::{TcpListener, TcpStream},
@@ -96,7 +94,8 @@ pub async fn run(args: CollectorCliArgs) -> eyre::Result<()> {
     };
     let statistics: SharedStatistics = Arc::new(Mutex::new(statistics));
 
-    let metrics = Arc::new(CollectorMetrics::new().context("failed to register collector metrics")?);
+    let metrics =
+        Arc::new(CollectorMetrics::new().context("failed to register collector metrics")?);
     metrics::serve(args.prometheus.prometheus_listen_address)?;
 
     // The breakwater sinks expect the memory layout of a [`SimpleFrameBuffer`], so the render loop
@@ -168,7 +167,9 @@ pub async fn run(args: CollectorCliArgs) -> eyre::Result<()> {
     drain_task.abort();
 
     if ffmpeg_thread_present {
-        info!("successfully shut down (there might still be a ffmpeg process running - it's complicated)");
+        info!(
+            "successfully shut down (there might still be a ffmpeg process running - it's complicated)"
+        );
     } else {
         info!("successfully shut down");
     }
@@ -229,8 +230,15 @@ async fn handle_worker(
         return Ok(());
     }
 
-    let result =
-        serve_worker(&mut connection, worker_id, config, workers, statistics, metrics).await;
+    let result = serve_worker(
+        &mut connection,
+        worker_id,
+        config,
+        workers,
+        statistics,
+        metrics,
+    )
+    .await;
 
     deregister(workers, worker_id, peer);
     // Drop this worker's baseline so its next session accumulates from zero; its already-folded

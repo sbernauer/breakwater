@@ -93,12 +93,13 @@ impl CollectorStatistics {
         }
 
         let connections = connections_for_ip.values().sum();
-        let [ips_v6, ips_v4] = connections_for_ip
-            .keys()
-            .fold([0u32, 0u32], |[v6, v4], ip| match ip {
-                IpAddr::V6(_) => [v6 + 1, v4],
-                IpAddr::V4(_) => [v6, v4 + 1],
-            });
+        let [ips_v6, ips_v4] =
+            connections_for_ip
+                .keys()
+                .fold([0u32, 0u32], |[v6, v4], ip| match ip {
+                    IpAddr::V6(_) => [v6 + 1, v4],
+                    IpAddr::V4(_) => [v6, v4 + 1],
+                });
 
         let bytes: u64 = self.total_bytes_for_ip.values().sum();
         // Rate over one report interval, saturating since a worker dropping out can't shrink the
@@ -177,7 +178,10 @@ mod tests {
         assert_eq!(event.ips_v6, 1);
         assert_eq!(event.statistic_events, 2);
         // First tick: the whole total counts as this interval's throughput.
-        assert_eq!(event.bytes_per_s, 157 / STATS_REPORT_INTERVAL.as_secs().max(1));
+        assert_eq!(
+            event.bytes_per_s,
+            157 / STATS_REPORT_INTERVAL.as_secs().max(1)
+        );
         assert_eq!(previous_bytes, 157);
     }
 
@@ -224,7 +228,10 @@ mod tests {
         stats.record(w, denied(3));
         stats.record(w, denied(5)); // cumulative -> grand total +2
         assert_eq!(stats.total_denied_for_ip[&v4], 5);
-        assert_eq!(stats.published_event(&mut 0).denied_connections_for_ip[&v4], 5);
+        assert_eq!(
+            stats.published_event(&mut 0).denied_connections_for_ip[&v4],
+            5
+        );
     }
 
     #[test]
