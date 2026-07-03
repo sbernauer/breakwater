@@ -39,7 +39,7 @@ use uuid::Uuid;
 use crate::{
     cli_args::CollectorCliArgs,
     collector::{canvas::Canvas, stats::CollectorStatistics},
-    metrics::{self, CollectorMetrics, METRICS_LOG_INTERVAL},
+    metrics::{self, CollectorMetrics, METRICS_LOG_INTERVAL, StatisticsMetrics},
     protocol::{self, Connection, WorkerConfig, WorkerData, frame_period},
 };
 
@@ -111,6 +111,11 @@ pub async fn run(args: CollectorCliArgs) -> eyre::Result<()> {
     let (statistics_information_tx, statistics_information_rx) =
         broadcast::channel::<StatisticsInformationEvent>(2);
 
+    // Expose the aggregated per-IP statistics as Prometheus metrics, using the same metric names as
+    // breakwater. Subscribe before the sender is moved into `publish_statistics` below.
+    let mut statistics_metrics = StatisticsMetrics::new(statistics_information_tx.subscribe())
+        .context("failed to register statistics metrics")?;
+
     // Support tasks: every handle is kept (no detached tasks) so shutdown is deterministic. The
     // collector produces no raw statistics events itself; only sinks (e.g. the VNC sink's rendered
     // -frame counter) might, so we drain them. Sinks can still emit during their own teardown, so
@@ -130,6 +135,7 @@ pub async fn run(args: CollectorCliArgs) -> eyre::Result<()> {
         statistics_save_mode,
     ));
     let metrics_task = tokio::spawn(log_metrics(metrics.clone(), workers.clone()));
+    let statistics_metrics_task = tokio::spawn(async move { statistics_metrics.run().await });
 
     let (sink_tasks, ffmpeg_thread_present) = start_sinks(
         &args.sinks,
@@ -150,6 +156,7 @@ pub async fn run(args: CollectorCliArgs) -> eyre::Result<()> {
     render_task.abort();
     publish_task.abort();
     metrics_task.abort();
+    statistics_metrics_task.abort();
 
     for sink_task in sink_tasks {
         sink_task
