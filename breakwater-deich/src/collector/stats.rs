@@ -10,11 +10,12 @@
 //! - `bytes_for_ip` and `denied_connections_for_ip` are **cumulative and monotonic within a
 //!   session** — they only ever grow. We therefore fold the *delta* since the worker's previous
 //!   snapshot into the grand totals, so a cumulative counter isn't counted many times over.
-//! - `connections_for_ip` is a **live gauge** (it goes up and down as connections open/close), so we
-//!   sum the latest snapshots across workers rather than accumulating deltas.
+//! - `connections_for_ip` is a **live gauge** (it goes up and down as connections open/close), so
+//!   we sum the latest snapshots across workers rather than accumulating deltas.
 //!
-//! On disconnect a worker's baseline is dropped ([`Self::forget`]); its counters reset to zero when
-//! it reconnects, and the first post-reconnect snapshot then counts in full from that zero.
+//! On disconnect a worker's baseline is dropped ([`CollectorStatistics::forget`]); its counters
+//! reset to zero when it reconnects, and the first post-reconnect snapshot then counts in full from
+//! that zero.
 //!
 //! [`Statistics`]: breakwater::statistics::Statistics
 

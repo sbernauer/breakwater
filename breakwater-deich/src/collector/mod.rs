@@ -7,8 +7,8 @@
 //! per worker and fold them all in every render tick — order and arrival timing don't matter. See
 //! [`Canvas`] for the correctness argument.
 
-mod canvas;
-mod stats;
+pub mod canvas;
+pub mod stats;
 
 use std::{
     collections::HashMap,

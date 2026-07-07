@@ -3,7 +3,7 @@
 //!
 //! The collector owns the canvas geometry, frame rate and timestamp epoch, so the worker fetches its
 //! config from the collector before it can allocate the framebuffer and start serving. Each
-//! [`run_session`] runs until the collector connection drops; the worker then tears everything down
+//! `run_session` runs until the collector connection drops; the worker then tears everything down
 //! and starts a fresh session, which transparently picks up a changed config (geometry, fps, or a
 //! new epoch after a collector restart).
 

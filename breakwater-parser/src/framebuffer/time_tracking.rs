@@ -136,8 +136,8 @@ pub fn get_current_ns_since_unix_epoch() -> u64 {
     )
 }
 
-/// Views a slice of pixels as their raw bytes (8 per pixel), e.g. to read a frame straight off the
-/// wire into a `Vec<TimeTrackingPixel>`. Same layout as [`FrameBuffer::as_bytes`].
+/// Return a mutable slice of pixels as their raw bytes (8 per pixel), e.g. to read a frame straight
+/// off the wire into a `Vec<TimeTrackingPixel>`.
 pub fn pixels_as_bytes_mut(pixels: &mut [TimeTrackingPixel]) -> &mut [u8] {
     let len = size_of_val(pixels);
     let ptr = pixels.as_mut_ptr().cast::<u8>();
