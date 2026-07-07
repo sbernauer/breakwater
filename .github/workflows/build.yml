@@ -129,23 +129,16 @@ jobs:
         run: sudo apt update && sudo apt install -y libvncserver-dev
       - name: Install NDI SDK
         uses: ./.github/actions/install-ndi
-      - name: Test with all features turned off
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --no-default-features --all-targets
-      # We can't use `--all-features`: `time-tracking` is mutually exclusive with `alpha` and
-      # `binary-sync-pixels`. So we test explicit, valid combinations.
+      - name: Run tests (no default features)
+        run: cargo test --all-targets --no-default-features
+      - name: Run tests (all compatible features)
+        run: cargo test --all-targets --features prometheus,binary-set-pixel,egui,winit,vnc,ndi
+      - name: Run tests on the time-tracking feature (mutually exclusive with alpha and binary-sync-pixels)
+        run: cargo test --all-targets --features prometheus,binary-set-pixel,egui,winit,vnc,ndi,time-tracking
       - name: Test breakwater with all compatible features
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --features prometheus,alpha,binary-set-pixel,binary-sync-pixels,egui,winit,vnc,ndi --all-targets
+        run: cargo test -p breakwater --features prometheus,alpha,binary-set-pixel,binary-sync-pixels,egui,winit,vnc,ndi
       - name: Test breakwater-parser with the time-tracking feature (mutually exclusive with alpha and binary-sync-pixels)
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --features prometheus,binary-set-pixel,egui,winit,vnc,ndi,time-tracking --all-targets
+        run: cargo test -p breakwater-parser --features time-tracking,binary-set-pixel
 
   run_tests_for_feature_combinations:
     name: Run tests for all feature combinations
