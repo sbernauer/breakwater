@@ -13,12 +13,12 @@ async fn main() -> eyre::Result<()> {
     breakwater::init_telemetry()?;
 
     match args.role {
-        Role::Worker(args) => breakwater_deich::worker::run(args).await,
+        Role::Worker(args) => breakwater_deich::worker::run(*args).await,
         Role::Collector(args) => {
             if let Err(e) = args.sinks.validate(&mut cmd, &matches) {
                 e.exit();
             }
-            breakwater_deich::collector::run(args).await
+            breakwater_deich::collector::run(*args).await
         }
     }
 }

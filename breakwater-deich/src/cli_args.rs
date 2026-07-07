@@ -16,10 +16,10 @@ pub struct CliArgs {
 pub enum Role {
     /// Run a worker: A Pixelflut server that continuously syncs its framebuffer to the collector.
     /// Canvas geometry and frame rate are dictated by the collector.
-    Worker(WorkerCliArgs),
+    Worker(Box<WorkerCliArgs>),
 
     /// Run the collector: Gathers and merges the framebuffers of all workers.
-    Collector(CollectorCliArgs),
+    Collector(Box<CollectorCliArgs>),
 }
 
 #[derive(clap::Args, Debug)]

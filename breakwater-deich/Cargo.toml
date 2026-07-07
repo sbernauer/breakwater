@@ -12,8 +12,8 @@ name = "breakwater-deich"
 path = "src/main.rs"
 
 [dependencies]
-breakwater-parser.workspace = true
-breakwater.workspace = true
+breakwater-parser = { workspace = true, features = ["time-tracking"] }
+breakwater = { workspace = true, features = ["prometheus"] }
 
 clap.workspace = true
 color-eyre.workspace = true

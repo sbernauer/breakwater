@@ -91,9 +91,11 @@ jobs:
       - name: Run clippy (no default features)
         run: cargo clippy --all-targets --no-default-features -- -D warnings
       - name: Run clippy (all compatible features)
-        run: cargo clippy --all-targets --features prometheus,alpha,binary-set-pixel,binary-sync-pixels,egui,winit,vnc,ndi -- -D warnings
+        run: cargo clippy --all-targets --features prometheus,binary-set-pixel,egui,winit,vnc,ndi -- -D warnings
       - name: Run clippy on the time-tracking feature (mutually exclusive with alpha and binary-sync-pixels)
         run: cargo clippy --all-targets --features prometheus,binary-set-pixel,egui,winit,vnc,ndi,time-tracking -- -D warnings
+      - name: Run clippy (all compatible features for breakwater)
+        run: cargo clippy -p breakwater --features prometheus,alpha,binary-set-pixel,binary-sync-pixels,egui,winit,vnc,ndi -- -D warnings
 
   run_rustdoc:
     name: Run RustDoc
