@@ -1,0 +1,40 @@
+[package]
+name = "breakwater-deich"
+description = "Distributed Pixelflut server"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "breakwater-deich"
+path = "src/main.rs"
+
+[dependencies]
+breakwater-parser = { workspace = true, features = ["time-tracking"] }
+breakwater = { workspace = true, features = ["prometheus"] }
+
+clap.workspace = true
+color-eyre.workspace = true
+postcard.workspace = true
+prometheus_exporter.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[features]
+# VNC and NDI require shared libraries to be installed, so we don't enable them by default
+# Yes, egui and winit require a graphical environment, but most people getting started with
+# breakwater will likely do that on a desktop, servers admins generally know what they are doing (tm).
+default = ["egui", "winit"]
+
+binary-set-pixel = ["breakwater/binary-set-pixel", "breakwater-parser/binary-set-pixel"]
+egui = ["breakwater/egui"]
+winit = ["breakwater/winit"]
+vnc = ["breakwater/vnc"]
+ndi = ["breakwater/ndi"]
+
+[lints]
+workspace = true
