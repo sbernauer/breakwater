@@ -75,6 +75,7 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> DisplaySink<FB> for Ffmpeg
             .flat_map(|(arg, value)| [format!("-{arg}"), value])
             .collect();
 
+        #[expect(clippy::redundant_else)]
         match &self.cli_args.rtmp_address {
             Some(rtmp_address) => {
                 if let Some(video_save_folder) = &self.cli_args.video_save_folder {
