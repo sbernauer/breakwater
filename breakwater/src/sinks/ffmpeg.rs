@@ -119,9 +119,11 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> DisplaySink<FB> for Ffmpeg
                 Some(video_save_folder) => {
                     ffmpeg_args.extend([Self::video_file(video_save_folder)]);
                 }
-                None => bail!(
-                    "ffmpeg sink can only be used when either RTMP or video file is activated"
-                ),
+                None => {
+                    bail!(
+                        "ffmpeg sink can only be used when either RTMP or video file is activated"
+                    );
+                }
             },
         }
 
