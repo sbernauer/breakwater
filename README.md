@@ -70,7 +70,7 @@ cargo run --release -- --help
   <summary>Output</summary>
 
 ```bash
-cargo run --release --all-features -- --help
+cargo run --release --features vnc,ndi -- -h
     Finished release [optimized] target(s) in 0.04s
      Running `target/release/breakwater --help`
 Pixelflut server
@@ -96,6 +96,8 @@ Options:
 Network listener options:
   -l, --listener-address <LISTEN_ADDRESSES>
           Listen address to bind to (multiple can be specified). The default value will listen on all interfaces for IPv4 and IPv6 packets [default: [::]:1234]
+      --advertised-endpoint <ADVERTISED_ENDPOINTS>
+          Specify one or more pixelflut endpoints to display to spectators
       --network-buffer-size <NETWORK_BUFFER_SIZE>
           The size in bytes of the network buffer used for each open TCP connection. Please use at least 64 KB (64_000 bytes) [default: 262144]
   -c, --connections-per-ip <CONNECTIONS_PER_IP>
@@ -119,12 +121,8 @@ ffmpeg sink options:
           Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4`
 
 egui sink options:
-      --egui-viewport <VIEWPORTS>
-          Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`. Might be specified multiple times for more than one viewport. Useful for multi-projector setups. Defaults to display the entire canvas
-      --egui-advertised-endpoint <ADVERTISED_ENDPOINTS>
-          Specify one or more pixelflut endpoints to display
-      --egui-ui <UI>
-          Provide a path to a dylib containing a custom egui overlay
+      --egui-viewport <VIEWPORTS>  Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`. Might be specified multiple times for more than one viewport. Useful for multi-projector setups. Defaults to display the entire canvas
+      --egui-ui <UI>               Provide a path to a dylib containing a custom egui overlay
 
 NDI sink options:
       --ndi-source-name <SOURCE_NAME>  Readable NDI source name [default: "Pixelflut server (breakwater)"]

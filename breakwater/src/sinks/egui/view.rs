@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
 use breakwater_parser::{FrameBuffer, PixelColorBytes};
 use color_eyre::eyre::{self, ContextCompat};
@@ -31,7 +31,7 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiView<FB> {
         viewports: Vec<ViewportConfig>,
         terminate_rx: broadcast::Receiver<()>,
         stats_rx: broadcast::Receiver<StatisticsInformationEvent>,
-        advertised_endpoints: Vec<String>,
+        advertised_endpoints: &[SocketAddr],
         ui: Arc<UiOverlay>,
     ) -> eyre::Result<Self> {
         let gl_context = cc
@@ -55,7 +55,10 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiView<FB> {
             canvas_renderer,
             terminate_rx,
             stats_rx,
-            advertised_endpoints,
+            advertised_endpoints: advertised_endpoints
+                .iter()
+                .map(SocketAddr::to_string)
+                .collect(),
         })
     }
 

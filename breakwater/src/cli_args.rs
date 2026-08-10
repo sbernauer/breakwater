@@ -50,6 +50,13 @@ pub struct NetworkListenerCliArgs {
     #[clap(short, long = "listener-address", default_value = "[::]:1234")]
     pub listen_addresses: Vec<SocketAddr>,
 
+    /// Specify one or more pixelflut endpoints to display to spectators.
+    ///
+    /// By default they will be derived from the `--listener-address`es specified. Use this to
+    /// advertise custom addresses to connect to.
+    #[clap(long = "advertised-endpoint")]
+    pub advertised_endpoints: Vec<SocketAddr>,
+
     /// The size in bytes of the network buffer used for each open TCP connection.
     /// Please use at least 64 KB (64_000 bytes).
     #[clap(
@@ -62,6 +69,37 @@ pub struct NetworkListenerCliArgs {
     /// Allow only a certain number of connections per ip address
     #[clap(short, long)]
     pub connections_per_ip: Option<u64>,
+}
+
+impl NetworkListenerCliArgs {
+    /// Resolves the Pixelflut endpoints to advertise to users (so they know where to connect).
+    ///
+    /// If `--advertised-endpoint`s is set, those are returned verbatim. Otherwise we make a best
+    /// effort guess: For a single listener we resolve the local v4 + v6 IPs and append the port,
+    /// for multiple listeners we just list them.
+    pub fn resolve_advertised_endpoints(&self) -> Vec<SocketAddr> {
+        if !self.advertised_endpoints.is_empty() {
+            return self.advertised_endpoints.clone();
+        }
+
+        match &self.listen_addresses[..] {
+            // No listeners given, so also no endpoints to advertise
+            [] => vec![],
+            // In case of a single listener we get the local IPs (v4 + v6) and concat them with the
+            // port
+            [single_listener] => {
+                let port = single_listener.port();
+
+                [local_ip_address::local_ip(), local_ip_address::local_ipv6()]
+                    .into_iter()
+                    .filter_map(Result::ok)
+                    .map(|ip| SocketAddr::new(ip, port))
+                    .collect()
+            }
+            // If multiple listeners are used it's complicated, so we just print them
+            multiple_listeners => multiple_listeners.to_vec(),
+        }
+    }
 }
 
 #[derive(clap::Args, Debug)]
