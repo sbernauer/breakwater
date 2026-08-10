@@ -16,13 +16,16 @@ breakwater-parser.workspace = true
 breakwater-egui-overlay = { workspace = true, optional = true }
 
 async-trait.workspace = true
+axum = { workspace = true, optional = true }
 bytemuck = { workspace = true, optional = true }
+bytes = { workspace = true, optional = true }
 chrono.workspace = true
 clap.workspace = true
 color-eyre.workspace = true
 const_format.workspace = true
 eframe = { workspace = true, optional = true }
 egui = { workspace = true, optional = true }
+flate2 = { workspace = true, optional = true }
 futures.workspace = true
 humantime.workspace = true
 libloading = { workspace = true, optional = true }
@@ -53,7 +56,7 @@ rstest.workspace = true
 # VNC and NDI require shared libraries to be installed, so we don't enable them by default
 # Yes, egui and winit require a graphical environment, but most people getting started with
 # breakwater will likely do that on a desktop, servers admins generally know what they are doing (tm).
-default = ["prometheus", "egui", "winit"]
+default = ["prometheus", "egui", "winit", "web"]
 
 # Enables the Prometheus metrics exporter. Can be disabled to support compilation on 32-bit targets.
 # See https://github.com/tikv/rust-prometheus/issues/565
@@ -65,6 +68,7 @@ egui = ["dep:breakwater-egui-overlay", "dep:bytemuck", "dep:eframe", "dep:egui",
 winit = ["dep:softbuffer", "dep:winit"]
 vnc = ["dep:vncserver", "dep:number_prefix", "dep:rusttype"]
 ndi = ["dep:ndi-sdk-sys"]
+web = ["dep:axum", "dep:bytes", "dep:flate2"]
 
 [lints]
 workspace = true

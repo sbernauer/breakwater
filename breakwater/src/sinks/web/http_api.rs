@@ -1,0 +1,183 @@
+use std::{
+    net::{IpAddr, SocketAddr},
+    time::Duration,
+};
+
+use axum::{
+    extract::{
+        ConnectInfo, State, WebSocketUpgrade,
+        ws::{Message, Utf8Bytes, WebSocket},
+    },
+    response::{Html, Response},
+};
+use futures::{SinkExt, StreamExt, stream::SplitSink};
+use tokio::{sync::broadcast, time::Instant};
+use tracing::trace;
+
+use crate::sinks::web::state::{ChatRateLimiter, WebState};
+
+/// Maximum length (in characters) of a chat username and message. Enforced server-side so a crafted
+/// client can't bypass the frontend's `maxlength` and blow up the UI.
+///
+/// Note: If you change this value, please also change it in the frontend.
+const MAX_CHAT_NAME_LEN: usize = 20;
+const MAX_CHAT_MESSAGE_LEN: usize = 256;
+
+/// The window over which the per-IP chat rate limit is applied.
+const CHAT_RATE_LIMIT_WINDOW: Duration = Duration::from_mins(1);
+
+pub async fn index() -> Html<&'static str> {
+    include_str!("index.html").into()
+}
+
+pub async fn ws_handler(
+    ws: WebSocketUpgrade,
+    ConnectInfo(who): ConnectInfo<SocketAddr>,
+    State(state): State<WebState>,
+) -> Response {
+    ws.on_upgrade(move |socket| handle_socket(socket, who.ip(), state))
+}
+
+async fn handle_socket(socket: WebSocket, ip: IpAddr, state: WebState) {
+    // Split so we can read incoming chat messages and write outgoing frames/stats/chat concurrently.
+    let (mut sender, mut receiver) = socket.split();
+
+    // Tell the client the canvas dimensions (so it can size the `<canvas>` and allocate
+    // `ImageData`) and the Pixelflut endpoints to advertise.
+    let hello = serde_json::json!({
+        "type": "hello",
+        "width": state.width,
+        "height": state.height,
+        "advertised_endpoints": state.advertised_endpoints,
+    })
+    .to_string();
+    if sender.send(Message::Text(hello.into())).await.is_err() {
+        return;
+    }
+
+    let mut frame_rx = state.frame_tx.subscribe();
+    let mut stats_rx = state.stats_tx.subscribe();
+    let mut chat_rx = state.chat_tx.subscribe();
+    loop {
+        tokio::select! {
+            frame = frame_rx.recv() => match frame {
+                Ok(frame) => {
+                    if sender.send(Message::Binary(frame)).await.is_err() {
+                        // Client disconnected.
+                        break;
+                    }
+                }
+                // This client fell behind: skip the dropped frames and continue with the newest one.
+                // This is what throttles slow clients to a lower frame rate.
+                Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                    trace!(skipped, "web client lagging behind, dropping frames");
+                }
+                Err(broadcast::error::RecvError::Closed) => break,
+            },
+            stats_msg = stats_rx.recv() => match stats_msg {
+                Ok(json) => {
+                    if sender.send(Message::Text(json)).await.is_err() {
+                        break;
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Err(broadcast::error::RecvError::Closed) => break,
+            },
+            chat_msg = chat_rx.recv() => match chat_msg {
+                Ok(json) => {
+                    if sender.send(Message::Text(json)).await.is_err() {
+                        break;
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Err(broadcast::error::RecvError::Closed) => break,
+            },
+            incoming = receiver.next() => match incoming {
+                Some(Ok(Message::Text(text))) => handle_incoming_chat(&text, ip, &state, &mut sender).await,
+                // Client closed the connection or errored.
+                Some(Ok(Message::Close(_)) | Err(_)) | None => break,
+                // Ignore anything else the client might send (binary, ping, pong).
+                Some(Ok(_)) => {}
+            },
+        }
+    }
+}
+
+/// Parses, validates and rate-limits an incoming chat message. On success it is broadcast to all
+/// clients; if the sender hit the rate limit, a `chat_error` is sent back only to them.
+async fn handle_incoming_chat(
+    text: &str,
+    ip: IpAddr,
+    state: &WebState,
+    sender: &mut SplitSink<WebSocket, Message>,
+) {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(text) else {
+        return;
+    };
+    if value.get("type").and_then(serde_json::Value::as_str) != Some("chat") {
+        return;
+    }
+
+    let name = value
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    let message = value
+        .get("text")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    if name.is_empty() || message.is_empty() {
+        return;
+    }
+
+    // Basic sanity caps so a single message can't blow up the UI.
+    let name: String = name.chars().take(MAX_CHAT_NAME_LEN).collect();
+    let message: String = message.chars().take(MAX_CHAT_MESSAGE_LEN).collect();
+
+    match check_rate_limit(&state.chat_rate_limiter, ip, state.chat_rate_limit) {
+        Ok(()) => {
+            let json =
+                serde_json::json!({ "type": "chat", "name": name, "text": message, "ip": ip });
+            let _ = state.chat_tx.send(Utf8Bytes::from(json.to_string()));
+        }
+        Err(recent) => {
+            let json = serde_json::json!({
+                "type": "chat_error",
+                "text": format!(
+                    "Your IP {ip} already sent {recent} messages in the last minute, limit is {}",
+                    state.chat_rate_limit,
+                ),
+            });
+            let _ = sender
+                .send(Message::Text(Utf8Bytes::from(json.to_string())))
+                .await;
+        }
+    }
+}
+
+/// Records a chat message for `ip` if it is within the per-IP rate limit.
+///
+/// Returns `Ok(())` if allowed (and records the message), or `Err(recent)` with the number of
+/// messages already sent within [`CHAT_RATE_LIMIT_WINDOW`] if the limit has been reached.
+fn check_rate_limit(limiter: &ChatRateLimiter, ip: IpAddr, limit: u32) -> Result<(), usize> {
+    let now = Instant::now();
+    let mut limiter = limiter.lock().expect("chat rate limiter mutex poisoned");
+    let timestamps = limiter.entry(ip).or_default();
+
+    // Drop timestamps that have aged out of the window.
+    while timestamps
+        .front()
+        .is_some_and(|&t| now.duration_since(t) > CHAT_RATE_LIMIT_WINDOW)
+    {
+        timestamps.pop_front();
+    }
+
+    if timestamps.len() >= limit as usize {
+        Err(timestamps.len())
+    } else {
+        timestamps.push_back(now);
+        Ok(())
+    }
+}

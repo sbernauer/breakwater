@@ -22,6 +22,8 @@ pub mod ffmpeg;
 pub mod ndi;
 #[cfg(feature = "vnc")]
 pub mod vnc;
+#[cfg(feature = "web")]
+pub mod web;
 #[cfg(feature = "winit")]
 pub mod winit;
 
@@ -44,15 +46,17 @@ pub enum Sink {
     Egui,
     #[cfg(feature = "winit")]
     Winit,
-    #[cfg(feature = "vnc")]
-    Vnc,
     #[cfg(feature = "ndi")]
     Ndi,
+    #[cfg(feature = "vnc")]
+    Vnc,
+    #[cfg(feature = "web")]
+    Web,
 }
 
 // Several of these parameters are only consumed by feature-gated sinks, so they appear unused when those
 // features are disabled. We can't use `#[expect(...)]` here, as it would fail when all features are enabled.
-#[allow(unused_variables)]
+#[allow(unused_variables, clippy::too_many_lines)]
 pub async fn start_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static>(
     cli_args: &SinkCliArgs,
     fb: Arc<FB>,
@@ -122,6 +126,24 @@ pub async fn start_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'stat
                     terminate_signal_rx.resubscribe(),
                 )
                 .context("failed to create NDI sink")?,
+            ));
+        }
+    }
+
+    #[cfg(feature = "web")]
+    {
+        use crate::sinks::web::WebSink;
+        if enabled_sinks.contains(&WebSink::<FB>::sink_type()) {
+            sinks.push(Box::new(
+                WebSink::new(
+                    fb.clone(),
+                    &cli_args.web_sink,
+                    advertised_endpoints.to_vec(),
+                    fps,
+                    statistics_information_rx.resubscribe(),
+                    terminate_signal_rx.resubscribe(),
+                )
+                .context("failed to create VNC sink")?,
             ));
         }
     }

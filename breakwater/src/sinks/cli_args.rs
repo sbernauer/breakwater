@@ -24,6 +24,10 @@ pub struct SinkCliArgs {
     #[cfg(feature = "vnc")]
     #[clap(flatten)]
     pub vnc_sink: crate::sinks::vnc::VncSinkCliArgs,
+
+    #[cfg(feature = "web")]
+    #[clap(flatten)]
+    pub web_sink: crate::sinks::web::WebSinkCliArgs,
 }
 
 impl SinkCliArgs {
@@ -89,6 +93,12 @@ impl SinkCliArgs {
         #[cfg(feature = "vnc")]
         if self.enabled_sinks.contains(&Sink::Vnc) {
             self.vnc_sink
+                .validate()
+                .map_err(|msg| cmd.error(ErrorKind::MissingRequiredArgument, msg))?;
+        }
+        #[cfg(feature = "web")]
+        if self.enabled_sinks.contains(&Sink::Web) {
+            self.web_sink
                 .validate()
                 .map_err(|msg| cmd.error(ErrorKind::MissingRequiredArgument, msg))?;
         }
