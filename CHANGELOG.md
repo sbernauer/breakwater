@@ -14,7 +14,7 @@ All notable changes to this project will be documented in this file.
 
 - BREAKING: The CLI argument `--statistics-save-interval-s` was renamed to `--statistics-save-interval` and now accepts a human time duration.
   E.g. instead of `--statistics-save-interval-s 20` now use `--statistics-save-interval 20s` ([#96]).
-- BREAKING: The CLI argument `--egui-advertised-endpoint` was renamed to `--advertised-endpoint`, because it will be used for new sinks in the future as well ([#XX]).
+- BREAKING: The CLI argument `--egui-advertised-endpoint` was renamed to `--advertised-endpoint`, because it will be used for new sinks in the future as well ([#99]).
 
 ### Fixed
 
@@ -23,7 +23,7 @@ All notable changes to this project will be documented in this file.
 [#84]: https://github.com/sbernauer/breakwater/pull/84
 [#95]: https://github.com/sbernauer/breakwater/pull/95
 [#96]: https://github.com/sbernauer/breakwater/pull/96
-[#XX]: https://github.com/sbernauer/breakwater/pull/XX
+[#99]: https://github.com/sbernauer/breakwater/pull/99
 
 ## [0.22.0] - 2026-06-20
 
