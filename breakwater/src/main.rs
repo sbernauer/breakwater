@@ -87,7 +87,7 @@ async fn main() -> eyre::Result<()> {
     let (sink_tasks, ffmpeg_thread_present) = start_sinks(
         &args.sinks,
         fb.clone(),
-        &args.network_listener.listen_addresses,
+        &args.network_listener.resolve_advertised_endpoints(),
         args.fps,
         statistics_tx,
         statistics_information_rx,
