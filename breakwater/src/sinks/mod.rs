@@ -143,7 +143,7 @@ pub async fn start_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'stat
                     statistics_information_rx.resubscribe(),
                     terminate_signal_rx.resubscribe(),
                 )
-                .context("failed to create VNC sink")?,
+                .context("failed to create web sink")?,
             ));
         }
     }
