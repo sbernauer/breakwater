@@ -21,7 +21,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Let breakwater exit as soon as a sink reports an error ([#95]).
-- Handle `SIGTERM` (as sent by e.g. `docker stop` or systemd) the same way as Ctrl+C ([#100]).
+- Handle `SIGTERM` (as sent by e.g. `docker stop` or systemd) the same way as Ctrl+C ([#102]).
   Previously the process was killed right away, so no sink got the chance to shut down.
 
 [#84]: https://github.com/sbernauer/breakwater/pull/84
@@ -29,6 +29,7 @@ All notable changes to this project will be documented in this file.
 [#96]: https://github.com/sbernauer/breakwater/pull/96
 [#99]: https://github.com/sbernauer/breakwater/pull/99
 [#101]: https://github.com/sbernauer/breakwater/pull/101
+[#102]: https://github.com/sbernauer/breakwater/pull/102
 
 ## [0.22.0] - 2026-06-20
 
