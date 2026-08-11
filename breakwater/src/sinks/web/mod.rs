@@ -71,8 +71,9 @@ pub struct WebSink<FB: FrameBuffer> {
     /// The sink keeps its own copy to feed the encoder loop and stats task.
     state: WebState,
 
-    /// Reused scratch buffer holding one RGBA frame, so we don't reallocate every tick.
-    frame_buf: Vec<u8>,
+    /// Reused scratch buffer holding one RGBA frame, so we don't reallocate every tick. Kept in an
+    /// [`Arc`], as the compression tasks need to share it (see [`WebSink::encode_frame`]).
+    frame_buf: Arc<Vec<u8>>,
 
     /// Rolling average of the per-frame compression duration (in microseconds), logged alongside
     /// the instantaneous duration to give a more stable picture.
@@ -99,7 +100,7 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> WebSink<FB> {
         let (frame_tx, _) = broadcast::channel(FRAME_BUFFER_SIZE);
         let (stats_tx, _) = broadcast::channel(STATS_BUFFER_SIZE);
         let (chat_tx, _) = broadcast::channel(CHAT_BUFFER_SIZE);
-        let frame_buf = vec![0; fb.get_size() * FB_BYTES_PER_PIXEL];
+        let frame_buf = Arc::new(vec![0; fb.get_size() * FB_BYTES_PER_PIXEL]);
 
         let state = WebState {
             frame_tx,
@@ -202,13 +203,32 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> DisplaySink<FB> for WebSin
             }));
         }
 
-        // Encoder loop: compress the framebuffer once per tick and broadcast the bytes to every
-        // connected client. The expensive work (copy + compress) happens a single time regardless
-        // of the number of viewers.
+        // Note that we don't use `?` here, as we need to clean up the tasks we spawned above even if
+        // the encoder loop fails.
+        let result = self.encode_loop().await;
+
+        // We are terminating, so stop serving. This drops all open connections without sending a
+        // websocket close frame, which is fine: clients treat that the same as any other connection
+        // loss and simply try to reconnect.
+        for server in servers {
+            server.abort();
+        }
+        stats_task.abort();
+
+        result
+    }
+}
+
+impl<FB: FrameBuffer + PixelColorBytes> WebSink<FB> {
+    /// Compresses the framebuffer once per frame and broadcasts the bytes to every connected client,
+    /// until we are asked to terminate. The expensive work (copy + compress) happens a single time
+    /// regardless of the number of viewers.
+    async fn encode_loop(&mut self) -> eyre::Result<()> {
         let mut interval = time::interval(Duration::from_micros(1_000_000 / u64::from(self.fps)));
         // In case we delayed a frame, there is no point in trying to get the following frames
         // quicker as a compensation.
         interval.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
+
         loop {
             if self.terminate_signal_rx.try_recv().is_ok() {
                 break;
@@ -225,18 +245,9 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> DisplaySink<FB> for WebSin
             interval.tick().await;
         }
 
-        // We are terminating, so stop serving. This drops all open connections without sending a
-        // websocket close frame, which is fine: clients treat that the same as any other connection
-        // loss and simply try to reconnect.
-        for server in servers {
-            server.abort();
-        }
-        stats_task.abort();
         Ok(())
     }
-}
 
-impl<FB: FrameBuffer + PixelColorBytes> WebSink<FB> {
     /// Copies the current framebuffer into the scratch buffer, forces the alpha channel to opaque
     /// (the framebuffer stores `rgb0`, but the browser's `ImageData` expects a meaningful alpha),
     /// and zlib-compresses the result.
@@ -257,8 +268,12 @@ impl<FB: FrameBuffer + PixelColorBytes> WebSink<FB> {
     /// everything in a single websocket message guarantees a client never renders a half-updated
     /// frame (which would show as a visible tear/artefact).
     async fn encode_frame(&mut self) -> eyre::Result<Bytes> {
-        self.frame_buf.copy_from_slice(self.fb.pixel_color_bytes());
-        for pixel in self.frame_buf.as_chunks_mut::<FB_BYTES_PER_PIXEL>().0 {
+        // `make_mut` hands us exclusive access to the buffer. It would only need to clone it in case
+        // a compression task of a previous frame was still running, which can't happen as we always
+        // await all of them below.
+        let frame_buf = Arc::make_mut(&mut self.frame_buf);
+        frame_buf.copy_from_slice(self.fb.pixel_color_bytes());
+        for pixel in frame_buf.as_chunks_mut::<FB_BYTES_PER_PIXEL>().0 {
             pixel[3] = 0xff;
         }
 
@@ -270,14 +285,12 @@ impl<FB: FrameBuffer + PixelColorBytes> WebSink<FB> {
         let chunk_size = len.div_ceil(FRAME_COMPRESSION_CHUNKS).max(1);
 
         // Compress each chunk on Tokio's blocking thread pool. `spawn_blocking` requires `'static`
-        // closures, so we temporarily move the scratch buffer into an `Arc` that every task shares;
-        // it is reclaimed below to keep reusing the same allocation across frames.
-        let frame = Arc::new(std::mem::take(&mut self.frame_buf));
+        // closures, so every task gets its own handle to the shared scratch buffer.
         let mut tasks = Vec::with_capacity(FRAME_COMPRESSION_CHUNKS);
         let mut offset = 0;
         while offset < len {
             let end = (offset + chunk_size).min(len);
-            let frame = Arc::clone(&frame);
+            let frame = Arc::clone(&self.frame_buf);
             tasks.push(tokio::task::spawn_blocking(move || {
                 compress_chunk(&frame[offset..end])
             }));
@@ -289,10 +302,6 @@ impl<FB: FrameBuffer + PixelColorBytes> WebSink<FB> {
         for task in tasks {
             compressed_chunks.push(task.await.context("compression task panicked")??);
         }
-
-        // All tasks have finished, so we are the sole owner again: reclaim the buffer for reuse.
-        self.frame_buf =
-            Arc::try_unwrap(frame).expect("frame buffer still shared after compression");
 
         let compression_time = start.elapsed();
         self.compression_time_window
