@@ -181,19 +181,20 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> DisplaySink<FB> for WebSin
             );
 
             let app = app.clone();
-            // Shut the HTTP server down gracefully once we receive the terminate signal.
-            let mut server_terminate_rx = self.terminate_signal_rx.resubscribe();
+            // We deliberately don't use axum's `with_graceful_shutdown` here: it waits for all open
+            // connections, so a single client that opened a connection without ever completing its
+            // request would keep us from ever shutting down. There is also nothing worth draining, as
+            // the only plain HTTP response we serve is the (small and static) index page. So we just
+            // abort these tasks once the encoder loop below is done.
+            // Note that websocket connections would *not* hold a graceful shutdown up, as hyper stops
+            // tracking a connection once it has been upgraded.
             servers.push(tokio::spawn(async move {
-                let shutdown = async move {
-                    let _ = server_terminate_rx.recv().await;
-                };
                 // `into_make_service_with_connect_info` makes the peer `SocketAddr` available to
                 // handlers via `ConnectInfo`, which we use for the per-IP chat rate limit.
                 if let Err(err) = axum::serve(
                     listener,
                     app.into_make_service_with_connect_info::<SocketAddr>(),
                 )
-                .with_graceful_shutdown(shutdown)
                 .await
                 {
                     warn!(%err, %listen_address, "web server stopped unexpectedly");
@@ -224,6 +225,9 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> DisplaySink<FB> for WebSin
             interval.tick().await;
         }
 
+        // We are terminating, so stop serving. This drops all open connections without sending a
+        // websocket close frame, which is fine: clients treat that the same as any other connection
+        // loss and simply try to reconnect.
         for server in servers {
             server.abort();
         }
