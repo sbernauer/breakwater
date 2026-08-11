@@ -10,14 +10,14 @@ use async_trait::async_trait;
 use axum::{Router, extract::ws::Utf8Bytes, routing::get};
 use breakwater_parser::{FB_BYTES_PER_PIXEL, FrameBuffer, PixelColorBytes};
 use bytes::Bytes;
-use color_eyre::eyre::{self, Context, ContextCompat};
+use color_eyre::eyre::{self, Context, ensure};
 use flate2::{Compression, write::ZlibEncoder};
 use simple_moving_average::{SMA, SingleSumSMA};
 use tokio::{
     sync::broadcast,
     time::{self, Instant},
 };
-use tracing::{trace, warn};
+use tracing::{info, trace, warn};
 
 use crate::{
     sinks::{DisplaySink, DisplaySinkType, Sink, web::state::WebState},
@@ -57,7 +57,7 @@ const STATS_BUFFER_SIZE: usize = 3;
 const CHAT_BUFFER_SIZE: usize = 1024;
 
 pub struct WebSink<FB: FrameBuffer> {
-    listen_address: SocketAddr,
+    listen_addresses: Vec<SocketAddr>,
     fb: Arc<FB>,
     statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
     terminate_signal_rx: broadcast::Receiver<()>,
@@ -80,7 +80,7 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> WebSink<FB> {
     pub fn new(
         fb: Arc<FB>,
         WebSinkCliArgs {
-            listen_address,
+            web_listen_addresses,
             chat_messages_per_minute,
         }: &WebSinkCliArgs,
         advertised_endpoints: Vec<SocketAddr>,
@@ -88,9 +88,10 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> WebSink<FB> {
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
     ) -> eyre::Result<Self> {
-        let listen_address = listen_address.context(
-            "WebSinkCliArgs::validate should have already checked that --web-listen-address needs to be specified when the web sink is enabled",
-        )?;
+        ensure!(
+            !web_listen_addresses.is_empty(),
+            "WebSinkCliArgs::validate should have already checked that at least one --web-listen-address needs to be specified when the web sink is enabled",
+        );
 
         let (frame_tx, _) = broadcast::channel(FRAME_BUFFER_SIZE);
         let (stats_tx, _) = broadcast::channel(STATS_BUFFER_SIZE);
@@ -109,7 +110,7 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> WebSink<FB> {
         };
 
         Ok(Self {
-            listen_address,
+            listen_addresses: web_listen_addresses.clone(),
             fb,
             statistics_information_rx,
             terminate_signal_rx,
@@ -163,32 +164,38 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> DisplaySink<FB> for WebSin
             .route("/ws", get(http_api::ws_handler))
             .with_state(state);
 
-        let listener = tokio::net::TcpListener::bind(self.listen_address)
-            .await
-            .with_context(|| format!("failed to bind web server to {}", self.listen_address))?;
-        tracing::info!(
-            "Web UI available at http://{}",
-            listener.local_addr().unwrap_or(self.listen_address)
-        );
+        // One HTTP server per listen address. They all share the same router - and therefore the
+        // same frame, statistics and chat channels - so it doesn't matter which one a client uses.
+        let mut servers = Vec::with_capacity(self.listen_addresses.len());
+        for &listen_address in &self.listen_addresses {
+            let listener = tokio::net::TcpListener::bind(listen_address)
+                .await
+                .with_context(|| format!("failed to bind web server to {listen_address}"))?;
+            info!(
+                "Web UI available at http://{}",
+                listener.local_addr().unwrap_or(listen_address)
+            );
 
-        // Shut the HTTP server down gracefully once we receive the terminate signal.
-        let mut server_terminate_rx = self.terminate_signal_rx.resubscribe();
-        let server = tokio::spawn(async move {
-            let shutdown = async move {
-                let _ = server_terminate_rx.recv().await;
-            };
-            // `into_make_service_with_connect_info` makes the peer `SocketAddr` available to
-            // handlers via `ConnectInfo`, which we use for the per-IP chat rate limit.
-            if let Err(err) = axum::serve(
-                listener,
-                app.into_make_service_with_connect_info::<SocketAddr>(),
-            )
-            .with_graceful_shutdown(shutdown)
-            .await
-            {
-                warn!(%err, "web server stopped unexpectedly");
-            }
-        });
+            let app = app.clone();
+            // Shut the HTTP server down gracefully once we receive the terminate signal.
+            let mut server_terminate_rx = self.terminate_signal_rx.resubscribe();
+            servers.push(tokio::spawn(async move {
+                let shutdown = async move {
+                    let _ = server_terminate_rx.recv().await;
+                };
+                // `into_make_service_with_connect_info` makes the peer `SocketAddr` available to
+                // handlers via `ConnectInfo`, which we use for the per-IP chat rate limit.
+                if let Err(err) = axum::serve(
+                    listener,
+                    app.into_make_service_with_connect_info::<SocketAddr>(),
+                )
+                .with_graceful_shutdown(shutdown)
+                .await
+                {
+                    warn!(%err, %listen_address, "web server stopped unexpectedly");
+                }
+            }));
+        }
 
         // Encoder loop: compress the framebuffer once per tick and broadcast the bytes to every
         // connected client. The expensive work (copy + compress) happens a single time regardless
@@ -213,7 +220,9 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> DisplaySink<FB> for WebSin
             interval.tick().await;
         }
 
-        server.abort();
+        for server in servers {
+            server.abort();
+        }
         stats_task.abort();
         Ok(())
     }
