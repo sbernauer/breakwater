@@ -35,7 +35,13 @@ pub async fn ws_handler(
     ConnectInfo(who): ConnectInfo<SocketAddr>,
     State(state): State<WebState>,
 ) -> Response {
-    ws.on_upgrade(move |socket| handle_socket(socket, who.ip(), state))
+    // `to_canonical` turns IPv4-mapped IPv6 addresses (which is what we get for legacy IP clients on
+    // a dual-stack listener) back into plain IPv4 addresses, just like the Pixelflut server does.
+    // Otherwise the same client would show up as `::ffff:1.2.3.4` in the chat, but as `1.2.3.4` in
+    // the statistics.
+    let ip = who.ip().to_canonical();
+
+    ws.on_upgrade(move |socket| handle_socket(socket, ip, state))
 }
 
 async fn handle_socket(socket: WebSocket, ip: IpAddr, state: WebState) {
