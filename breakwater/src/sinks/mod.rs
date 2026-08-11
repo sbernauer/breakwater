@@ -229,8 +229,9 @@ fn create_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static>(
     Ok((sinks, ffmpeg_thread_present))
 }
 
-/// Blocks until either the user requests a shutdown via Ctrl+C, or one of the sinks signals
-/// termination (e.g. because it crashed). Afterwards all remaining sinks are told to terminate.
+/// Blocks until either the user requests a shutdown via Ctrl+C or `SIGTERM`, or one of the sinks
+/// signals termination (e.g. because it crashed). Afterwards all remaining sinks are told to
+/// terminate.
 async fn wait_for_shutdown(
     terminate_signal_tx: broadcast::Sender<()>,
     mut terminate_signal_rx: broadcast::Receiver<()>,
@@ -239,6 +240,9 @@ async fn wait_for_shutdown(
         result = tokio::signal::ctrl_c() => {
             result.context("failed to wait for ctrl + c")?;
         }
+        result = wait_for_sigterm() => {
+            result?;
+        }
         // A sink signalled termination, e.g. because it crashed.
         _ = terminate_signal_rx.recv() => {}
     }
@@ -246,6 +250,27 @@ async fn wait_for_shutdown(
     // Tell all remaining sinks to terminate. Best-effort: this fails if all other receivers are
     // already gone (e.g. the only sink crashed and dropped its receiver), which is fine here.
     let _ = terminate_signal_tx.send(());
+
+    Ok(())
+}
+
+/// Resolves once we receive a `SIGTERM`, which is what e.g. `docker stop` and systemd send to ask a
+/// process to shut down. Without handling it the process would simply be killed, so no sink would
+/// get the chance to clean up.
+#[cfg(unix)]
+async fn wait_for_sigterm() -> eyre::Result<()> {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    let mut sigterm = signal(SignalKind::terminate()).context("failed to listen for SIGTERM")?;
+    sigterm.recv().await;
+
+    Ok(())
+}
+
+/// There is no `SIGTERM` on non-unix platforms, so we simply never resolve.
+#[cfg(not(unix))]
+async fn wait_for_sigterm() -> eyre::Result<()> {
+    std::future::pending::<()>().await;
 
     Ok(())
 }
