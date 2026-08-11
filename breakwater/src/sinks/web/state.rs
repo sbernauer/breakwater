@@ -20,7 +20,7 @@ pub struct WebState {
     pub stats_tx: broadcast::Sender<Utf8Bytes>,
     /// Carries chat messages (already serialized to JSON) to every connected client.
     pub chat_tx: broadcast::Sender<Utf8Bytes>,
-    /// Maximum number of chat messages a single IP may send per [`CHAT_RATE_LIMIT_WINDOW`].
+    /// Maximum number of chat messages a single IP may send per chat ratelimit window.
     pub chat_rate_limit: u32,
     pub chat_rate_limiter: ChatRateLimiter,
     pub width: usize,
