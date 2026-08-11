@@ -26,6 +26,11 @@ const MAX_CHAT_MESSAGE_LEN: usize = 256;
 /// The window over which the per-IP chat rate limit is applied.
 const CHAT_RATE_LIMIT_WINDOW: Duration = Duration::from_mins(1);
 
+/// Number of chat messages that are kept around and replayed to clients when they connect. Without
+/// this the chat would be empty for everybody who didn't watch from the very beginning - including
+/// clients that only briefly went away, as we close the websocket while a browser tab is hidden.
+const CHAT_HISTORY_LEN: usize = 100;
+
 pub async fn index() -> Html<&'static str> {
     include_str!("index.html").into()
 }
@@ -63,7 +68,29 @@ async fn handle_socket(socket: WebSocket, ip: IpAddr, state: WebState) {
 
     let mut frame_rx = state.frame_tx.subscribe();
     let mut stats_rx = state.stats_tx.subscribe();
-    let mut chat_rx = state.chat_tx.subscribe();
+
+    // Grab the chat history and subscribe to new messages in one go, i.e. while holding the lock.
+    // Otherwise a message sent in between the two would either be missed or shown twice, as
+    // `handle_incoming_chat` also records and broadcasts it while holding the lock.
+    let (chat_history, mut chat_rx) = {
+        let chat_history = state
+            .chat_history
+            .lock()
+            .expect("chat history mutex poisoned");
+
+        (
+            chat_history.iter().cloned().collect::<Vec<_>>(),
+            state.chat_tx.subscribe(),
+        )
+    };
+
+    // Replay the recent messages, so that the chat isn't empty for clients that only join now.
+    for message in chat_history {
+        if sender.send(Message::Text(message)).await.is_err() {
+            return;
+        }
+    }
+
     loop {
         tokio::select! {
             frame = frame_rx.recv() => match frame {
@@ -146,7 +173,20 @@ async fn handle_incoming_chat(
         Ok(()) => {
             let json =
                 serde_json::json!({ "type": "chat", "name": name, "text": message, "ip": ip });
-            let _ = state.chat_tx.send(Utf8Bytes::from(json.to_string()));
+            let serialized = Utf8Bytes::from(json.to_string());
+
+            // Record and broadcast while holding the lock, see `handle_socket` for why.
+            let mut chat_history = state
+                .chat_history
+                .lock()
+                .expect("chat history mutex poisoned");
+            if chat_history.len() >= CHAT_HISTORY_LEN {
+                chat_history.pop_front();
+            }
+            chat_history.push_back(serialized.clone());
+
+            // Ignore the error: it only means no clients are currently connected.
+            let _ = state.chat_tx.send(serialized);
         }
         Err(recent) => {
             let json = serde_json::json!({

@@ -568,6 +568,10 @@
       ws.onopen = () => {
         everConnected = true;
         setConnState(true);
+        // The server replays its recent chat messages on every connect, so drop the ones we already
+        // have to not show them twice. Messages older than the server's history are lost that way,
+        // which is fine - the chat is not meant to be an archive.
+        chatMessages.replaceChildren();
       };
 
       ws.onmessage = (event) => {

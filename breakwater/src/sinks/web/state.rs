@@ -12,6 +12,9 @@ use tokio::{sync::broadcast, time::Instant};
 /// the rate limit applies per IP rather than per connection.
 pub type ChatRateLimiter = Arc<Mutex<HashMap<IpAddr, VecDeque<Instant>>>>;
 
+/// The most recent chat messages (already serialized to JSON), shared across all connections.
+pub type ChatHistory = Arc<Mutex<VecDeque<Utf8Bytes>>>;
+
 #[derive(Clone)]
 pub struct WebState {
     /// Carries the latest frame already serialized to binary BLOB, ready to send to every client.
@@ -23,6 +26,8 @@ pub struct WebState {
     /// Maximum number of chat messages a single IP may send per chat ratelimit window.
     pub chat_rate_limit: u32,
     pub chat_rate_limiter: ChatRateLimiter,
+    /// Replayed to clients when they connect, so that they don't start with an empty chat.
+    pub chat_history: ChatHistory,
     pub width: usize,
     pub height: usize,
     /// Pixelflut endpoints to advertise to users, sent once on connect.

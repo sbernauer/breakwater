@@ -20,7 +20,10 @@ use tokio::{
 use tracing::{info, trace, warn};
 
 use crate::{
-    sinks::{DisplaySink, DisplaySinkType, Sink, web::state::WebState},
+    sinks::{
+        DisplaySink, DisplaySinkType, Sink,
+        web::state::{ChatHistory, WebState},
+    },
     statistics::StatisticsInformationEvent,
 };
 
@@ -104,6 +107,7 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> WebSink<FB> {
             chat_tx,
             chat_rate_limit: *chat_messages_per_minute,
             chat_rate_limiter: Arc::new(Mutex::new(HashMap::new())),
+            chat_history: ChatHistory::default(),
             width: fb.get_width(),
             height: fb.get_height(),
             advertised_endpoints,
