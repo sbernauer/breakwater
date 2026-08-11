@@ -50,7 +50,7 @@ You may need to install some additional packages with `sudo apt install clang pk
 Then you can directly run the server with
 
 ```bash
-cargo run --release --features vnc -- --enable-sink vnc --vnc-listen-address 0.0.0.0:5900 --vnc-listen-address '[::]:5900'
+cargo run --release --features vnc -- --enable-sink vnc
 ```
 The default settings should provide you with a ready-to-use server.
 
@@ -129,7 +129,7 @@ NDI sink options:
 
 VNC sink options:
       --vnc-listen-address <VNC_LISTEN_ADDRESSES>
-          VNC server listen address to bind to (multiple can be specified). Only one address of each IP version can be specified
+          VNC server listen address to bind to (multiple can be specified). Only one address of each IP version can be specified. The default values listen on all interfaces for IPv4 and IPv6 packets [default: 0.0.0.0:5900 [::]:5900]
       --vnc-text <TEXT>
           Text to display on the screen [default: "Pixelflut server (breakwater)"]
       --vnc-font <FONT>
@@ -202,13 +202,13 @@ It touches on SIMD usage for Pixelflut.
 This command will start the Pixelflut server in a docker container
 
 ```bash
-docker run --rm --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 sbernauer/breakwater --enable-sink vnc --vnc-listen-address 0.0.0.0:5900
+docker run --rm --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 sbernauer/breakwater --enable-sink vnc
 ```
 
 If you want to permanently save statistics (to keep them between restarts) you can use the following command:
 
 ```bash
-mkdir -p pixelflut && docker run --rm -u 1000:1000 --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 -v "$(pwd)/pixelflut:/pixelflut" sbernauer/breakwater --enable-sink vnc --vnc-listen-address 0.0.0.0:5900 --statistics-save-file /pixelflut/statistics.json
+mkdir -p pixelflut && docker run --rm -u 1000:1000 --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 -v "$(pwd)/pixelflut:/pixelflut" sbernauer/breakwater --enable-sink vnc --statistics-save-file /pixelflut/statistics.json
 ```
 
 # Ready to use Docker compose setup
