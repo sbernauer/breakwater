@@ -596,10 +596,26 @@
       ws.onclose = () => {
         activeSocket = null;
         setConnState(false);
-        setTimeout(connect, 1000);
+        // Don't reconnect while the tab is in the background, see the `visibilitychange` handler.
+        if (!document.hidden) {
+          setTimeout(connect, 1000);
+        }
       };
       ws.onerror = () => ws.close();
     }
+
+    // Close the socket while the tab is in the background and reconnect once it is visible again.
+    // Browsers stop calling `requestAnimationFrame` for hidden tabs, so nothing would be drawn
+    // anyway, while the server happily keeps pushing a few hundred Mbit/s at us. Closing also drops
+    // our frame subscription on the server, which stops compressing frames entirely once the last
+    // viewer is gone.
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        activeSocket?.close();
+      } else if (!activeSocket) {
+        connect();
+      }
+    });
 
     // Render loop decoupled from the network: draws the latest available frame.
     // If decoding can't keep up, frames are dropped rather than queued, keeping latency low.
