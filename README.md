@@ -48,7 +48,7 @@ cargo run --release -- --enable-sink egui
 
 As servers mostly don't have a graphical system, the easiest way to let people watch is the web sink.
 It serves a Web UI showing the canvas, live statistics and a chat, so spectators only need a browser.
-It's enabled by default and doesn't need any additional system libraries.
+The web feature is enabled by default doesn't need any additional system libraries.
 
 ```bash
 cargo run --release -- --enable-sink web
@@ -271,7 +271,7 @@ owncast is still useful if you want an actual video stream, e.g. to embed it som
 ## Live streaming to internet services (e.g. Youtube, Twich)
 
 This should work the same way as streaming to owncast.
-Simply uncomment the `breakwater` command and adopt `--rtmp-address` accordingly.
+Simply uncomment the `breakwater` command and adopt `--ffmpeg-rtmp-address` accordingly.
 I never used this for a longer time period, so happy about feedback!
 
 # Known issues
