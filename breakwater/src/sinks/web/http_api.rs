@@ -62,6 +62,8 @@ async fn handle_socket(socket: WebSocket, ip: IpAddr, state: WebState) {
         "height": state.height,
         "advertised_endpoints": state.advertised_endpoints,
         "your_ip": ip,
+        // So the client can cap its chat at the same number of messages that we replay on connect.
+        "chat_history_len": CHAT_HISTORY_LEN,
     })
     .to_string();
     if sender.send(Message::Text(hello.into())).await.is_err() {

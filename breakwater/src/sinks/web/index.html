@@ -607,6 +607,7 @@
             renderEndpoints(msg.advertised_endpoints);
             yourIp = msg.your_ip ?? null;
             renderTopList();
+            maxChatMessages = msg.chat_history_len ?? maxChatMessages;
           } else if (msg.type === "stats") {
             updateStats(msg);
           } else if (msg.type === "chat") {
@@ -1040,6 +1041,12 @@
     const chatName = document.getElementById("chat-name");
     const chatText = document.getElementById("chat-text");
 
+    // Number of messages we keep in the DOM, so that a viewer which is left running for the whole
+    // event doesn't accumulate messages forever. The server tells us how many messages it replays on
+    // connect (in `hello`), and keeping exactly those means a reload shows the same messages as a
+    // viewer that was open the whole time.
+    let maxChatMessages = 100;
+
     // Remember the chosen name across reloads; it can be changed at any time.
     chatName.value = localStorage.getItem("chatName") || "";
     chatName.addEventListener("input", () => {
@@ -1074,6 +1081,9 @@
         el.appendChild(body);
       }
       chatMessages.appendChild(el);
+      while (chatMessages.childElementCount > maxChatMessages) {
+        chatMessages.firstElementChild.remove();
+      }
       chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
