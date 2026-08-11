@@ -93,6 +93,25 @@
     }
     @keyframes conn-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
 
+    /* Shown instead of the canvas in case the browser can't decompress our frames */
+    #unsupported {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 20;
+      max-width: min(32em, calc(100% - 32px));
+      padding: 16px 20px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      font-size: 14px;
+      line-height: 1.5;
+      text-align: center;
+    }
+    #unsupported strong { display: block; margin-bottom: 6px; font-size: 15px; }
+    #unsupported code { font-family: monospace; }
+
     #coord-readout {
       position: fixed;
       z-index: 10;
@@ -443,6 +462,13 @@
       <canvas id="canvas"></canvas>
       <div id="coord-readout"></div>
 
+      <div id="unsupported" hidden>
+        <strong>Your browser can't show the canvas</strong>
+        It does not support <code>DecompressionStream</code>, which we use to unpack the frames.
+        We need to compress the frames to keep the traffic at somewhat manageable levels.
+        Please use a more modern browser, e.g. Chrome/Edge 80+, Firefox 113+ or Safari 16.4+.
+      </div>
+
       <div id="conn-status" class="show">Connecting…</div>
       <div id="fps">connecting…</div>
 
@@ -697,14 +723,23 @@
       requestAnimationFrame(render);
     }
 
-    setInterval(() => {
-      fpsEl.textContent = `${framesThisSecond} fps`;
-      stFps.textContent = `${framesThisSecond} fps`;
-      framesThisSecond = 0;
-    }, 1000);
+    // Decompressing the frames needs the Compression Streams API. Without it we can't show a single
+    // frame, so we say so instead of leaving the user with a canvas that stays black forever.
+    if (typeof DecompressionStream === "undefined") {
+      document.getElementById("unsupported").hidden = false;
+      connStatusEl.classList.remove("show");
+      fpsEl.hidden = true;
+      stFps.textContent = "unsupported";
+    } else {
+      setInterval(() => {
+        fpsEl.textContent = `${framesThisSecond} fps`;
+        stFps.textContent = `${framesThisSecond} fps`;
+        framesThisSecond = 0;
+      }, 1000);
 
-    connect();
-    requestAnimationFrame(render);
+      connect();
+      requestAnimationFrame(render);
+    }
 
     // =====================================================================
     // Fullscreen (real)
