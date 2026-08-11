@@ -39,6 +39,9 @@ pub trait DisplaySinkType<FB>: DisplaySink<FB> {
     fn sink_type() -> Sink;
 }
 
+/// The sinks that were created for the enabled `--enable-sink`s.
+type BoxedSinks<FB> = Vec<Box<dyn DisplaySink<FB> + Send>>;
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub enum Sink {
     Ffmpeg,
@@ -54,9 +57,6 @@ pub enum Sink {
     Web,
 }
 
-// Several of these parameters are only consumed by feature-gated sinks, so they appear unused when those
-// features are disabled. We can't use `#[expect(...)]` here, as it would fail when all features are enabled.
-#[allow(unused_variables, clippy::too_many_lines)]
 pub async fn start_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static>(
     cli_args: &SinkCliArgs,
     fb: Arc<FB>,
@@ -72,81 +72,15 @@ pub async fn start_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'stat
 
     let (terminate_signal_tx, terminate_signal_rx) = broadcast::channel::<()>(1);
 
-    let mut sinks = Vec::<Box<dyn DisplaySink<FB> + Send>>::new();
-
-    let mut ffmpeg_thread_present = false;
-    if enabled_sinks.contains(&FfmpegSink::<FB>::sink_type()) {
-        sinks.push(Box::new(FfmpegSink::new(
-            fb.clone(),
-            &cli_args.ffmpeg_sink,
-            fps,
-            terminate_signal_rx.resubscribe(),
-        )));
-        ffmpeg_thread_present = true;
-    }
-
-    #[cfg(feature = "winit")]
-    {
-        use crate::sinks::winit::WinitSink;
-        if enabled_sinks.contains(&WinitSink::<FB>::sink_type()) {
-            sinks.push(Box::new(WinitSink::new(
-                fb.clone(),
-                terminate_signal_rx.resubscribe(),
-            )));
-        }
-    }
-
-    #[cfg(feature = "vnc")]
-    {
-        use crate::sinks::vnc::VncSink;
-        if enabled_sinks.contains(&VncSink::<FB>::sink_type()) {
-            sinks.push(Box::new(
-                VncSink::new(
-                    fb.clone(),
-                    &cli_args.vnc_sink,
-                    fps,
-                    statistics_tx,
-                    statistics_information_rx.resubscribe(),
-                    terminate_signal_rx.resubscribe(),
-                )
-                .context("failed to create VNC sink")?,
-            ));
-        }
-    }
-
-    #[cfg(feature = "ndi")]
-    {
-        use crate::sinks::ndi::NdiSink;
-        if enabled_sinks.contains(&NdiSink::<FB>::sink_type()) {
-            sinks.push(Box::new(
-                NdiSink::new(
-                    fb.clone(),
-                    &cli_args.ndi_sink,
-                    fps,
-                    terminate_signal_rx.resubscribe(),
-                )
-                .context("failed to create NDI sink")?,
-            ));
-        }
-    }
-
-    #[cfg(feature = "web")]
-    {
-        use crate::sinks::web::WebSink;
-        if enabled_sinks.contains(&WebSink::<FB>::sink_type()) {
-            sinks.push(Box::new(
-                WebSink::new(
-                    fb.clone(),
-                    &cli_args.web_sink,
-                    advertised_endpoints.to_vec(),
-                    fps,
-                    statistics_information_rx.resubscribe(),
-                    terminate_signal_rx.resubscribe(),
-                )
-                .context("failed to create web sink")?,
-            ));
-        }
-    }
+    let (sinks, ffmpeg_thread_present) = create_sinks(
+        cli_args,
+        &fb,
+        advertised_endpoints,
+        fps,
+        &statistics_tx,
+        &statistics_information_rx,
+        &terminate_signal_rx,
+    )?;
 
     let mut sink_tasks = Vec::new();
     for mut sink in sinks {
@@ -196,6 +130,103 @@ pub async fn start_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'stat
     wait_for_shutdown(terminate_signal_tx, terminate_signal_rx).await?;
 
     Ok((sink_tasks, ffmpeg_thread_present))
+}
+
+/// Creates all the sinks the user enabled via `--enable-sink`.
+///
+/// Also returns whether the ffmpeg sink is among them, as it might leave a ffmpeg process behind
+/// during shutdown - which we want to tell the user about.
+// Several of these parameters are only consumed by feature-gated sinks, so they appear unused when those
+// features are disabled. We can't use `#[expect(...)]` here, as it would fail when all features are enabled.
+#[allow(unused_variables, clippy::unnecessary_wraps)]
+fn create_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static>(
+    cli_args: &SinkCliArgs,
+    fb: &Arc<FB>,
+    advertised_endpoints: &[SocketAddr],
+    fps: u32,
+    statistics_tx: &mpsc::Sender<StatisticsEvent>,
+    statistics_information_rx: &broadcast::Receiver<StatisticsInformationEvent>,
+    terminate_signal_rx: &broadcast::Receiver<()>,
+) -> eyre::Result<(BoxedSinks<FB>, bool)> {
+    let enabled_sinks = &cli_args.enabled_sinks;
+
+    let mut sinks = BoxedSinks::<FB>::new();
+
+    let mut ffmpeg_thread_present = false;
+    if enabled_sinks.contains(&FfmpegSink::<FB>::sink_type()) {
+        sinks.push(Box::new(FfmpegSink::new(
+            fb.clone(),
+            &cli_args.ffmpeg_sink,
+            fps,
+            terminate_signal_rx.resubscribe(),
+        )));
+        ffmpeg_thread_present = true;
+    }
+
+    #[cfg(feature = "winit")]
+    {
+        use crate::sinks::winit::WinitSink;
+        if enabled_sinks.contains(&WinitSink::<FB>::sink_type()) {
+            sinks.push(Box::new(WinitSink::new(
+                fb.clone(),
+                terminate_signal_rx.resubscribe(),
+            )));
+        }
+    }
+
+    #[cfg(feature = "vnc")]
+    {
+        use crate::sinks::vnc::VncSink;
+        if enabled_sinks.contains(&VncSink::<FB>::sink_type()) {
+            sinks.push(Box::new(
+                VncSink::new(
+                    fb.clone(),
+                    &cli_args.vnc_sink,
+                    fps,
+                    statistics_tx.clone(),
+                    statistics_information_rx.resubscribe(),
+                    terminate_signal_rx.resubscribe(),
+                )
+                .context("failed to create VNC sink")?,
+            ));
+        }
+    }
+
+    #[cfg(feature = "ndi")]
+    {
+        use crate::sinks::ndi::NdiSink;
+        if enabled_sinks.contains(&NdiSink::<FB>::sink_type()) {
+            sinks.push(Box::new(
+                NdiSink::new(
+                    fb.clone(),
+                    &cli_args.ndi_sink,
+                    fps,
+                    terminate_signal_rx.resubscribe(),
+                )
+                .context("failed to create NDI sink")?,
+            ));
+        }
+    }
+
+    #[cfg(feature = "web")]
+    {
+        use crate::sinks::web::WebSink;
+        if enabled_sinks.contains(&WebSink::<FB>::sink_type()) {
+            sinks.push(Box::new(
+                WebSink::new(
+                    fb.clone(),
+                    &cli_args.web_sink,
+                    advertised_endpoints.to_vec(),
+                    fps,
+                    statistics_information_rx.resubscribe(),
+                    terminate_signal_rx.resubscribe(),
+                )
+                .context("failed to create web sink")?,
+            ));
+        }
+    }
+
+    Ok((sinks, ffmpeg_thread_present))
 }
 
 /// Blocks until either the user requests a shutdown via Ctrl+C, or one of the sinks signals
