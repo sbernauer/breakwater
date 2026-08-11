@@ -122,6 +122,8 @@
     .player:focus-within .controls { opacity: 1; }
 
     .controls .title { font-size: 14px; font-weight: 500; }
+    .controls .hint { font-size: 12px; color: var(--text-dim); }
+    .controls .hint code { font-family: monospace; }
     .controls .spacer { flex: 1; }
     .icon-btn {
       background: none;
@@ -408,6 +410,7 @@
 
       <div class="controls">
         <span class="title">Pixelflut canvas (breakwater)</span>
+        <span class="hint">Click a pixel to copy its <code>PX</code> command</span>
         <span class="spacer"></span>
         <button class="icon-btn" id="fullscreen" title="Fullscreen" aria-label="Fullscreen">
           <svg id="fs-enter" viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
@@ -684,6 +687,8 @@
     let cursorX = null; // last cursor position over the player, in client coordinates
     let cursorY = null;
     const coordReadout = document.getElementById("coord-readout");
+    // Set while the readout shows a "copied" confirmation instead of the current coordinate.
+    let copyFeedbackTimer = null;
 
     const toggleCoordsEl = document.getElementById("toggle-coords");
     toggleCoordsEl.checked = showCoords;
@@ -693,26 +698,39 @@
       updateCoordReadout();
     });
 
-    // Map the cursor over the letterboxed (object-fit: contain) canvas to a pixel coordinate and
-    // show it (plus the pixel's color) just below the cursor. Re-run on every frame so the color
-    // stays live even when the cursor doesn't move.
-    function updateCoordReadout() {
-      if (!showCoords || !imageData || cursorX === null) {
-        coordReadout.style.display = "none";
-        return;
-      }
+    // Map a point in client coordinates to a pixel of the letterboxed (object-fit: contain) canvas.
+    // Returns `null` for points next to the canvas, i.e. on the black bars.
+    function pixelAt(clientX, clientY) {
       const rect = canvas.getBoundingClientRect();
       const scale = Math.min(rect.width / canvas.width, rect.height / canvas.height);
       const dispW = canvas.width * scale;
       const dispH = canvas.height * scale;
-      const x = cursorX - rect.left - (rect.width - dispW) / 2;
-      const y = cursorY - rect.top - (rect.height - dispH) / 2;
+      const x = clientX - rect.left - (rect.width - dispW) / 2;
+      const y = clientY - rect.top - (rect.height - dispH) / 2;
       if (x < 0 || y < 0 || x >= dispW || y >= dispH) {
+        return null;
+      }
+
+      return { px: Math.floor(x / scale), py: Math.floor(y / scale) };
+    }
+
+    // Show the pixel coordinate (plus the pixel's color) just below the cursor. Re-run on every
+    // frame so the color stays live even when the cursor doesn't move.
+    function updateCoordReadout() {
+      // While we are showing the "copied" confirmation we leave the readout alone.
+      if (copyFeedbackTimer) {
+        return;
+      }
+      if (!showCoords || !imageData || cursorX === null) {
         coordReadout.style.display = "none";
         return;
       }
-      const px = Math.floor(x / scale);
-      const py = Math.floor(y / scale);
+      const pixel = pixelAt(cursorX, cursorY);
+      if (!pixel) {
+        coordReadout.style.display = "none";
+        return;
+      }
+      const { px, py } = pixel;
       const i = (py * canvas.width + px) * 4;
       const d = imageData.data;
       const hex = [d[i], d[i + 1], d[i + 2]]
@@ -732,6 +750,30 @@
     player.addEventListener("mouseleave", () => {
       cursorX = cursorY = null;
       coordReadout.style.display = "none";
+    });
+
+    // Click a pixel to copy the Pixelflut command for its coordinates, so people don't have to count
+    // pixels by hand. Only the coordinates, picking a color is up to them.
+    // The listener is on the canvas (and not on the player), so that clicking the controls on top of
+    // it doesn't copy anything.
+    canvas.addEventListener("click", async (e) => {
+      const pixel = pixelAt(e.clientX, e.clientY);
+      if (!pixel) {
+        return;
+      }
+      const command = `PX ${pixel.px} ${pixel.py}`;
+      const copied = await copyText(command);
+
+      // Confirm in place of the coordinate readout, i.e. where the eyes already are.
+      coordReadout.textContent = copied ? `copied "${command}" ✓` : command;
+      coordReadout.style.left = `${e.clientX + 12}px`;
+      coordReadout.style.top = `${e.clientY + 16}px`;
+      coordReadout.style.display = "block";
+      clearTimeout(copyFeedbackTimer);
+      copyFeedbackTimer = setTimeout(() => {
+        copyFeedbackTimer = null;
+        updateCoordReadout();
+      }, 1200);
     });
 
     // =====================================================================
