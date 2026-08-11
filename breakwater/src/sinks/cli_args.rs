@@ -86,12 +86,6 @@ impl SinkCliArgs {
                 .validate()
                 .map_err(|msg| cmd.error(ErrorKind::MissingRequiredArgument, msg))?;
         }
-        #[cfg(feature = "vnc")]
-        if self.enabled_sinks.contains(&Sink::Vnc) {
-            self.vnc_sink
-                .validate()
-                .map_err(|msg| cmd.error(ErrorKind::MissingRequiredArgument, msg))?;
-        }
 
         #[cfg(all(feature = "egui", feature = "winit"))]
         if self.enabled_sinks.contains(&Sink::Egui) && self.enabled_sinks.contains(&Sink::Winit) {
