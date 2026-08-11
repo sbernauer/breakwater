@@ -351,8 +351,15 @@
       min-height: 0;
       padding: 14px 16px 0;
     }
-    .chat-messages {
+    /* Only exists to position the "jump to latest" button over the bottom of the message list, so
+       that showing the button doesn't reflow the messages. */
+    .chat-scroll {
+      position: relative;
       flex: 1;
+      min-height: 0;
+    }
+    .chat-messages {
+      height: 100%;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
@@ -361,6 +368,22 @@
       scrollbar-width: thin;
       scrollbar-color: var(--border) transparent;
     }
+    .chat-jump {
+      position: absolute;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 4px 12px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--panel-2);
+      color: var(--text);
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, .5);
+    }
+    .chat-jump:hover { border-color: var(--accent); }
     .msg { font-size: 13px; line-height: 1.35; word-wrap: break-word; }
     .msg-head { display: flex; align-items: baseline; gap: 6px; }
     .msg .author { font-weight: 600; }
@@ -503,7 +526,10 @@
 
       <section class="chat">
         <h2>Chat</h2>
-        <div class="chat-messages" id="chat-messages"></div>
+        <div class="chat-scroll">
+          <div class="chat-messages" id="chat-messages"></div>
+          <button type="button" class="chat-jump" id="chat-jump" hidden>↓ Jump to latest</button>
+        </div>
         <form class="chat-input" id="chat-form" autocomplete="off">
           <input id="chat-name" placeholder="Your name" maxlength="20" />
           <div class="chat-send-row">
@@ -593,6 +619,7 @@
         // have to not show them twice. Messages older than the server's history are lost that way,
         // which is fine - the chat is not meant to be an archive.
         chatMessages.replaceChildren();
+        updateChatJump();
       };
 
       ws.onmessage = (event) => {
@@ -1037,9 +1064,54 @@
     // Chat
     // =====================================================================
     const chatMessages = document.getElementById("chat-messages");
+    const chatJump = document.getElementById("chat-jump");
     const chatForm = document.getElementById("chat-form");
     const chatName = document.getElementById("chat-name");
     const chatText = document.getElementById("chat-text");
+
+    // Whether the message list is scrolled (close enough to) the bottom, i.e. whether the user is
+    // following the live conversation instead of reading something further up.
+    function chatAtBottom() {
+      return chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 40;
+    }
+
+    function scrollChatToBottom() {
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    // Number of messages that are currently below the visible part of the message list.
+    function chatMessagesBelow() {
+      const listBottom = chatMessages.getBoundingClientRect().bottom;
+      let below = 0;
+      for (const message of chatMessages.children) {
+        if (message.getBoundingClientRect().top >= listBottom) {
+          below++;
+        }
+      }
+
+      return below;
+    }
+
+    // The "jump to latest" button is only useful while there is something to jump to. It also tells
+    // how many messages are currently below the visible area.
+    function updateChatJump() {
+      if (chatAtBottom()) {
+        chatJump.hidden = true;
+        return;
+      }
+
+      const below = chatMessagesBelow();
+      chatJump.textContent = below > 0
+        ? `↓ ${below} message${below === 1 ? "" : "s"} below`
+        : "↓ Jump to latest";
+      chatJump.hidden = false;
+    }
+
+    chatMessages.addEventListener("scroll", updateChatJump);
+    chatJump.addEventListener("click", () => {
+      scrollChatToBottom();
+      updateChatJump();
+    });
 
     // Number of messages we keep in the DOM, so that a viewer which is left running for the whole
     // event doesn't accumulate messages forever. The server tells us how many messages it replays on
@@ -1054,6 +1126,10 @@
     });
 
     function addMessage(author, text, system = false, ip = null) {
+      // Checked *before* adding the message: if the user scrolled up to read something we leave the
+      // scroll position alone instead of yanking them back down on every new message.
+      const following = chatAtBottom();
+
       const el = document.createElement("div");
       el.className = system ? "msg system" : "msg";
       if (system) {
@@ -1084,7 +1160,10 @@
       while (chatMessages.childElementCount > maxChatMessages) {
         chatMessages.firstElementChild.remove();
       }
-      chatMessages.scrollTop = chatMessages.scrollHeight;
+      if (following) {
+        scrollChatToBottom();
+      }
+      updateChatJump();
     }
 
     function colorFor(name) {
