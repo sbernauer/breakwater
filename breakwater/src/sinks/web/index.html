@@ -311,7 +311,8 @@
       border-radius: 6px;
       padding: 6px 9px;
     }
-    .top-list .rank { width: 1.2em; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+    /* `min-width` (instead of a fixed width), as the viewer's own rank can be an arbitrary number */
+    .top-list .rank { min-width: 1.2em; color: var(--text-dim); font-variant-numeric: tabular-nums; }
     .top-list .entry { flex: 1; min-width: 0; }
     .top-list .ip {
       font-family: monospace;
@@ -323,6 +324,20 @@
       gap: 8px;
       margin-top: 2px;
       font-variant-numeric: tabular-nums;
+    }
+    /* The row belonging to the viewer's own IP address */
+    .top-list li.self { border-color: var(--accent); }
+    .top-list .you {
+      margin-left: 6px;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: #000;
+      background: var(--accent);
     }
     .top-list .rate { color: var(--accent); font-weight: 600; }
     .top-list .conns { color: var(--text-dim); }
@@ -590,6 +605,8 @@
             imageData = ctx.createImageData(msg.width, msg.height);
             stRes.textContent = `${msg.width}×${msg.height}`;
             renderEndpoints(msg.advertised_endpoints);
+            yourIp = msg.your_ip ?? null;
+            renderTopList();
           } else if (msg.type === "stats") {
             updateStats(msg);
           } else if (msg.type === "chat") {
@@ -919,6 +936,8 @@
       ? localStorage.getItem("topSortMode")
       : "traffic";
     let latestStats = null;
+    // The IP address the server sees us as, so we can point out our own traffic. Sent in `hello`.
+    let yourIp = null;
 
     // Top 10 IPs ranked by the selected mode. `bytes_for_ip` already contains both IPv4 and IPv6
     // addresses, so they are ranked together in a single list. The per-row metrics shown (rate,
@@ -933,10 +952,22 @@
       const rankBy = topSortMode === "total" ? totals
         : topSortMode === "denied" ? denied
         : rates;
-      const top = Object.entries(rankBy)
+      const ranked = Object.entries(rankBy)
         .filter(([, value]) => value > 0)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 10);
+        .sort((a, b) => b[1] - a[1]);
+
+      // The actual top 10, paired with the rank to display.
+      const top = ranked.slice(0, 10).map(([ip], i) => [ip, i + 1]);
+
+      // Append the viewer's own IP if it didn't make the top 10, so that the "you" marker is also
+      // visible for the many people who only send a few pixels. It keeps its real rank, so the
+      // additional 11th entry doesn't look like a top 10 placement. Note that we can only do this if
+      // the client shows up in the current ranking at all - a spectator that never sent a pixel is
+      // not part of the statistics.
+      const ownRank = ranked.findIndex(([ip]) => ip === yourIp);
+      if (ownRank >= top.length) {
+        top.push([yourIp, ownRank + 1]);
+      }
 
       if (top.length === 0) {
         const empty = topSortMode === "denied" ? "no denied connections"
@@ -949,7 +980,7 @@
       // The accented primary metric reflects the active ranking; the right column shows a
       // complementary figure so each row still carries both traffic and size context in every mode.
       topTraffic.innerHTML = top
-        .map(([ip], i) => {
+        .map(([ip, rank]) => {
           const rate = fmtSI((rates[ip] || 0) * 8, "bit/s");
           const total = fmtSI(totals[ip] || 0, "B");
           let primary, right;
@@ -963,10 +994,13 @@
             primary = rate;
             right = `${total} total`;
           }
-          return `<li>` +
-            `<span class="rank">${i + 1}</span>` +
+          // Point out the viewer's own IP, so everybody can find their own traffic in the list.
+          const self = ip === yourIp;
+
+          return `<li${self ? ' class="self"' : ""}>` +
+            `<span class="rank">${rank}</span>` +
             `<div class="entry">` +
-              `<div class="ip" title="${ip}">${ip}</div>` +
+              `<div class="ip" title="${ip}">${ip}${self ? '<span class="you">you</span>' : ""}</div>` +
               `<div class="meta">` +
                 `<span>` +
                   `<span class="rate">${primary}</span> ` +

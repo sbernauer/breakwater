@@ -54,12 +54,14 @@ async fn handle_socket(socket: WebSocket, ip: IpAddr, state: WebState) {
     let (mut sender, mut receiver) = socket.split();
 
     // Tell the client the canvas dimensions (so it can size the `<canvas>` and allocate
-    // `ImageData`) and the Pixelflut endpoints to advertise.
+    // `ImageData`), the Pixelflut endpoints to advertise and the IP address we see it as - the
+    // client can't know the latter itself, but wants to point out its own traffic in the statistics.
     let hello = serde_json::json!({
         "type": "hello",
         "width": state.width,
         "height": state.height,
         "advertised_endpoints": state.advertised_endpoints,
+        "your_ip": ip,
     })
     .to_string();
     if sender.send(Message::Text(hello.into())).await.is_err() {
