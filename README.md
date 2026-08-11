@@ -63,7 +63,7 @@ You may need to install some additional packages with `sudo apt install clang pk
 Then you can directly run the server with
 
 ```bash
-cargo run --release --features vnc -- --enable-sink vnc --vnc-listen-address 0.0.0.0:5900 --vnc-listen-address '[::]:5900'
+cargo run --release --features vnc -- --enable-sink vnc
 ```
 The default settings should provide you with a ready-to-use server.
 
@@ -143,7 +143,7 @@ NDI sink options:
 
 VNC sink options:
       --vnc-listen-address <VNC_LISTEN_ADDRESSES>
-          VNC server listen address to bind to (multiple can be specified). Only one address of each IP version can be specified
+          VNC server listen address to bind to (multiple can be specified). Only one address of each IP version can be specified. The default values listen on all interfaces for IPv4 and IPv6 packets [default: 0.0.0.0:5900 [::]:5900]
       --vnc-text <TEXT>
           Text to display on the screen [default: "Pixelflut server (breakwater)"]
       --vnc-font <FONT>
@@ -227,7 +227,7 @@ docker run --rm --init -t -p 1234:1234 -p 8080:8080 -p 9100:9100 sbernauer/break
 ```
 
 You can then watch the canvas at http://localhost:8080.
-The image also contains the VNC sink, use `-p 5900:5900 ... --enable-sink vnc --vnc-listen-address 0.0.0.0:5900` if you prefer a VNC client (both sinks can be enabled at the same time).
+The image also contains the VNC sink, use `-p 5900:5900 ... --enable-sink vnc` if you prefer a VNC client (both sinks can be enabled at the same time).
 
 If you want to permanently save statistics (to keep them between restarts) you can use the following command:
 
