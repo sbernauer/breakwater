@@ -19,7 +19,7 @@ All notable changes to this project will be documented in this file.
 - BREAKING: The CLI argument `--statistics-save-interval-s` was renamed to `--statistics-save-interval` and now accepts a human time duration.
   E.g. instead of `--statistics-save-interval-s 20` now use `--statistics-save-interval 20s` ([#96]).
 - BREAKING: The CLI argument `--egui-advertised-endpoint` was renamed to `--advertised-endpoint`, because it will be used for new sinks in the future as well ([#99]).
-- The CLI argument `--vnc-listen-address` now defaults to `0.0.0.0:5900` and `[::]:5900`, so that `--enable-sink vnc` alone is enough ([#100]).
+- The CLI argument `--vnc-listen-address` now defaults to `0.0.0.0:5900` and `[::]:5900`, so that `--enable-sink vnc` alone is enough ([#101]).
   Both defaults are needed, as libvncserver binds a dedicated socket per IP version.
 
 ### Fixed
@@ -33,6 +33,7 @@ All notable changes to this project will be documented in this file.
 [#96]: https://github.com/sbernauer/breakwater/pull/96
 [#99]: https://github.com/sbernauer/breakwater/pull/99
 [#100]: https://github.com/sbernauer/breakwater/pull/100
+[#101]: https://github.com/sbernauer/breakwater/pull/101
 
 ## [0.22.0] - 2026-06-20
 

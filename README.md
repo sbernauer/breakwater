@@ -223,7 +223,7 @@ It touches on SIMD usage for Pixelflut.
 This command will start the Pixelflut server in a docker container
 
 ```bash
-docker run --rm --init -t -p 1234:1234 -p 8080:8080 -p 9100:9100 sbernauer/breakwater --enable-sink web --web-listen-address 0.0.0.0:8080
+docker run --rm --init -t -p 1234:1234 -p 8080:8080 -p 9100:9100 sbernauer/breakwater --enable-sink web
 ```
 
 You can then watch the canvas at http://localhost:8080.
@@ -232,7 +232,7 @@ The image also contains the VNC sink, use `-p 5900:5900 ... --enable-sink vnc` i
 If you want to permanently save statistics (to keep them between restarts) you can use the following command:
 
 ```bash
-mkdir -p pixelflut && docker run --rm -u 1000:1000 --init -t -p 1234:1234 -p 8080:8080 -p 9100:9100 -v "$(pwd)/pixelflut:/pixelflut" sbernauer/breakwater --enable-sink web --web-listen-address 0.0.0.0:8080 --statistics-save-file /pixelflut/statistics.json
+mkdir -p pixelflut && docker run --rm -u 1000:1000 --init -t -p 1234:1234 -p 8080:8080 -p 9100:9100 -v "$(pwd)/pixelflut:/pixelflut" sbernauer/breakwater --enable-sink web --statistics-save-file /pixelflut/statistics.json
 ```
 
 # Ready to use Docker compose setup
