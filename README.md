@@ -51,11 +51,12 @@ It serves a Web UI showing the canvas, live statistics and a chat, so spectators
 It's enabled by default and doesn't need any additional system libraries.
 
 ```bash
-cargo run --release -- --enable-sink web --web-listen-address '[::]:8080'
+cargo run --release -- --enable-sink web
 ```
 
 The Web UI is then available at `http://<your-server>:8080`.
-`--web-listen-address` can be repeated in case you need to bind to multiple addresses explicitly.
+Use `--web-listen-address` to bind somewhere else, the argument can be repeated in case you need to
+bind to multiple addresses explicitly.
 
 Alternatively you can start a VNC server and connect any VNC client to it.
 You may need to install some additional packages with `sudo apt install clang pkg-config libvncserver-dev`
@@ -150,7 +151,7 @@ VNC sink options:
 
 web sink options:
       --web-listen-address <WEB_LISTEN_ADDRESSES>
-          Web server listen address to bind to (multiple can be specified)
+          Web server listen address to bind to (multiple can be specified). The default value will listen on all interfaces for IPv4 and IPv6 packets [default: [::]:8080]
       --web-chat-messages-per-minute <CHAT_MESSAGES_PER_MINUTE>
           Maximum number of chat messages a single IP address may send per minute in the WebUI [default: 10]
 ```

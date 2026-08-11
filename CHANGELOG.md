@@ -11,7 +11,7 @@ All notable changes to this project will be documented in this file.
   Please choose the required features explicitly instead.
 - Add a `web` sink, which serves a Web UI showing the canvas, live statistics and a chat ([#100]).
   Spectators only need a browser, the server needs neither a graphical environment nor any additional system libraries.
-  Enable it with e.g. `--enable-sink web --web-listen-address '[::]:8080'`.
+  Enable it with `--enable-sink web`, it listens on `[::]:8080` unless told otherwise.
   The new `web` feature is enabled by default.
 
 ### Changed

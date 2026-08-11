@@ -93,7 +93,7 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> WebSink<FB> {
     ) -> eyre::Result<Self> {
         ensure!(
             !web_listen_addresses.is_empty(),
-            "WebSinkCliArgs::validate should have already checked that at least one --web-listen-address needs to be specified when the web sink is enabled",
+            "the web sink needs at least one --web-listen-address to listen on",
         );
 
         let (frame_tx, _) = broadcast::channel(FRAME_BUFFER_SIZE);
