@@ -56,6 +56,8 @@ rstest.workspace = true
 # VNC and NDI require shared libraries to be installed, so we don't enable them by default
 # Yes, egui and winit require a graphical environment, but most people getting started with
 # breakwater will likely do that on a desktop, servers admins generally know what they are doing (tm).
+# The web sink is enabled by default as well: it only pulls in pure Rust dependencies, doesn't need a
+# graphical environment and is the easiest way to let people watch the canvas on a server.
 default = ["prometheus", "egui", "winit", "web"]
 
 # Enables the Prometheus metrics exporter. Can be disabled to support compilation on 32-bit targets.
