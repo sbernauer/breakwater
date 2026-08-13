@@ -1,11 +1,8 @@
 use std::net::SocketAddr;
 
-use const_format::formatcp;
-
 use crate::sinks::cli_args::SinkCliArgs;
 
 pub const DEFAULT_NETWORK_BUFFER_SIZE: usize = 256 * 1024;
-pub const DEFAULT_NETWORK_BUFFER_SIZE_STR: &str = formatcp!("{}", DEFAULT_NETWORK_BUFFER_SIZE);
 
 #[derive(clap::Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -58,13 +55,13 @@ pub struct NetworkListenerCliArgs {
     pub advertised_endpoints: Vec<SocketAddr>,
 
     /// The size in bytes of the network buffer used for each open TCP connection.
-    /// Please use at least 64 KB (64_000 bytes).
+    /// Use at least 64 KB (64_000 bytes).
     #[clap(
         long,
-        default_value = DEFAULT_NETWORK_BUFFER_SIZE_STR,
-        value_parser = 64_000..100_000_000,
+        default_value_t = DEFAULT_NETWORK_BUFFER_SIZE,
+        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(64_000..=100_000_000),
     )]
-    pub network_buffer_size: i64,
+    pub network_buffer_size: usize,
 
     /// Allow only a certain number of connections per ip address
     #[clap(short, long)]
