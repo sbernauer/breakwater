@@ -567,6 +567,421 @@
     </aside>
   </div>
 
+  <!-- ===================================================================
+       Frame worker.
+
+       An unknown script type is not executed by the browser, so this block is just text that the
+       page below turns into a Worker. Keeping it here rather than serving it as a second route
+       means the whole Web UI stays a single self-contained file.
+
+       The worker owns the websocket, decompresses every frame and paints it onto the canvas that
+       the page transfers to it. The main thread therefore never touches a multi-megabyte frame; it
+       only relays chat/stats JSON and UI events. That keeps DOM work (chat, the stats list) from
+       stalling rendering and, more importantly, gets decoding off the one thread that also has to
+       run layout and compositing.
+       =================================================================== -->
+  <!-- ===================================================================
+       Decode worker (one instance per pool slot, spawned by the frame worker).
+
+       Inflating a frame is by far the most expensive thing the browser does for us - at 1920x1080
+       it is ~97% of the client-side frame cost, and a single thread can't do it 30 times a second
+       with any margin. The server already compresses each frame as several independent zlib
+       streams, so the work parallelises perfectly: each pool slot inflates a contiguous *band* of
+       the framebuffer (a run of consecutive chunks) and hands the finished bytes back.
+
+       Output buffers are passed back and forth rather than allocated per frame, so a steady 30 fps
+       doesn't generate megabytes of garbage per second.
+       =================================================================== -->
+  <script id="decode-worker" type="text/js-worker">
+    "use strict";
+
+    // Decompress a single zlib (deflate) chunk straight into `dest` at `offset`, using only the
+    // browser-native DecompressionStream. No third-party JavaScript required.
+    //
+    // We deliberately drain the stream ourselves instead of the much shorter
+    // `new Response(stream).arrayBuffer()`: that would allocate a fresh buffer per chunk and then
+    // copy it into the destination a second time. Copying every ~64 KiB output piece to its final
+    // place as it arrives removes a full frame worth of allocation *and* of memcpy per frame.
+    //
+    // `limit` is how many bytes may be written before we'd run past the end of the band; a corrupt
+    // or malicious message must not be able to write out of bounds. Returns the bytes written.
+    async function inflateInto(compressed, dest, offset, limit) {
+      const ds = new DecompressionStream("deflate");
+      const writer = ds.writable.getWriter();
+      // Feed the compressed bytes *without* awaiting: a TransformStream only accepts more input
+      // once its output has been drained, so awaiting the write before the read loop below starts
+      // would deadlock. Failures are swallowed here and surface on the reader instead, which fails
+      // with the same error - otherwise they'd show up as an unhandled promise rejection.
+      const feeding = writer.write(compressed).then(() => writer.close()).catch(() => {});
+
+      const reader = ds.readable.getReader();
+      let written = 0;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) {
+            break;
+          }
+          if (written + value.length > limit) {
+            throw new Error("frame chunk decompressed to more bytes than expected");
+          }
+          dest.set(value, offset + written);
+          written += value.length;
+        }
+      } catch (err) {
+        // Giving up mid-stream leaves the decompressor holding undelivered output and the `write`
+        // above pending forever. Cancelling tears both down right here; without it the abandoned
+        // stream reports its failure later, outside of any `await`, where it surfaces as an
+        // uncaught error rather than as the rejection our caller is ready to handle.
+        await reader.cancel().catch(() => {});
+        throw err;
+      }
+
+      await feeding;
+      return written;
+    }
+
+    // Inflate one band: `lengths.length` consecutive chunks, all of `chunkSize` uncompressed bytes
+    // except possibly the last one. The reply always hands `out` back - even on failure - so the
+    // frame worker can keep reusing the same buffer instead of allocating a new one per frame.
+    self.onmessage = async ({ data: job }) => {
+      const { id, compressed, lengths, chunkSize, bandLength } = job;
+      const out = job.out && job.out.byteLength >= bandLength
+        ? job.out
+        : new ArrayBuffer(bandLength);
+      const dest = new Uint8Array(out);
+
+      try {
+        let offset = 0;
+        const tasks = lengths.map((len, i) => {
+          const view = new Uint8Array(compressed, offset, len);
+          offset += len;
+          const target = i * chunkSize;
+          return inflateInto(view, dest, target, Math.max(0, Math.min(chunkSize, bandLength - target)));
+        });
+
+        // `allSettled` rather than `all`: the chunks run concurrently, so if one fails the others
+        // still reject a moment later. `Promise.all` would already have rejected by then and nobody
+        // would be observing those - which the browser reports as unhandled rejections.
+        const results = await Promise.allSettled(tasks);
+        const failed = results.find((result) => result.status === "rejected");
+        if (failed) {
+          throw failed.reason;
+        }
+        // Guards against a truncated band leaving stale pixels from the previous frame behind.
+        const sum = results.reduce((acc, result) => acc + result.value, 0);
+        if (sum !== bandLength) {
+          throw new Error(`band decompressed to ${sum} bytes, expected ${bandLength}`);
+        }
+        self.postMessage({ id, out, ok: true }, [out]);
+      } catch (err) {
+        self.postMessage({ id, out, ok: false, error: String(err) }, [out]);
+      }
+    };
+  </script>
+
+  <script id="frame-worker" type="text/js-worker">
+    "use strict";
+
+    let socket = null;
+    let socketUrl = null;
+    let reconnectTimer = null;
+    let paused = false;      // set while the page is hidden
+
+    let offscreen = null;
+    let ctx = null;
+    let imageData = null;    // reused ImageData sized to the canvas
+
+    let latest = null;       // newest compressed frame not yet decoded; older ones are dropped
+    let decoding = false;
+    let framesThisSecond = 0;
+    let framesDrawn = 0;
+    let cursor = null;       // pixel whose colour the page wants reported, or null
+
+    // Pool of decode workers. Inflating is the dominant client-side cost - at 1920x1080 it is ~97%
+    // of the client-side frame cost - and it parallelises cleanly across the server's
+    // independently-compressed chunks, so we spread each frame over several threads.
+    //
+    // Capped at 4 on purpose. Measured at 1920x1080 on a busy canvas, the decode time per frame
+    // falls off sharply and then flattens, while CPU keeps climbing roughly linearly with the
+    // number of slots:
+    //
+    //   slots:            1       2       4       8
+    //   Chrome:        17.3ms  12.2ms   9.1ms   6.6ms      (71% -> 80% -> 89% -> 106% CPU)
+    //   Firefox:       29.9ms  18.8ms  12.9ms   9.2ms
+    //
+    // Four slots already leave ~60% of the 33.3ms frame slot free even on the slower engine, which
+    // is all the headroom we need; buying the rest would just burn a viewer's battery. One core is
+    // also left over for the frame worker (assembling + painting) and the page (UI).
+    const POOL_SIZE = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
+    const pool = [];
+    // One reusable output buffer per pool slot, handed back and forth with the worker so a steady
+    // 30 fps doesn't allocate (and collect) megabytes per second.
+    const spareBuffers = [];
+    const pendingJobs = new Map();
+    let nextJobId = 1;
+
+    function createPool(source) {
+      const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+      for (let slot = 0; slot < POOL_SIZE; slot++) {
+        const worker = new Worker(url);
+        worker.onmessage = ({ data }) => {
+          const job = pendingJobs.get(data.id);
+          if (job) {
+            pendingJobs.delete(data.id);
+            job.resolve(data);
+          }
+        };
+        // A dead worker must not leave `decodeFrameInto` awaiting forever - that would wedge the
+        // decode loop and freeze the canvas on its last frame.
+        worker.onerror = () => {
+          for (const [id, job] of pendingJobs) {
+            if (job.slot === slot) {
+              pendingJobs.delete(id);
+              job.resolve({ id, ok: false, error: "decode worker crashed" });
+            }
+          }
+        };
+        pool.push(worker);
+        spareBuffers.push(null);
+      }
+    }
+
+    // A frame arrives as several zlib-compressed chunks packed into one message, so the server can
+    // compress them in parallel - and so can we. Layout (little-endian):
+    //   u32  chunkCount
+    //   u32  compressedLen   × chunkCount
+    //   compressed bytes     (chunks back-to-back, in order)
+    // Decompressing each chunk and concatenating the output in order reproduces the full RGBA
+    // framebuffer, which ends up in `dest` (the ImageData backing store).
+    async function decodeFrameInto(buffer, dest) {
+      const header = new DataView(buffer);
+      const chunkCount = buffer.byteLength >= 4 ? header.getUint32(0, true) : 0;
+      const headerLen = (1 + chunkCount) * 4;
+      // Validate the header *before* dispatching any work, so a bogus length can't leave jobs
+      // in flight that nobody is waiting for.
+      if (chunkCount < 1 || headerLen > buffer.byteLength) {
+        throw new Error(`frame header claims ${chunkCount} chunks, which does not fit the message`);
+      }
+
+      const lengths = [];
+      // `offsets[i]` is where chunk `i`'s compressed bytes start, so a band's byte range is just
+      // `offsets[lo] .. offsets[hi]`.
+      const offsets = [headerLen];
+      for (let i = 0; i < chunkCount; i++) {
+        const len = header.getUint32(4 + i * 4, true);
+        lengths.push(len);
+        offsets.push(offsets[i] + len);
+      }
+      if (offsets[chunkCount] !== buffer.byteLength) {
+        throw new Error(
+          `frame is ${buffer.byteLength} bytes, but its header describes ${offsets[chunkCount]}`,
+        );
+      }
+
+      // The server splits the framebuffer into `chunkCount` contiguous ranges of
+      // `ceil(total / chunkCount)` bytes (only the last one is shorter), so we know where every
+      // chunk's output belongs without decompressing them in order. Deriving it from the
+      // transmitted `chunkCount` keeps this working whatever the server's
+      // FRAME_COMPRESSION_CHUNKS is set to.
+      const total = dest.length;
+      const chunkSize = Math.ceil(total / chunkCount);
+
+      // Hand each slot a contiguous run of chunks, i.e. one band of the framebuffer.
+      const slots = Math.min(pool.length, chunkCount);
+      const perSlot = Math.ceil(chunkCount / slots);
+      const jobs = [];
+      for (let slot = 0; slot < slots; slot++) {
+        const lo = slot * perSlot;
+        const hi = Math.min(lo + perSlot, chunkCount);
+        if (lo >= hi) {
+          break;
+        }
+        const bandStart = lo * chunkSize;
+        const bandLength = Math.min(hi * chunkSize, total) - bandStart;
+        // A copy of this band's compressed bytes, so it can be transferred (rather than cloned)
+        // into the worker. It is a fraction of the frame, and the alternative - cloning the whole
+        // message per slot - would be strictly more work.
+        const compressed = buffer.slice(offsets[lo], offsets[hi]);
+        const out = spareBuffers[slot];
+        spareBuffers[slot] = null;
+
+        const id = nextJobId++;
+        const transfer = out ? [compressed, out] : [compressed];
+        jobs.push(new Promise((resolve) => {
+          pendingJobs.set(id, { resolve, slot });
+          pool[slot].postMessage(
+            { id, compressed, lengths: lengths.slice(lo, hi), chunkSize, bandLength, out },
+            transfer,
+          );
+        }).then((result) => ({ ...result, slot, bandStart, bandLength })));
+      }
+
+      // These never reject - a failed band comes back as `ok: false` - so no job can be orphaned.
+      const results = await Promise.all(jobs);
+
+      // Take the buffers back for reuse first, so a failing band doesn't cost us the buffer.
+      for (const result of results) {
+        if (result.out) {
+          spareBuffers[result.slot] = result.out;
+        }
+      }
+      const failed = results.find((result) => !result.ok);
+      if (failed) {
+        throw new Error(failed.error);
+      }
+      for (const result of results) {
+        dest.set(new Uint8Array(result.out, 0, result.bandLength), result.bandStart);
+      }
+    }
+
+    // Decode and paint whatever the newest frame is. Deliberately *not* driven by
+    // requestAnimationFrame: the compositor picks the canvas up on its own, so tying decoding to
+    // vsync would only mean a decode that overruns a frame slot costs a whole extra one.
+    async function pump() {
+      if (decoding) {
+        return;
+      }
+      decoding = true;
+      try {
+        // If decoding can't keep up, intermediate frames are dropped rather than queued, which
+        // keeps latency low - we always draw the most recent state of the canvas.
+        while (latest && imageData) {
+          const buffer = latest;
+          latest = null;
+          try {
+            await decodeFrameInto(buffer, imageData.data);
+            ctx.putImageData(imageData, 0, 0);
+            framesThisSecond++;
+            framesDrawn++;
+            reportCursor();
+          } catch (err) {
+            // Ignore a corrupt/partial frame and wait for the next one.
+          }
+        }
+      } finally {
+        decoding = false;
+      }
+    }
+
+    // The page can no longer read the pixels itself, so the colour under the cursor is reported
+    // from here - after every frame, so it stays live even while the pointer doesn't move.
+    function reportCursor() {
+      if (!cursor || !imageData) {
+        return;
+      }
+      const { px, py } = cursor;
+      if (px < 0 || py < 0 || px >= imageData.width || py >= imageData.height) {
+        return;
+      }
+      const i = (py * imageData.width + px) * 4;
+      const d = imageData.data;
+      const hex = [d[i], d[i + 1], d[i + 2]]
+        .map((c) => c.toString(16).padStart(2, "0"))
+        .join("");
+      self.postMessage({ type: "color", px, py, hex });
+    }
+
+    function resize(width, height) {
+      if (!offscreen || (offscreen.width === width && offscreen.height === height && imageData)) {
+        return;
+      }
+      offscreen.width = width;
+      offscreen.height = height;
+      imageData = new ImageData(width, height);
+    }
+
+    function connect() {
+      clearTimeout(reconnectTimer);
+      socket = new WebSocket(socketUrl);
+      socket.binaryType = "arraybuffer";
+
+      socket.onopen = () => self.postMessage({ type: "open" });
+      socket.onmessage = (event) => {
+        if (typeof event.data === "string") {
+          // hello/stats/chat are the page's business, not ours.
+          self.postMessage({ type: "text", data: event.data });
+        } else {
+          latest = event.data;
+          pump();
+        }
+      };
+      socket.onclose = () => {
+        socket = null;
+        self.postMessage({ type: "close" });
+        // Don't reconnect while the page is hidden, see the `visibility` message below.
+        if (!paused) {
+          reconnectTimer = setTimeout(connect, 1000);
+        }
+      };
+      socket.onerror = () => socket?.close();
+    }
+
+    async function snapshot() {
+      // Nothing drawn yet, so a download would just give us an empty image.
+      if (!offscreen || framesDrawn === 0) {
+        self.postMessage({ type: "snapshot", blob: null });
+        return;
+      }
+      try {
+        self.postMessage({
+          type: "snapshot",
+          blob: await offscreen.convertToBlob({ type: "image/png" }),
+        });
+      } catch (err) {
+        self.postMessage({ type: "snapshot", blob: null });
+      }
+    }
+
+    self.onmessage = ({ data: msg }) => {
+      switch (msg.type) {
+        case "start":
+          socketUrl = msg.url;
+          // The page passes the decode worker's source along, as a worker can't read the DOM.
+          createPool(msg.decodeWorkerSource);
+          connect();
+          break;
+        case "canvas":
+          offscreen = msg.canvas;
+          // `alpha: false` lets the compositor skip blending; the server forces every pixel to be
+          // opaque anyway, so there is nothing to blend.
+          ctx = offscreen.getContext("2d", { alpha: false });
+          resize(msg.width, msg.height);
+          pump();
+          break;
+        case "resize":
+          resize(msg.width, msg.height);
+          break;
+        case "cursor":
+          cursor = msg.px === null ? null : { px: msg.px, py: msg.py };
+          reportCursor();
+          break;
+        case "chat":
+          if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: "chat", name: msg.name, text: msg.text }));
+          }
+          break;
+        case "snapshot":
+          snapshot();
+          break;
+        case "visibility":
+          paused = msg.hidden;
+          if (msg.hidden) {
+            clearTimeout(reconnectTimer);
+            socket?.close();
+          } else if (!socket) {
+            connect();
+          }
+          break;
+      }
+    };
+
+    setInterval(() => {
+      self.postMessage({ type: "fps", fps: framesThisSecond });
+      framesThisSecond = 0;
+    }, 1000);
+  </script>
+
   <script>
     "use strict";
 
@@ -574,49 +989,21 @@
     // Live canvas stream (real)
     // =====================================================================
     const canvas = document.getElementById("canvas");
-    const ctx = canvas.getContext("2d");
     const fpsEl = document.getElementById("fps");
     const stFps = document.getElementById("st-fps");
     const stRes = document.getElementById("st-res");
 
-    let imageData = null; // reused ImageData sized to the canvas
-    let latest = null;    // most recent compressed frame (ArrayBuffer); older ones are dropped
-    let inflating = false;
-    let framesThisSecond = 0;
-    let activeSocket = null; // current WebSocket, used to send chat messages
+    // The frame worker owns the websocket and the canvas; this page only orchestrates it. See the
+    // `frame-worker` script block above for why.
+    let frameWorker = null;
+    let connected = false;
 
-    // Decompress a single zlib (deflate) chunk using only the browser-native DecompressionStream.
-    // No third-party JavaScript required.
-    async function inflate(buffer) {
-      const stream = new Response(buffer).body.pipeThrough(new DecompressionStream("deflate"));
-      return new Uint8Array(await new Response(stream).arrayBuffer());
-    }
-
-    // A frame arrives as several zlib-compressed chunks packed into one message, so the server can
-    // compress them in parallel. Layout (little-endian):
-    //   u32  chunkCount
-    //   u32  compressedLen   × chunkCount
-    //   compressed bytes     (chunks back-to-back, in order)
-    // Decompressing each chunk and concatenating the output in order reproduces the full RGBA
-    // framebuffer. Returns the decompressed chunks (Uint8Array[]) in order.
-    async function inflateFrame(buffer) {
-      const view = new DataView(buffer);
-      const chunkCount = view.getUint32(0, true);
-      let offset = 4;
-      const slices = [];
-      for (let i = 0; i < chunkCount; i++) {
-        const len = view.getUint32(offset, true);
-        offset += 4;
-        slices.push(len);
-      }
-      let dataOffset = offset;
-      // Decompress all chunks concurrently; the browser can run these off the main thread.
-      return Promise.all(slices.map((len) => {
-        const slice = buffer.slice(dataOffset, dataOffset + len);
-        dataOffset += len;
-        return inflate(slice);
-      }));
-    }
+    // Canvas geometry, mirrored from the `hello` message. Once the canvas has been handed to the
+    // worker the page can neither set nor reliably read its size, but the cursor readout still
+    // needs to map client coordinates onto pixels.
+    let canvasWidth = 0;
+    let canvasHeight = 0;
+    let canvasHandedOver = false;
 
     // Connection-state pill. `everConnected` distinguishes the first connect ("Connecting…") from a
     // later drop ("Reconnecting…"); the pill is hidden entirely once the socket is open.
@@ -631,114 +1018,110 @@
       }
     }
 
-    function connect() {
-      setConnState(false);
-      const proto = location.protocol === "https:" ? "wss" : "ws";
-      const ws = new WebSocket(`${proto}://${location.host}/ws`);
-      ws.binaryType = "arraybuffer";
-      activeSocket = ws;
+    // Everything the server sends as JSON; the worker forwards these untouched.
+    function handleServerMessage(msg) {
+      if (msg.type === "hello") {
+        // Sent once on connect: canvas dimensions and the endpoints to advertise.
+        canvasWidth = msg.width;
+        canvasHeight = msg.height;
+        stRes.textContent = `${msg.width}×${msg.height}`;
+        renderEndpoints(msg.advertised_endpoints);
+        yourIp = msg.your_ip ?? null;
+        renderTopList();
+        maxChatMessages = msg.chat_history_len ?? maxChatMessages;
 
-      ws.onopen = () => {
-        everConnected = true;
-        setConnState(true);
-        // The server replays its recent chat messages on every connect, so drop the ones we already
-        // have to not show them twice. Messages older than the server's history are lost that way,
-        // which is fine - the chat is not meant to be an archive.
-        chatMessages.replaceChildren();
-        updateChatJump();
-      };
-
-      ws.onmessage = (event) => {
-        if (typeof event.data === "string") {
-          const msg = JSON.parse(event.data);
-          if (msg.type === "hello") {
-            // Sent once on connect: canvas dimensions and the endpoints to advertise.
-            canvas.width = msg.width;
-            canvas.height = msg.height;
-            imageData = ctx.createImageData(msg.width, msg.height);
-            stRes.textContent = `${msg.width}×${msg.height}`;
-            renderEndpoints(msg.advertised_endpoints);
-            yourIp = msg.your_ip ?? null;
-            renderTopList();
-            maxChatMessages = msg.chat_history_len ?? maxChatMessages;
-          } else if (msg.type === "stats") {
-            updateStats(msg);
-          } else if (msg.type === "chat") {
-            addMessage(msg.name, msg.text, false, msg.ip);
-          } else if (msg.type === "chat_error") {
-            addMessage("", msg.text, true);
-          }
+        if (canvasHandedOver) {
+          // Reconnected - the worker still owns the canvas, so just let it know the size.
+          frameWorker.postMessage({ type: "resize", width: msg.width, height: msg.height });
         } else {
-          // Keep only the newest frame; if we're behind, intermediate frames are skipped.
-          latest = event.data;
+          // Size the element *before* handing it over: `transferControlToOffscreen` may only be
+          // called once and the page can't change the size afterwards, so the intrinsic size that
+          // `object-fit: contain` letterboxes against has to be correct up front.
+          canvas.width = msg.width;
+          canvas.height = msg.height;
+          canvasHandedOver = true;
+          const offscreen = canvas.transferControlToOffscreen();
+          frameWorker.postMessage(
+            { type: "canvas", canvas: offscreen, width: msg.width, height: msg.height },
+            [offscreen],
+          );
+        }
+      } else if (msg.type === "stats") {
+        updateStats(msg);
+      } else if (msg.type === "chat") {
+        addMessage(msg.name, msg.text, false, msg.ip);
+      } else if (msg.type === "chat_error") {
+        addMessage("", msg.text, true);
+      }
+    }
+
+    function startFrameWorker() {
+      const source = document.getElementById("frame-worker").textContent;
+      // A blob URL keeps the worker inside this single self-contained page instead of needing a
+      // second route on the server. Blob workers stay same-origin, so the worker may open the
+      // websocket back to us.
+      const blob = new Blob([source], { type: "text/javascript" });
+      const worker = new Worker(URL.createObjectURL(blob));
+
+      worker.onmessage = ({ data: msg }) => {
+        if (msg.type === "text") {
+          handleServerMessage(JSON.parse(msg.data));
+        } else if (msg.type === "open") {
+          connected = true;
+          everConnected = true;
+          setConnState(true);
+          // The server replays its recent chat messages on every connect, so drop the ones we
+          // already have to not show them twice. Messages older than the server's history are lost
+          // that way, which is fine - the chat is not meant to be an archive.
+          chatMessages.replaceChildren();
+          updateChatJump();
+        } else if (msg.type === "close") {
+          connected = false;
+          setConnState(false);
+        } else if (msg.type === "fps") {
+          fpsEl.textContent = `${msg.fps} fps`;
+          stFps.textContent = `${msg.fps} fps`;
+        } else if (msg.type === "color") {
+          cursorColor = msg;
+          updateCoordReadout();
+        } else if (msg.type === "snapshot") {
+          saveSnapshot(msg.blob);
         }
       };
 
-      ws.onclose = () => {
-        activeSocket = null;
-        setConnState(false);
-        // Don't reconnect while the tab is in the background, see the `visibilitychange` handler.
-        if (!document.hidden) {
-          setTimeout(connect, 1000);
-        }
-      };
-      ws.onerror = () => ws.close();
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      worker.postMessage({
+        type: "start",
+        url: `${proto}://${location.host}/ws`,
+        // The frame worker spawns its own pool of these; it can't read them from the DOM itself.
+        decodeWorkerSource: document.getElementById("decode-worker").textContent,
+      });
+      return worker;
     }
 
     // Close the socket while the tab is in the background and reconnect once it is visible again.
-    // Browsers stop calling `requestAnimationFrame` for hidden tabs, so nothing would be drawn
-    // anyway, while the server happily keeps pushing a few hundred Mbit/s at us. Closing also drops
-    // our frame subscription on the server, which stops compressing frames entirely once the last
-    // viewer is gone.
+    // Nothing is composited for a hidden tab anyway, while the server happily keeps pushing a few
+    // hundred Mbit/s at us. Closing also drops our frame subscription on the server, which stops
+    // compressing frames entirely once the last viewer is gone.
     document.addEventListener("visibilitychange", () => {
-      if (document.hidden) {
-        activeSocket?.close();
-      } else if (!activeSocket) {
-        connect();
-      }
+      frameWorker?.postMessage({ type: "visibility", hidden: document.hidden });
     });
 
-    // Render loop decoupled from the network: draws the latest available frame.
-    // If decoding can't keep up, frames are dropped rather than queued, keeping latency low.
-    async function render() {
-      if (latest && imageData && !inflating) {
-        inflating = true;
-        const buffer = latest;
-        latest = null;
-        try {
-          const chunks = await inflateFrame(buffer);
-          let dataOffset = 0;
-          for (const rgba of chunks) {
-            imageData.data.set(rgba, dataOffset);
-            dataOffset += rgba.length;
-          }
-          ctx.putImageData(imageData, 0, 0);
-          framesThisSecond++;
-          updateCoordReadout();
-        } catch (e) {
-          // Ignore a corrupt/partial frame and wait for the next one.
-        }
-        inflating = false;
-      }
-      requestAnimationFrame(render);
-    }
-
-    // Decompressing the frames needs the Compression Streams API. Without it we can't show a single
+    // Decompressing the frames needs the Compression Streams API, and we hand the canvas to a
+    // worker to keep the frame path off the main thread. Without either we can't show a single
     // frame, so we say so instead of leaving the user with a canvas that stays black forever.
-    if (typeof DecompressionStream === "undefined") {
+    // Note that every browser shipping DecompressionStream also has OffscreenCanvas, so this
+    // excludes nobody who wasn't excluded before.
+    if (typeof DecompressionStream === "undefined"
+      || typeof Worker === "undefined"
+      || typeof canvas.transferControlToOffscreen !== "function") {
       document.getElementById("unsupported").hidden = false;
       connStatusEl.classList.remove("show");
       fpsEl.hidden = true;
       stFps.textContent = "unsupported";
     } else {
-      setInterval(() => {
-        fpsEl.textContent = `${framesThisSecond} fps`;
-        stFps.textContent = `${framesThisSecond} fps`;
-        framesThisSecond = 0;
-      }, 1000);
-
-      connect();
-      requestAnimationFrame(render);
+      setConnState(false);
+      frameWorker = startFrameWorker();
     }
 
     // =====================================================================
@@ -765,30 +1148,29 @@
     // =====================================================================
     // Download the current frame as a PNG
     // =====================================================================
+    // The worker owns the canvas, so it has to encode the PNG for us - `canvas.toBlob` is not
+    // available for a canvas whose control has been transferred away.
     document.getElementById("download").addEventListener("click", () => {
+      frameWorker?.postMessage({ type: "snapshot" });
+    });
+
+    function saveSnapshot(blob) {
       // Nothing was drawn yet, so a download would just give us an empty image.
-      if (!imageData) {
+      if (!blob) {
         return;
       }
-
-      // The canvas is only ever drawn via `putImageData`, so it is not tainted and `toBlob` works.
-      canvas.toBlob((blob) => {
-        if (!blob) {
-          return;
-        }
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        // UTC, so that screenshots sort chronologically no matter which timezone they were taken in.
-        link.download = `pixelflut-${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}Z.png`;
-        // Some browsers only start the download for links that are part of the document.
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        // Not immediately, as revoking too early can cancel the download that we just started.
-        setTimeout(() => URL.revokeObjectURL(url), 10_000);
-      });
-    });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      // UTC, so that screenshots sort chronologically no matter which timezone they were taken in.
+      link.download = `pixelflut-${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}Z.png`;
+      // Some browsers only start the download for links that are part of the document.
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      // Not immediately, as revoking too early can cancel the download that we just started.
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    }
 
     // =====================================================================
     // Cursor coordinate + color readout (on by default)
@@ -812,10 +1194,13 @@
     // Map a point in client coordinates to a pixel of the letterboxed (object-fit: contain) canvas.
     // Returns `null` for points next to the canvas, i.e. on the black bars.
     function pixelAt(clientX, clientY) {
+      if (!canvasWidth || !canvasHeight) {
+        return null;
+      }
       const rect = canvas.getBoundingClientRect();
-      const scale = Math.min(rect.width / canvas.width, rect.height / canvas.height);
-      const dispW = canvas.width * scale;
-      const dispH = canvas.height * scale;
+      const scale = Math.min(rect.width / canvasWidth, rect.height / canvasHeight);
+      const dispW = canvasWidth * scale;
+      const dispH = canvasHeight * scale;
       const x = clientX - rect.left - (rect.width - dispW) / 2;
       const y = clientY - rect.top - (rect.height - dispH) / 2;
       if (x < 0 || y < 0 || x >= dispW || y >= dispH) {
@@ -825,29 +1210,41 @@
       return { px: Math.floor(x / scale), py: Math.floor(y / scale) };
     }
 
-    // Show the pixel coordinate (plus the pixel's color) just below the cursor. Re-run on every
-    // frame so the color stays live even when the cursor doesn't move.
+    // The colour under the cursor, as last reported by the worker: `{ px, py, hex }`. The page no
+    // longer has the pixels itself, so it asks the worker for the one it currently needs.
+    let cursorColor = null;
+    let requestedCursor = null;
+
+    // Tell the worker which pixel's colour we want. It answers after every frame, so the readout
+    // stays live even while the pointer doesn't move.
+    function requestCursorColor(pixel) {
+      const key = pixel ? `${pixel.px},${pixel.py}` : null;
+      if (key === requestedCursor) {
+        return;
+      }
+      requestedCursor = key;
+      frameWorker?.postMessage(
+        pixel ? { type: "cursor", px: pixel.px, py: pixel.py } : { type: "cursor", px: null },
+      );
+    }
+
+    // Show the pixel coordinate (plus the pixel's color) just below the cursor.
     function updateCoordReadout() {
       // While we are showing the "copied" confirmation we leave the readout alone.
       if (copyFeedbackTimer) {
         return;
       }
-      if (!showCoords || !imageData || cursorX === null) {
-        coordReadout.style.display = "none";
-        return;
-      }
-      const pixel = pixelAt(cursorX, cursorY);
+      const pixel = showCoords && cursorX !== null ? pixelAt(cursorX, cursorY) : null;
+      requestCursorColor(pixel);
       if (!pixel) {
         coordReadout.style.display = "none";
         return;
       }
       const { px, py } = pixel;
-      const i = (py * canvas.width + px) * 4;
-      const d = imageData.data;
-      const hex = [d[i], d[i + 1], d[i + 2]]
-        .map((c) => c.toString(16).padStart(2, "0"))
-        .join("");
-      coordReadout.textContent = `${px}, ${py} #${hex}`;
+      // The colour is answered asynchronously, so right after the pointer moves we may not have it
+      // for this pixel yet. Show the bare coordinate for that one frame rather than a stale colour.
+      const known = cursorColor && cursorColor.px === px && cursorColor.py === py;
+      coordReadout.textContent = known ? `${px}, ${py} #${cursorColor.hex}` : `${px}, ${py}`;
       coordReadout.style.left = `${cursorX + 12}px`;
       coordReadout.style.top = `${cursorY + 16}px`;
       coordReadout.style.display = "block";
@@ -1217,12 +1614,13 @@
         return;
       }
       if (!text) return;
-      if (!activeSocket || activeSocket.readyState !== WebSocket.OPEN) {
+      if (!connected) {
         addMessage("", "Not connected — please wait a moment and try again.", true);
         return;
       }
-      // The server echoes the message back to everyone (including us), so we don't add it locally.
-      activeSocket.send(JSON.stringify({ type: "chat", name, text }));
+      // The worker owns the socket, so it does the sending. The server echoes the message back to
+      // everyone (including us), so we don't add it locally.
+      frameWorker.postMessage({ type: "chat", name, text });
       chatText.value = "";
     });
   </script>
