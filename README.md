@@ -48,7 +48,7 @@ cargo run --release -- --enable-sink egui
 
 As servers mostly don't have a graphical system, the easiest way to let people watch is the web sink.
 It serves a Web UI showing the canvas, live statistics and a chat, so spectators only need a browser.
-The web feature is enabled by default doesn't need any additional system libraries.
+The web feature is enabled by default and doesn't need any additional system libraries.
 
 ```bash
 cargo run --release -- --enable-sink web

@@ -33,15 +33,6 @@ mod cli_args;
 mod http_api;
 mod state;
 
-/// Number of independently-compressed chunks per frame. The framebuffer is split into this many
-/// contiguous byte ranges that are zlib-compressed in parallel, drastically cutting the wall-clock
-/// time spent compressing a single frame. All chunks are packed into one websocket message (see
-/// [`WebSink::encode_frame`]), so a client never renders a partially-updated frame.
-///
-/// Note: If you change this value, the frontend adapts automatically as the chunk count is encoded
-/// in the message header.
-const FRAME_COMPRESSION_CHUNKS: usize = 16;
-
 /// Number of recent frames over which the average compression duration is computed for logging.
 const COMPRESSION_TIME_WINDOW_SIZE: usize = 100;
 
@@ -74,6 +65,8 @@ pub struct WebSink<FB: FrameBuffer> {
     /// Reused scratch buffer holding one RGBA frame, so we don't reallocate every tick. Kept in an
     /// [`Arc`], as the compression tasks need to share it (see [`WebSink::encode_frame`]).
     frame_buf: Arc<Vec<u8>>,
+    frame_compression_level: Compression,
+    frame_compression_chunks: usize,
 
     /// Rolling average of the per-frame compression duration (in microseconds), logged alongside
     /// the instantaneous duration to give a more stable picture.
@@ -85,6 +78,8 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> WebSink<FB> {
         fb: Arc<FB>,
         WebSinkCliArgs {
             web_listen_addresses,
+            frame_compression_level,
+            frame_compression_chunks,
             chat_messages_per_minute,
         }: &WebSinkCliArgs,
         advertised_endpoints: Vec<SocketAddr>,
@@ -122,6 +117,8 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> WebSink<FB> {
             fps,
             state,
             frame_buf,
+            frame_compression_level: Compression::new(*frame_compression_level),
+            frame_compression_chunks: *frame_compression_chunks,
             compression_time_window: SingleSumSMA::new(),
         })
     }
@@ -277,22 +274,24 @@ impl<FB: FrameBuffer + PixelColorBytes> WebSink<FB> {
             pixel[3] = 0xff;
         }
 
+        let frame_compression_level = self.frame_compression_level;
+
         let start = Instant::now();
 
         let len = self.frame_buf.len();
-        // Round up so we never end up with more than `FRAME_COMPRESSION_CHUNKS` chunks. The exact
+        // Round up so we never end up with more than `frame_compression_chunks` chunks. The exact
         // split points don't matter for correctness as the client reassembles the chunks in order.
-        let chunk_size = len.div_ceil(FRAME_COMPRESSION_CHUNKS).max(1);
+        let chunk_size = len.div_ceil(self.frame_compression_chunks).max(1);
 
         // Compress each chunk on Tokio's blocking thread pool. `spawn_blocking` requires `'static`
         // closures, so every task gets its own handle to the shared scratch buffer.
-        let mut tasks = Vec::with_capacity(FRAME_COMPRESSION_CHUNKS);
+        let mut tasks = Vec::with_capacity(self.frame_compression_chunks);
         let mut offset = 0;
         while offset < len {
             let end = (offset + chunk_size).min(len);
             let frame = Arc::clone(&self.frame_buf);
             tasks.push(tokio::task::spawn_blocking(move || {
-                compress_chunk(&frame[offset..end])
+                compress_chunk(&frame[offset..end], frame_compression_level)
             }));
             offset = end;
         }
@@ -337,11 +336,8 @@ impl<FB: FrameBuffer + PixelColorBytes> WebSink<FB> {
 }
 
 /// Zlib-compresses a single chunk of the framebuffer.
-///
-/// `Compression::fast()` (level 1) keeps CPU usage low; Pixelflut battles are high-entropy, so a
-/// higher level would mostly burn CPU for little gain.
-fn compress_chunk(data: &[u8]) -> eyre::Result<Vec<u8>> {
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+fn compress_chunk(data: &[u8], frame_compression_level: Compression) -> eyre::Result<Vec<u8>> {
+    let mut encoder = ZlibEncoder::new(Vec::new(), frame_compression_level);
     encoder
         .write_all(data)
         .context("failed to compress frame chunk")?;
