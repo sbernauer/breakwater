@@ -24,6 +24,10 @@ pub struct SinkCliArgs {
     #[cfg(feature = "vnc")]
     #[clap(flatten)]
     pub vnc_sink: crate::sinks::vnc::VncSinkCliArgs,
+
+    #[cfg(feature = "web")]
+    #[clap(flatten)]
+    pub web_sink: crate::sinks::web::WebSinkCliArgs,
 }
 
 impl SinkCliArgs {

@@ -22,6 +22,8 @@ pub mod ffmpeg;
 pub mod ndi;
 #[cfg(feature = "vnc")]
 pub mod vnc;
+#[cfg(feature = "web")]
+pub mod web;
 #[cfg(feature = "winit")]
 pub mod winit;
 
@@ -47,10 +49,12 @@ pub enum Sink {
     Egui,
     #[cfg(feature = "winit")]
     Winit,
-    #[cfg(feature = "vnc")]
-    Vnc,
     #[cfg(feature = "ndi")]
     Ndi,
+    #[cfg(feature = "vnc")]
+    Vnc,
+    #[cfg(feature = "web")]
+    Web,
 }
 
 pub async fn start_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static>(
@@ -200,6 +204,24 @@ fn create_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static>(
                     terminate_signal_rx.resubscribe(),
                 )
                 .context("failed to create NDI sink")?,
+            ));
+        }
+    }
+
+    #[cfg(feature = "web")]
+    {
+        use crate::sinks::web::WebSink;
+        if enabled_sinks.contains(&WebSink::<FB>::sink_type()) {
+            sinks.push(Box::new(
+                WebSink::new(
+                    fb.clone(),
+                    &cli_args.web_sink,
+                    advertised_endpoints.to_vec(),
+                    fps,
+                    statistics_information_rx.resubscribe(),
+                    terminate_signal_rx.resubscribe(),
+                )
+                .context("failed to create web sink")?,
             ));
         }
     }

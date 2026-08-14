@@ -94,6 +94,8 @@ jobs:
         run: cargo clippy --all-targets --features prometheus,alpha,binary-set-pixel,binary-sync-pixels,egui,winit,vnc,ndi -- -D warnings
       - name: Run clippy on the time-tracking feature (mutually exclusive with alpha and binary-sync-pixels)
         run: cargo clippy --all-targets --features prometheus,binary-set-pixel,egui,winit,vnc,ndi,time-tracking -- -D warnings
+      - name: Run clippy on the web sink's libdeflate frame compressor
+        run: cargo clippy --all-targets --features web-libdeflater -- -D warnings
 
   run_rustdoc:
     name: Run RustDoc
@@ -144,6 +146,11 @@ jobs:
         with:
           command: test
           args: --features prometheus,binary-set-pixel,egui,winit,vnc,ndi,time-tracking --all-targets
+      - name: Test the web sink's libdeflate frame compressor
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --features web-libdeflater --all-targets
 
   run_tests_for_feature_combinations:
     name: Run tests for all feature combinations
