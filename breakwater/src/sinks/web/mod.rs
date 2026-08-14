@@ -233,10 +233,18 @@ impl<FB: FrameBuffer + PixelColorBytes> WebSink<FB> {
 
             // No point spending CPU on compression while nobody is watching.
             if self.state.frame_tx.receiver_count() > 0 {
-                let frame = self.encode_frame().await?;
-                // Ignore the error: it only means all receivers disconnected between the check above
-                // and here.
-                let _ = self.state.frame_tx.send(frame);
+                match self.encode_frame().await {
+                    Ok(frame) => {
+                        // Ignore the error: it only means all receivers disconnected between the
+                        // check above and here.
+                        let _ = self.state.frame_tx.send(frame);
+                    }
+                    // A frame we can't encode costs the spectators exactly that one frame, so we
+                    // skip it and carry on with the next. Notably we do *not* propagate the error:
+                    // returning it ends the sink, and a sink ending brings the whole Pixelflut
+                    // server down with it (see `start_sinks`).
+                    Err(err) => warn!(?err, "failed to encode a frame for the web sink"),
+                }
             }
 
             interval.tick().await;
@@ -297,9 +305,21 @@ impl<FB: FrameBuffer + PixelColorBytes> WebSink<FB> {
         }
 
         // Collect in spawn order, so the chunks stay in framebuffer order.
+        //
+        // We await *every* task, even after one of them failed: dropping a `JoinHandle` does not
+        // cancel the blocking task behind it, so bailing out early would leave tasks running that
+        // still hold a handle to the scratch buffer - and `make_mut` above would have to clone it
+        // for the next frame.
         let mut compressed_chunks: Vec<Vec<u8>> = Vec::with_capacity(tasks.len());
+        let mut failure = None;
         for task in tasks {
-            compressed_chunks.push(task.await.context("compression task panicked")??);
+            match task.await.context("compression task panicked") {
+                Ok(Ok(chunk)) => compressed_chunks.push(chunk),
+                Ok(Err(err)) | Err(err) => failure = failure.or(Some(err)),
+            }
+        }
+        if let Some(err) = failure {
+            return Err(err);
         }
 
         let compression_time = start.elapsed();
