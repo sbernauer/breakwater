@@ -55,7 +55,7 @@ Rust: breakwater stays buildable anywhere a Rust toolchain runs, with nothing to
 the fastest of the zlib-compatible encoders we measured, beating the C library it was ported from
 (zlib-ng) at every level.
 
-**Build with `--features web-libdeflate` if you care about traffic or CPU.** libdeflate offers an
+**Build with `--features web-libdeflater` if you care about traffic or CPU.** libdeflate offers an
 operating point that zlib's level scale simply does not have: 663 Mbit/s at 169% CPU. To get the
 same traffic out of zlib-rs you need level 3, which costs 267% CPU. The price is a C compiler at
 build time - the library is vendored and built from source, so there is no system library to
@@ -63,7 +63,7 @@ install.
 
 Careful when switching: **the two level scales are not comparable.** At the default level 1 you get
 889 Mbit/s @ 132% CPU with zlib-rs, but 663 Mbit/s @ 169% CPU with libdeflate. Enabling
-`web-libdeflate` and keeping the level therefore *lowers* your traffic and *raises* your CPU - it is
+`web-libdeflater` and keeping the level therefore *lowers* your traffic and *raises* your CPU - it is
 a better trade, not a strictly cheaper one. If you want to compare fairly, compare at equal traffic.
 
 The two we did *not* pick:

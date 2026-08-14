@@ -19,7 +19,7 @@ trait CompressionBackend: Copy {
 
 /// The default: zlib-rs, the fastest of the zlib-compatible encoders and pure Rust, so the web
 /// sink stays buildable without a C toolchain.
-#[cfg(not(feature = "web-libdeflate"))]
+#[cfg(not(feature = "web-libdeflater"))]
 mod backend {
     use std::io::Write;
 
@@ -49,9 +49,9 @@ mod backend {
     }
 }
 
-/// Enabled by the `web-libdeflate` feature: compresses noticeably better per CPU spent, at the
+/// Enabled by the `web-libdeflater` feature: compresses noticeably better per CPU spent, at the
 /// price of needing a C compiler to build.
-#[cfg(feature = "web-libdeflate")]
+#[cfg(feature = "web-libdeflater")]
 mod backend {
     use color_eyre::eyre;
     use libdeflater::{CompressionLvl, Compressor as LibdeflateCompressor};

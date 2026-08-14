@@ -260,9 +260,9 @@ impl<FB: FrameBuffer + PixelColorBytes> WebSink<FB> {
     /// and zlib-compresses the result.
     ///
     /// Compression is the single most expensive part of serving the web UI, so the buffer is split
-    /// into [`FRAME_COMPRESSION_CHUNKS`] contiguous byte ranges that are compressed in parallel.
-    /// The compressed chunks are concatenated into one message, prefixed with a small header so the
-    /// client can split them apart again:
+    /// into contiguous byte ranges that are compressed in parallel. The compressed chunks are
+    /// concatenated into one message, prefixed with a small header so the client can split them
+    /// apart again:
     ///
     /// ```text
     /// u32le  chunk_count
