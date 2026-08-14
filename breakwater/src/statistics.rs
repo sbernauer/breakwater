@@ -14,6 +14,7 @@ use tokio::{
     sync::{broadcast, mpsc},
     time::interval,
 };
+use tracing::info;
 
 use crate::cli_args::StatisticsSaveFileCliArgs;
 
@@ -98,6 +99,7 @@ pub struct Statistics {
     fps_window: SingleSumSMA<u64, u64, STATS_SLIDING_WINDOW_SIZE>,
 
     statistics_save_mode: StatisticsSaveMode,
+    save_point: StatisticsInformationEvent,
 }
 
 impl StatisticsInformationEvent {
@@ -114,24 +116,29 @@ impl StatisticsInformationEvent {
 
     /// Loads a save point from the given file.
     ///
-    /// Returns `Ok(None)` if the file does not exist (e.g. on first start), but raises an error if
-    /// the file exists but can not be read or parsed. Otherwise a corrupted or outdated save file
-    /// (e.g. after adding a new mandatory field) would be silently ignored and subsequently
-    /// overwritten, losing all previously collected statistics.
-    fn load_from_file(file_name: &str) -> eyre::Result<Option<Self>> {
+    /// Returns an all-zero save point if the file does not exist (e.g. on first start), but raises
+    /// an error if the file exists but can not be read or parsed. Otherwise a corrupted or outdated
+    /// save file (e.g. after adding a new mandatory field) would be silently ignored and
+    /// subsequently overwritten, losing all previously collected statistics.
+    fn load_from_file(file_name: &str) -> eyre::Result<Self> {
         let file = match File::open(file_name) {
             Ok(file) => file,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                info!(
+                    file_name,
+                    "no statistics save file found, starting with empty statistics"
+                );
+                return Ok(Self::default());
+            }
             Err(e) => {
                 return Err(e)
                     .with_context(|| format!("failed to load statistics from file '{file_name}'"));
             }
         };
-        let save_point = serde_json::from_reader(file)
+        serde_json::from_reader(file)
             .with_context(|| format!("failed to deserialize statistics from file '{file_name}'. \
             It could totally be the case that it was written by an older version of breakwater and is therefore missing new required fields. \
-            Please either delete the statistics file (in case you don't care about it) or manually migrate it to the new version."))?;
-        Ok(Some(save_point))
+            Please either delete the statistics file (in case you don't care about it) or manually migrate it to the new version."))
     }
 }
 
@@ -141,36 +148,31 @@ impl Statistics {
         statistics_information_tx: broadcast::Sender<StatisticsInformationEvent>,
         statistics_save_mode: StatisticsSaveMode,
     ) -> eyre::Result<Self> {
-        let mut statistics = Statistics {
+        let save_point = match &statistics_save_mode {
+            StatisticsSaveMode::Disabled => StatisticsInformationEvent::default(),
+            StatisticsSaveMode::Enabled { save_file, .. } => {
+                StatisticsInformationEvent::load_from_file(save_file)?
+            }
+        };
+
+        Ok(Statistics {
             statistics_rx,
             statistics_information_tx,
-            statistic_events: 0,
-            frame: 0,
+            statistic_events: save_point.statistic_events,
+            frame: save_point.frame,
             connections_for_ip: HashMap::new(),
             denied_connections_for_ip: HashMap::new(),
-            bytes_for_ip: HashMap::new(),
+            bytes_for_ip: save_point.bytes_for_ip.clone(),
             bytes_per_s_window: SingleSumSMA::new(),
             bytes_per_s_for_ip_window: HashMap::new(),
             fps_window: SingleSumSMA::new(),
             statistics_save_mode,
-        };
-
-        if let StatisticsSaveMode::Enabled { save_file, .. } = &statistics.statistics_save_mode {
-            // There might not be a save point on first start, in which case `None` is returned.
-            // A failure to read or parse an existing save file is raised, so we don't silently
-            // discard (and subsequently overwrite) previously collected statistics.
-            if let Some(save_point) = StatisticsInformationEvent::load_from_file(save_file)? {
-                statistics.statistic_events = save_point.statistic_events;
-                statistics.frame = save_point.frame;
-                statistics.bytes_for_ip = save_point.bytes_for_ip;
-            }
-        }
-
-        Ok(statistics)
+            save_point,
+        })
     }
 
     pub async fn run(&mut self) -> eyre::Result<()> {
-        let mut statistics_information_event = StatisticsInformationEvent::default();
+        let mut statistics_information_event = self.save_point.clone();
 
         let mut stats_report = interval(STATS_REPORT_INTERVAL);
         let (mut stats_save, save_file) = match &self.statistics_save_mode {
@@ -180,6 +182,9 @@ impl Statistics {
                 interval: interval_duration,
             } => (interval(*interval_duration), Some(save_file.clone())),
         };
+
+        // We don't want to save the stats immediately, so we need to tick once.
+        stats_save.tick().await;
 
         loop {
             tokio::select! {

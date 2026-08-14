@@ -27,6 +27,7 @@ All notable changes to this project will be documented in this file.
 - Let breakwater exit as soon as a sink reports an error ([#95]).
 - Handle `SIGTERM` (as sent by e.g. `docker stop` or systemd) the same way as Ctrl+C ([#102]).
   Previously the process was killed right away, so no sink got the chance to shut down.
+- Fix race condition on writing zeroed statistics file on startup ([#103]).
 
 [#84]: https://github.com/sbernauer/breakwater/pull/84
 [#95]: https://github.com/sbernauer/breakwater/pull/95
@@ -35,6 +36,7 @@ All notable changes to this project will be documented in this file.
 [#100]: https://github.com/sbernauer/breakwater/pull/100
 [#101]: https://github.com/sbernauer/breakwater/pull/101
 [#102]: https://github.com/sbernauer/breakwater/pull/102
+[#103]: https://github.com/sbernauer/breakwater/pull/103
 
 ## [0.22.0] - 2026-06-20
 
