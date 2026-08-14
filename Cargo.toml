@@ -26,9 +26,11 @@ const_format = "0.2"
 criterion = { version = "0.8", features = ["async_tokio"] }
 eframe = { version = "0.36", default-features = false, features = ["glow", "default_fonts", "persistence", "wayland", "x11"] }
 egui = "0.36"
-flate2 = "1.1"
+# zlib-rs is the currently fastest backend. See breakwater/src/sinks/web/README.md for performance considerations
+flate2 = { version = "1.1", default-features = false, features = ["zlib-rs"] }
 futures = "0.3"
 humantime = "2.4"
+libdeflater = "1.25"
 libloading = "0.9"
 local-ip-address = "0.6.3"
 memadvise = "0.1"

@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    io::Write,
     net::SocketAddr,
     sync::{Arc, Mutex},
     time::Duration,
@@ -11,7 +10,6 @@ use axum::{Router, extract::ws::Utf8Bytes, routing::get};
 use breakwater_parser::{FB_BYTES_PER_PIXEL, FrameBuffer, PixelColorBytes};
 use bytes::Bytes;
 use color_eyre::eyre::{self, Context, ensure};
-use flate2::{Compression, write::ZlibEncoder};
 use simple_moving_average::{SMA, SingleSumSMA};
 use tokio::{
     sync::broadcast,
@@ -22,7 +20,10 @@ use tracing::{info, trace, warn};
 use crate::{
     sinks::{
         DisplaySink, DisplaySinkType, Sink,
-        web::state::{ChatHistory, WebState},
+        web::{
+            compression::FrameCompressor,
+            state::{ChatHistory, WebState},
+        },
     },
     statistics::StatisticsInformationEvent,
 };
@@ -30,6 +31,7 @@ use crate::{
 pub use cli_args::WebSinkCliArgs;
 
 mod cli_args;
+mod compression;
 mod http_api;
 mod state;
 
@@ -65,7 +67,7 @@ pub struct WebSink<FB: FrameBuffer> {
     /// Reused scratch buffer holding one RGBA frame, so we don't reallocate every tick. Kept in an
     /// [`Arc`], as the compression tasks need to share it (see [`WebSink::encode_frame`]).
     frame_buf: Arc<Vec<u8>>,
-    frame_compression_level: Compression,
+    frame_compressor: FrameCompressor,
     frame_compression_chunks: usize,
 
     /// Rolling average of the per-frame compression duration (in microseconds), logged alongside
@@ -117,7 +119,7 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> WebSink<FB> {
             fps,
             state,
             frame_buf,
-            frame_compression_level: Compression::new(*frame_compression_level),
+            frame_compressor: FrameCompressor::new(*frame_compression_level)?,
             frame_compression_chunks: *frame_compression_chunks,
             compression_time_window: SingleSumSMA::new(),
         })
@@ -282,7 +284,7 @@ impl<FB: FrameBuffer + PixelColorBytes> WebSink<FB> {
             pixel[3] = 0xff;
         }
 
-        let frame_compression_level = self.frame_compression_level;
+        let frame_compressor = self.frame_compressor;
 
         let start = Instant::now();
 
@@ -299,7 +301,7 @@ impl<FB: FrameBuffer + PixelColorBytes> WebSink<FB> {
             let end = (offset + chunk_size).min(len);
             let frame = Arc::clone(&self.frame_buf);
             tasks.push(tokio::task::spawn_blocking(move || {
-                compress_chunk(&frame[offset..end], frame_compression_level)
+                frame_compressor.compress(&frame[offset..end])
             }));
             offset = end;
         }
@@ -353,13 +355,4 @@ impl<FB: FrameBuffer + PixelColorBytes> WebSink<FB> {
 
         Ok(Bytes::from(message))
     }
-}
-
-/// Zlib-compresses a single chunk of the framebuffer.
-fn compress_chunk(data: &[u8], frame_compression_level: Compression) -> eyre::Result<Vec<u8>> {
-    let mut encoder = ZlibEncoder::new(Vec::new(), frame_compression_level);
-    encoder
-        .write_all(data)
-        .context("failed to compress frame chunk")?;
-    encoder.finish().context("failed to finish compression")
 }

@@ -1,5 +1,7 @@
 use std::net::SocketAddr;
 
+use super::compression::FrameCompressor;
+
 #[derive(Clone, Debug, clap::Args)]
 #[command(next_help_heading = "web sink options")]
 pub struct WebSinkCliArgs {
@@ -11,25 +13,18 @@ pub struct WebSinkCliArgs {
     #[clap(long = "web-listen-address", default_value = "[::]:8080")]
     pub web_listen_addresses: Vec<SocketAddr>,
 
-    /// The zlib compression level to use to compress frames before sending them to the connected clients.
-    ///
-    /// The compression level goes from 0 (no compression) to 9 (maximum compression).
+    /// The compression level to use to compress frames before sending them to the connected clients.
     ///
     /// Pixelflut battles are high-entropy, so I don't recommend high compression levels: They burn
-    /// much CPU for very little compression gains. Measure yourself! Here are some highly
-    /// sophisticated (not) measurements I did on my Laptop using Chrome to stream a static
-    /// 1920 x 1080 image. They show the traffic and CPU usage at the given compression levels.
+    /// much CPU for very little compression gains. Measure yourself!
     ///
-    /// level 0: 1990 Mbit/s @ 193% CPU usage,
-    /// level 1: 795  Mbit/s @ 203% CPU usage,
-    /// level 2: 661  Mbit/s @ 288% CPU usage,
-    /// level 3: 639  Mbit/s @ 403% CPU usage,
-    /// level 5: 632  Mbit/s @ 481% CPU usage,
-    /// level 9: 627  Mbit/s @ 602% CPU usage
+    /// `breakwater/src/sinks/web/README.md` touches on the performance considerations and what
+    /// traffic and CPU consumption you can expect.
     #[clap(
         long = "web-frame-compression-level",
-        default_value_t = 2,
-        value_parser = clap::value_parser!(u32).range(0..=9),
+        default_value_t = 1,
+        // The maximum depends on which compressor was compiled in, `clap` wants an i64 range.
+        value_parser = clap::value_parser!(u32).range(0..=FrameCompressor::MAX_LEVEL as i64),
     )]
     pub frame_compression_level: u32,
 
