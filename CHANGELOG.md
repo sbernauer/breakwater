@@ -9,7 +9,7 @@ All notable changes to this project will be documented in this file.
 - BREAKING: Add `TimeTrackingFrameBuffer` behind `time-tracking` features ([#84]).
   As this feature is mutually exclusive with `alpha` and `binary-pixel-sync`, `--all-features` will now fail to compile.
   Please choose the required features explicitly instead.
-- Add a `web` sink, which serves a Web UI showing the canvas, live statistics and a chat ([#100]).
+- Add a `web` sink, which serves a Web UI showing the canvas, live statistics and a chat ([#100], [#104]).
   Spectators only need a browser, the server needs neither a graphical environment nor any additional system libraries.
   Enable it with `--enable-sink web`, it listens on `[::]:8080` unless told otherwise.
   The new `web` feature is enabled by default.
@@ -37,6 +37,7 @@ All notable changes to this project will be documented in this file.
 [#101]: https://github.com/sbernauer/breakwater/pull/101
 [#102]: https://github.com/sbernauer/breakwater/pull/102
 [#103]: https://github.com/sbernauer/breakwater/pull/103
+[#104]: https://github.com/sbernauer/breakwater/pull/104
 
 ## [0.22.0] - 2026-06-20
 
