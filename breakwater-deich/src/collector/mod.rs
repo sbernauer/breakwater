@@ -135,9 +135,7 @@ pub async fn run(args: CollectorCliArgs) -> eyre::Result<()> {
     let (sink_tasks, ffmpeg_thread_present) = start_sinks(
         &args.sinks,
         render_fb.clone(),
-        // There are no listen addresses we know about — traffic reaches the workers via a virtual
-        // IP and stuff, not the collector.
-        &[],
+        &args.advertised_endpoints,
         config.fps,
         statistics_tx,
         statistics_information_rx,

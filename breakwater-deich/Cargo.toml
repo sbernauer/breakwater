@@ -13,7 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 breakwater-parser = { workspace = true, features = ["time-tracking"] }
-breakwater = { workspace = true, features = ["prometheus"] }
+breakwater = { workspace = true, default-features = false, features = ["prometheus"] }
 
 clap.workspace = true
 color-eyre.workspace = true
@@ -25,16 +25,16 @@ tracing.workspace = true
 uuid.workspace = true
 
 [features]
-# VNC and NDI require shared libraries to be installed, so we don't enable them by default
-# Yes, egui and winit require a graphical environment, but most people getting started with
-# breakwater will likely do that on a desktop, servers admins generally know what they are doing (tm).
-default = ["egui", "winit"]
+# We enable the same features by default as breakwater
+# (Prometheus metrics are always enabled for now)
+default = ["egui", "winit", "web"]
 
 binary-set-pixel = ["breakwater/binary-set-pixel", "breakwater-parser/binary-set-pixel"]
 egui = ["breakwater/egui"]
 winit = ["breakwater/winit"]
 vnc = ["breakwater/vnc"]
 ndi = ["breakwater/ndi"]
+web = ["breakwater/web"]
 
 [lints]
 workspace = true

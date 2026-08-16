@@ -46,6 +46,13 @@ pub struct CollectorCliArgs {
     #[clap(short, long, default_value = "[::]:1235")]
     pub listen_address: SocketAddr,
 
+    /// Specify one or more pixelflut endpoints to display to spectators.
+    ///
+    /// You have to provide the endpoint, as it's typically behind an virtual IP or some other
+    /// network setup breakwater-deich doesn't know about,
+    #[clap(required = true, long = "advertised-endpoint")]
+    pub advertised_endpoints: Vec<SocketAddr>,
+
     /// Width of the canvas. Sent to every worker as part of its config.
     #[clap(long, default_value_t = 1920)]
     pub width: u32,
