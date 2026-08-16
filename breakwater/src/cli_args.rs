@@ -78,7 +78,7 @@ impl NetworkListenerCliArgs {
     /// Resolves the Pixelflut endpoints to advertise to users (so they know where to connect).
     ///
     /// If `--advertised-endpoint`s is set, those are returned verbatim. Otherwise we make a best
-    /// effort guess based on the `--listener-address`es, see [`Self::resolve_ips`].
+    /// effort guess based on the `--listener-address`es.
     pub fn resolve_advertised_endpoints(&self) -> Vec<String> {
         if !self.advertised_endpoints.is_empty() {
             return self.advertised_endpoints.clone();
