@@ -135,23 +135,11 @@ async fn run_session(
     )
     .context("failed to create statistics aggregator")?;
 
-    let network_buffer_size = args
-        .network_listener
-        .network_buffer_size
-        .try_into()
-        // This should never happen as clap checks the range for us
-        .with_context(|| {
-            format!(
-                "invalid network buffer size: {}",
-                args.network_listener.network_buffer_size
-            )
-        })?;
-
     let mut server = Server::new(
         &args.network_listener.listen_addresses,
         fb.clone(),
         statistics_tx,
-        network_buffer_size,
+        args.network_listener.network_buffer_size,
         args.network_listener.connections_per_ip,
     )
     .await
