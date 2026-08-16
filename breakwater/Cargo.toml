@@ -77,7 +77,7 @@ web = ["dep:axum", "dep:bytes", "dep:flate2"]
 # but vendored and built from source, so there is no system library to install - you only need a C
 # compiler at build time. In exchange it gives a noticeably better compression per CPU.
 # See breakwater/src/sinks/web/README.md for performance details.
-web-libdeflater = ["web", "dep:libdeflater"]
+web-libdeflate = ["web", "dep:libdeflater"]
 
 [lints]
 workspace = true

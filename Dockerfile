@@ -23,7 +23,7 @@ COPY Arial.ttf .
 #   users to think it should work (which it doesn't). So let's not enable that feature
 # * We pick libdeflater over zlib-rs as it performs better in our default case, see breakwater/src/sinks/web/README.md for details.
 #   We only need to have a C compiler available.
-RUN RUSTFLAGS='' cargo build --release --no-default-features --features prometheus,vnc,web,web-libdeflater,binary-set-pixel
+RUN RUSTFLAGS='' cargo build --release --no-default-features --features prometheus,vnc,web,web-libdeflate,binary-set-pixel
 
 FROM debian:trixie-slim AS final
 RUN apt-get update && \
