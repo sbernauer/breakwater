@@ -31,7 +31,7 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiView<FB> {
         viewports: Vec<ViewportConfig>,
         terminate_rx: broadcast::Receiver<()>,
         stats_rx: broadcast::Receiver<StatisticsInformationEvent>,
-        advertised_endpoints: &[String],
+        advertised_endpoints: Vec<String>,
         ui: Arc<UiOverlay>,
     ) -> eyre::Result<Self> {
         let gl_context = cc
@@ -55,7 +55,7 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiView<FB> {
             canvas_renderer,
             terminate_rx,
             stats_rx,
-            advertised_endpoints: advertised_endpoints.to_vec(),
+            advertised_endpoints,
         })
     }
 
