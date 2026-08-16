@@ -1,4 +1,4 @@
-use std::{fmt::Display, net::SocketAddr, str::FromStr, sync::Arc};
+use std::{fmt::Display, str::FromStr, sync::Arc};
 
 use async_trait::async_trait;
 use breakwater_parser::{FrameBuffer, PixelColorBytes};
@@ -82,7 +82,7 @@ pub struct EguiSink<'a, FB: FrameBuffer + PixelColorBytes> {
     viewports: Vec<ViewportConfig>,
     terminate_rx: broadcast::Receiver<()>,
     stats_rx: broadcast::Receiver<StatisticsInformationEvent>,
-    advertised_endpoints: &'a [SocketAddr],
+    advertised_endpoints: &'a [String],
     ui_overlay: Arc<UiOverlay>,
 }
 
@@ -92,7 +92,7 @@ impl<'a, FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiSink<'a,
     pub fn new(
         fb: Arc<FB>,
         EguiSinkCliArgs { viewports, ui }: &EguiSinkCliArgs,
-        advertised_endpoints: &'a [SocketAddr],
+        advertised_endpoints: &'a [String],
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
     ) -> eyre::Result<Self> {
