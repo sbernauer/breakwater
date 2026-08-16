@@ -1,4 +1,4 @@
-use std::{fmt::Display, net::SocketAddr, str::FromStr, sync::Arc};
+use std::{fmt::Display, str::FromStr, sync::Arc};
 
 use async_trait::async_trait;
 use breakwater_parser::{FrameBuffer, PixelColorBytes};
@@ -77,22 +77,22 @@ impl FromStr for ViewportConfig {
     }
 }
 
-pub struct EguiSink<'a, FB: FrameBuffer + PixelColorBytes> {
+pub struct EguiSink<FB: FrameBuffer + PixelColorBytes> {
     fb: Arc<FB>,
     viewports: Vec<ViewportConfig>,
     terminate_rx: broadcast::Receiver<()>,
     stats_rx: broadcast::Receiver<StatisticsInformationEvent>,
-    advertised_endpoints: &'a [SocketAddr],
+    advertised_endpoints: Vec<String>,
     ui_overlay: Arc<UiOverlay>,
 }
 
-impl<'a, FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiSink<'a, FB> {
+impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiSink<FB> {
     /// This function can return [`None`] in case this sink is not configured (by looking at the `cli_args`).
     #[instrument(skip_all, err)]
     pub fn new(
         fb: Arc<FB>,
         EguiSinkCliArgs { viewports, ui }: &EguiSinkCliArgs,
-        advertised_endpoints: &'a [SocketAddr],
+        advertised_endpoints: Vec<String>,
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
     ) -> eyre::Result<Self> {
@@ -127,7 +127,7 @@ impl<'a, FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiSink<'a,
 }
 
 impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> DisplaySinkType<FB>
-    for EguiSink<'_, FB>
+    for EguiSink<FB>
 {
     fn sink_type() -> Sink {
         Sink::Egui
@@ -135,9 +135,7 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> DisplaySinkType<
 }
 
 #[async_trait]
-impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> DisplaySink<FB>
-    for EguiSink<'_, FB>
-{
+impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
     /// This should only run on the main thread
     #[instrument(skip(self), err)]
     async fn run(&mut self) -> eyre::Result<()> {
@@ -157,7 +155,7 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> DisplaySink<FB>
     }
 }
 
-impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiSink<'_, FB> {
+impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiSink<FB> {
     fn run_eframe_display(&self) -> Result<(), eframe::Error> {
         let options = eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default(),
@@ -170,7 +168,7 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiSink<'_, FB>
         let stats = self.stats_rx.resubscribe();
         let fb = self.fb.clone();
         let viewports = self.viewports.clone();
-        let advertised_endpoints = self.advertised_endpoints;
+        let advertised_endpoints = self.advertised_endpoints.clone();
         let ui_overlay = self.ui_overlay.clone();
 
         eframe::run_native(

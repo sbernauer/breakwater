@@ -84,7 +84,7 @@ impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> WebSink<FB> {
             frame_compression_chunks,
             chat_messages_per_minute,
         }: &WebSinkCliArgs,
-        advertised_endpoints: Vec<SocketAddr>,
+        advertised_endpoints: Vec<String>,
         fps: u32,
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,

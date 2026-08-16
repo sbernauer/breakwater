@@ -1,4 +1,7 @@
-use std::net::SocketAddr;
+use std::{
+    collections::BTreeSet,
+    net::{IpAddr, SocketAddr},
+};
 
 use crate::sinks::cli_args::SinkCliArgs;
 
@@ -49,10 +52,13 @@ pub struct NetworkListenerCliArgs {
 
     /// Specify one or more pixelflut endpoints to display to spectators.
     ///
+    /// We recommend `<hostname or IP>:<port>`, e.g. `pixelflut.example.com:1234`, `1.2.3.4:1234`
+    /// or `[2001:db8::1]:1234`. The value is only ever displayed, so anything goes.
+    ///
     /// By default they will be derived from the `--listener-address`es specified. Use this to
     /// advertise custom addresses to connect to.
-    #[clap(long = "advertised-endpoint")]
-    pub advertised_endpoints: Vec<SocketAddr>,
+    #[clap(long = "advertised-endpoint", value_name = "HOST:PORT")]
+    pub advertised_endpoints: Vec<String>,
 
     /// The size in bytes of the network buffer used for each open TCP connection.
     /// Use at least 64 KB (64_000 bytes).
@@ -72,29 +78,50 @@ impl NetworkListenerCliArgs {
     /// Resolves the Pixelflut endpoints to advertise to users (so they know where to connect).
     ///
     /// If `--advertised-endpoint`s is set, those are returned verbatim. Otherwise we make a best
-    /// effort guess: For a single listener we resolve the local v4 + v6 IPs and append the port,
-    /// for multiple listeners we just list them.
-    pub fn resolve_advertised_endpoints(&self) -> Vec<SocketAddr> {
+    /// effort guess based on the `--listener-address`es.
+    pub fn resolve_advertised_endpoints(&self) -> Vec<String> {
         if !self.advertised_endpoints.is_empty() {
             return self.advertised_endpoints.clone();
         }
 
-        match &self.listen_addresses[..] {
-            // No listeners given, so also no endpoints to advertise
-            [] => vec![],
-            // In case of a single listener we get the local IPs (v4 + v6) and concat them with the
-            // port
-            [single_listener] => {
-                let port = single_listener.port();
+        self.listen_addresses
+            .iter()
+            .flat_map(|socket_addr| {
+                let port = socket_addr.port();
 
-                [local_ip_address::local_ip(), local_ip_address::local_ipv6()]
+                Self::resolve_ips(socket_addr.ip())
                     .into_iter()
-                    .filter_map(Result::ok)
-                    .map(|ip| SocketAddr::new(ip, port))
-                    .collect()
-            }
-            // If multiple listeners are used it's complicated, so we just print them
-            multiple_listeners => multiple_listeners.to_vec(),
+                    .map(move |ip| SocketAddr::new(ip, port))
+            })
+            // Deduplicate. We use a `BTreeSet`, as the endpoints are displayed to spectators and
+            // a `HashSet` would shuffle them on every restart.
+            .collect::<BTreeSet<SocketAddr>>()
+            .into_iter()
+            .map(|socket_addr| socket_addr.to_string())
+            .collect()
+    }
+
+    /// Resolves the IP of a listener address to the IPs worth advertising.
+    ///
+    /// Unspecified addresses (`0.0.0.0` and `[::]`) are useless to spectators, so we replace them
+    /// with the local IPs of this machine. `[::]` also accepts IPv4 traffic on dual-stack systems,
+    /// so we advertise both the IPv6 and the IPv4 address in that case.
+    ///
+    /// Returns an empty [`Vec`] if no local IP could be determined, e.g. when no interface is up.
+    fn resolve_ips(ip: IpAddr) -> Vec<IpAddr> {
+        if !ip.is_unspecified() {
+            return vec![ip];
+        }
+
+        match ip {
+            IpAddr::V4(_) => local_ip_address::local_ip().ok().into_iter().collect(),
+            IpAddr::V6(_) => [
+                local_ip_address::local_ipv6().ok(),
+                local_ip_address::local_ip().ok(),
+            ]
+            .into_iter()
+            .flatten()
+            .collect(),
         }
     }
 }
@@ -117,4 +144,61 @@ pub struct StatisticsSaveFileCliArgs {
     /// Supports human durations such `10s` or `5m`.
     #[clap(long, default_value = "10s")]
     pub statistics_save_interval: humantime::Duration,
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    fn args(listen_addresses: &[&str], advertised_endpoints: &[&str]) -> NetworkListenerCliArgs {
+        NetworkListenerCliArgs {
+            listen_addresses: listen_addresses
+                .iter()
+                .map(|a| a.parse().unwrap())
+                .collect(),
+            advertised_endpoints: advertised_endpoints
+                .iter()
+                .map(ToString::to_string)
+                .collect(),
+            network_buffer_size: DEFAULT_NETWORK_BUFFER_SIZE,
+            connections_per_ip: None,
+        }
+    }
+
+    #[test]
+    fn test_advertised_endpoints_take_precedence() {
+        let args = args(&["1.2.3.4:1234"], &["pixelflut.example.com:1234"]);
+
+        assert_eq!(
+            args.resolve_advertised_endpoints(),
+            vec!["pixelflut.example.com:1234"]
+        );
+    }
+
+    #[test]
+    fn test_specified_listener_addresses_are_deduplicated_and_sorted() {
+        let args = args(
+            &[
+                "[2001:db8::1]:1234",
+                "1.2.3.4:1234",
+                "1.2.3.4:1234",
+                "1.2.3.4:4321",
+            ],
+            &[],
+        );
+
+        assert_eq!(
+            args.resolve_advertised_endpoints(),
+            vec!["1.2.3.4:1234", "1.2.3.4:4321", "[2001:db8::1]:1234"]
+        );
+    }
+
+    #[rstest]
+    #[case("1.2.3.4")]
+    #[case("2001:db8::1")]
+    fn test_specified_ips_are_kept_as_is(#[case] ip: IpAddr) {
+        assert_eq!(NetworkListenerCliArgs::resolve_ips(ip), vec![ip]);
+    }
 }

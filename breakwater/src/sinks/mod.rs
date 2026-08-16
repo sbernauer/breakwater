@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use breakwater_parser::{FrameBuffer, PixelColorBytes};
@@ -60,7 +60,7 @@ pub enum Sink {
 pub async fn start_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static>(
     cli_args: &SinkCliArgs,
     fb: Arc<FB>,
-    advertised_endpoints: &[SocketAddr],
+    advertised_endpoints: &[String],
     fps: u32,
     statistics_tx: mpsc::Sender<StatisticsEvent>,
     statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
@@ -103,7 +103,7 @@ pub async fn start_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'stat
             let mut egui_sink = EguiSink::new(
                 fb.clone(),
                 &cli_args.egui_sink,
-                advertised_endpoints,
+                advertised_endpoints.to_vec(),
                 statistics_information_rx.resubscribe(),
                 terminate_signal_rx.resubscribe(),
             )
@@ -142,7 +142,7 @@ pub async fn start_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'stat
 fn create_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static>(
     cli_args: &SinkCliArgs,
     fb: &Arc<FB>,
-    advertised_endpoints: &[SocketAddr],
+    advertised_endpoints: &[String],
     fps: u32,
     statistics_tx: &mpsc::Sender<StatisticsEvent>,
     statistics_information_rx: &broadcast::Receiver<StatisticsInformationEvent>,
