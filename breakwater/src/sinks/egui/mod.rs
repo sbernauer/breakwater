@@ -27,10 +27,6 @@ pub struct EguiSinkCliArgs {
     #[clap(long = "egui-viewport")]
     pub viewports: Vec<crate::sinks::egui::ViewportConfig>,
 
-    /// Specify one or more pixelflut endpoints to display.
-    #[clap(long = "egui-advertised-endpoint")]
-    pub advertised_endpoints: Vec<String>,
-
     /// Provide a path to a dylib containing a custom egui overlay.
     //
     // Qualifying import here to avoid feature-specific imports
@@ -81,26 +77,22 @@ impl FromStr for ViewportConfig {
     }
 }
 
-pub struct EguiSink<FB: FrameBuffer + PixelColorBytes> {
+pub struct EguiSink<'a, FB: FrameBuffer + PixelColorBytes> {
     fb: Arc<FB>,
     viewports: Vec<ViewportConfig>,
     terminate_rx: broadcast::Receiver<()>,
     stats_rx: broadcast::Receiver<StatisticsInformationEvent>,
-    advertised_endpoints: Vec<String>,
+    advertised_endpoints: &'a [SocketAddr],
     ui_overlay: Arc<UiOverlay>,
 }
 
-impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiSink<FB> {
+impl<'a, FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiSink<'a, FB> {
     /// This function can return [`None`] in case this sink is not configured (by looking at the `cli_args`).
     #[instrument(skip_all, err)]
     pub fn new(
         fb: Arc<FB>,
-        EguiSinkCliArgs {
-            viewports,
-            advertised_endpoints,
-            ui,
-        }: &EguiSinkCliArgs,
-        listen_addresses: &[SocketAddr],
+        EguiSinkCliArgs { viewports, ui }: &EguiSinkCliArgs,
+        advertised_endpoints: &'a [SocketAddr],
         statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
         terminate_signal_rx: broadcast::Receiver<()>,
     ) -> eyre::Result<Self> {
@@ -123,32 +115,6 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiSink<FB> {
             }
         });
 
-        let advertised_endpoints = if advertised_endpoints.is_empty() {
-            // In case no advertised endpoints to display are given, we calculate the most likely
-            // endpoint(s) to display.
-            match listen_addresses[..] {
-                // No listeners given, so also no endpoints to advertise
-                [] => vec![],
-                // In case of a single listener we get the local IPs (v4 + v6) and concat them with
-                // the port
-                [single_listener] => {
-                    let port = single_listener.port();
-
-                    [local_ip_address::local_ip(), local_ip_address::local_ipv6()]
-                        .into_iter()
-                        .filter_map(Result::ok)
-                        .map(|ip| format!("{ip}:{port}"))
-                        .collect()
-                }
-                // If multiple listeners are used it's complicated, so we just print them
-                ref multiple_listeners => {
-                    multiple_listeners.iter().map(ToString::to_string).collect()
-                }
-            }
-        } else {
-            advertised_endpoints.clone()
-        };
-
         Ok(Self {
             fb,
             viewports,
@@ -161,7 +127,7 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiSink<FB> {
 }
 
 impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> DisplaySinkType<FB>
-    for EguiSink<FB>
+    for EguiSink<'_, FB>
 {
     fn sink_type() -> Sink {
         Sink::Egui
@@ -169,7 +135,9 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> DisplaySinkType<
 }
 
 #[async_trait]
-impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> DisplaySink<FB> for EguiSink<FB> {
+impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> DisplaySink<FB>
+    for EguiSink<'_, FB>
+{
     /// This should only run on the main thread
     #[instrument(skip(self), err)]
     async fn run(&mut self) -> eyre::Result<()> {
@@ -189,7 +157,7 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> DisplaySink<FB> 
     }
 }
 
-impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiSink<FB> {
+impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiSink<'_, FB> {
     fn run_eframe_display(&self) -> Result<(), eframe::Error> {
         let options = eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default(),
@@ -202,7 +170,7 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiSink<FB> {
         let stats = self.stats_rx.resubscribe();
         let fb = self.fb.clone();
         let viewports = self.viewports.clone();
-        let advertised_endpoints = self.advertised_endpoints.clone();
+        let advertised_endpoints = self.advertised_endpoints;
         let ui_overlay = self.ui_overlay.clone();
 
         eframe::run_native(

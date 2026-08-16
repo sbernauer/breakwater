@@ -48,16 +48,7 @@ async fn main() -> eyre::Result<()> {
         &args.network_listener.listen_addresses,
         fb.clone(),
         statistics_tx.clone(),
-        args.network_listener
-            .network_buffer_size
-            .try_into()
-            // This should never happen as clap checks the range for us
-            .with_context(|| {
-                format!(
-                    "invalid network buffer size: {}",
-                    args.network_listener.network_buffer_size
-                )
-            })?,
+        args.network_listener.network_buffer_size,
         args.network_listener.connections_per_ip,
     )
     .await
@@ -78,7 +69,7 @@ async fn main() -> eyre::Result<()> {
     let (sink_tasks, ffmpeg_thread_present) = start_sinks(
         &args.sinks,
         fb.clone(),
-        &args.network_listener.listen_addresses,
+        &args.network_listener.resolve_advertised_endpoints(),
         args.fps,
         statistics_tx,
         statistics_information_rx,

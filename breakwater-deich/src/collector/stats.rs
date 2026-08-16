@@ -21,7 +21,7 @@
 
 use std::{collections::HashMap, net::IpAddr};
 
-use breakwater::statistics::{STATS_REPORT_INTERVAL, StatisticsInformationEvent};
+use breakwater::statistics::StatisticsInformationEvent;
 use uuid::Uuid;
 
 /// Holds both the live, per-worker view and the persistent grand totals.
@@ -57,7 +57,7 @@ impl CollectorStatistics {
             let baseline = previous
                 .and_then(|p| p.bytes_for_ip.get(&ip))
                 .copied()
-                .unwrap_or(0);
+                .unwrap_or_default();
             // Monotonic within a session, so `bytes >= baseline`; `saturating_sub` only guards the
             // (shouldn't-happen) case of a counter going backwards without a disconnect in between.
             *self.total_bytes_for_ip.entry(ip).or_default() += bytes.saturating_sub(baseline);
@@ -66,7 +66,7 @@ impl CollectorStatistics {
             let baseline = previous
                 .and_then(|p| p.denied_connections_for_ip.get(&ip))
                 .copied()
-                .unwrap_or(0);
+                .unwrap_or_default();
             let total = self.total_denied_for_ip.entry(ip).or_default();
             *total = total.saturating_add(denied.saturating_sub(baseline));
         }
@@ -83,13 +83,19 @@ impl CollectorStatistics {
     /// Builds the event published to the sinks: persistent grand totals for bytes/denied, plus the
     /// live connection gauge summed across currently-connected workers. `previous_bytes` carries
     /// the last tick's total so we can derive a per-second rate at the collector.
-    pub fn published_event(&self, previous_bytes: &mut u64) -> StatisticsInformationEvent {
-        let mut connections_for_ip: HashMap<IpAddr, u32> = HashMap::new();
+    pub fn published_event(&self) -> StatisticsInformationEvent {
+        let mut bytes_per_s = 0;
+        let mut bytes_per_s_for_ip = HashMap::new();
+        let mut connections_for_ip = HashMap::new();
         let mut statistic_events = 0;
         for snapshot in self.latest_per_worker.values() {
             for (&ip, &connections) in &snapshot.connections_for_ip {
                 *connections_for_ip.entry(ip).or_default() += connections;
             }
+            for (&ip, &bytes_per_s) in &snapshot.bytes_per_s_for_ip {
+                *bytes_per_s_for_ip.entry(ip).or_default() += bytes_per_s;
+            }
+            bytes_per_s += snapshot.bytes_per_s;
             statistic_events += snapshot.statistic_events;
         }
 
@@ -103,11 +109,6 @@ impl CollectorStatistics {
                 });
 
         let bytes: u64 = self.total_bytes_for_ip.values().sum();
-        // Rate over one report interval, saturating since a worker dropping out can't shrink the
-        // (monotonic) total, but a freshly seeded total on startup can jump the first `previous`.
-        let elapsed_secs = STATS_REPORT_INTERVAL.as_secs().max(1);
-        let bytes_per_s = bytes.saturating_sub(*previous_bytes) / elapsed_secs;
-        *previous_bytes = bytes;
 
         StatisticsInformationEvent {
             connections,
@@ -118,6 +119,7 @@ impl CollectorStatistics {
             connections_for_ip,
             denied_connections_for_ip: self.total_denied_for_ip.clone(),
             bytes_for_ip: self.total_bytes_for_ip.clone(),
+            bytes_per_s_for_ip,
             statistic_events,
             // Workers don't render, so there's no frame/fps to report at the collector.
             frame: 0,
@@ -147,8 +149,8 @@ mod tests {
         connections_for_ip: &[(IpAddr, u32)],
     ) -> StatisticsInformationEvent {
         StatisticsInformationEvent {
-            bytes_for_ip: bytes_for_ip.iter().copied().collect(),
             connections_for_ip: connections_for_ip.iter().copied().collect(),
+            bytes_for_ip: bytes_for_ip.iter().copied().collect(),
             statistic_events: 1,
             ..Default::default()
         }
@@ -165,8 +167,7 @@ mod tests {
         stats.record(w1, snapshot(&[(v4, 100)], &[(v4, 2)]));
         stats.record(w2, snapshot(&[(v4, 50), (v6, 7)], &[(v4, 1), (v6, 3)]));
 
-        let mut previous_bytes = 0;
-        let event = stats.published_event(&mut previous_bytes);
+        let event = stats.published_event();
 
         // Bytes are the persistent grand total.
         assert_eq!(event.bytes_for_ip[&v4], 150);
@@ -178,12 +179,8 @@ mod tests {
         assert_eq!(event.ips_v4, 1);
         assert_eq!(event.ips_v6, 1);
         assert_eq!(event.statistic_events, 2);
-        // First tick: the whole total counts as this interval's throughput.
-        assert_eq!(
-            event.bytes_per_s,
-            157 / STATS_REPORT_INTERVAL.as_secs().max(1)
-        );
-        assert_eq!(previous_bytes, 157);
+        assert_eq!(event.bytes_per_s, 0);
+        assert_eq!(event.bytes_per_s_for_ip, HashMap::new());
     }
 
     #[test]
@@ -229,10 +226,7 @@ mod tests {
         stats.record(w, denied(3));
         stats.record(w, denied(5)); // cumulative -> grand total +2
         assert_eq!(stats.total_denied_for_ip[&v4], 5);
-        assert_eq!(
-            stats.published_event(&mut 0).denied_connections_for_ip[&v4],
-            5
-        );
+        assert_eq!(stats.published_event().denied_connections_for_ip[&v4], 5);
     }
 
     #[test]

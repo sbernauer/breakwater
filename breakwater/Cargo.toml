@@ -18,15 +18,19 @@ breakwater-parser.workspace = true
 breakwater-egui-overlay = { workspace = true, optional = true }
 
 async-trait.workspace = true
+axum = { workspace = true, optional = true }
 bytemuck = { workspace = true, optional = true }
+bytes = { workspace = true, optional = true }
 chrono.workspace = true
 clap.workspace = true
 color-eyre.workspace = true
 const_format.workspace = true
 eframe = { workspace = true, optional = true }
 egui = { workspace = true, optional = true }
+flate2 = { workspace = true, optional = true }
 futures.workspace = true
 humantime.workspace = true
+libdeflater = { workspace = true, optional = true }
 libloading = { workspace = true, optional = true }
 local-ip-address.workspace = true
 memadvise.workspace = true
@@ -55,7 +59,10 @@ rstest.workspace = true
 # VNC and NDI require shared libraries to be installed, so we don't enable them by default
 # Yes, egui and winit require a graphical environment, but most people getting started with
 # breakwater will likely do that on a desktop, servers admins generally know what they are doing (tm).
-default = ["prometheus", "egui", "winit"]
+# The web sink is enabled by default as well: It is the easiest way to let people watch the canvas
+# on a server. It compresses frames with zlib-rs, which is pure Rust, so having it on by default
+# doesn't force a C toolchain on anyone.
+default = ["prometheus", "egui", "winit", "web"]
 
 # Enables the Prometheus metrics exporter. Can be disabled to support compilation on 32-bit targets.
 # See https://github.com/tikv/rust-prometheus/issues/565
@@ -67,6 +74,12 @@ egui = ["dep:breakwater-egui-overlay", "dep:bytemuck", "dep:eframe", "dep:egui",
 winit = ["dep:softbuffer", "dep:winit"]
 vnc = ["dep:vncserver", "dep:number_prefix", "dep:rusttype"]
 ndi = ["dep:ndi-sdk-sys"]
+web = ["dep:axum", "dep:bytes", "dep:flate2"]
+# Compress the web sink's frames with libdeflate instead of the default zlib-rs. libdeflate is C,
+# but vendored and built from source, so there is no system library to install - you only need a C
+# compiler at build time. In exchange it gives a noticeably better compression per CPU.
+# See breakwater/src/sinks/web/README.md for performance details.
+web-libdeflate = ["web", "dep:libdeflater"]
 
 [lints]
 workspace = true

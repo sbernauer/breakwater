@@ -137,6 +137,8 @@ jobs:
         run: cargo test --all-targets --features prometheus,binary-set-pixel,egui,winit,vnc,ndi,time-tracking
       - name: Test breakwater with all compatible features
         run: cargo test -p breakwater --features prometheus,alpha,binary-set-pixel,binary-sync-pixels,egui,winit,vnc,ndi
+      - name: Test the web sink's libdeflate frame compressor
+        run: cargo test -p breakwater --features web-libdeflate
       - name: Test breakwater-parser with the time-tracking feature (mutually exclusive with alpha and binary-sync-pixels)
         run: cargo test -p breakwater-parser --features time-tracking,binary-set-pixel
 

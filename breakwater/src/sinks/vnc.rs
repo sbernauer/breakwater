@@ -34,11 +34,18 @@ const STATS_HEIGHT: usize = 35;
 #[command(next_help_heading = "VNC sink options")]
 pub struct VncSinkCliArgs {
     /// VNC server listen address to bind to (multiple can be specified).
-    /// Only one address of each IP version can be specified
+    /// Only one address of each IP version can be specified.
+    /// The default values listen on all interfaces for IPv4 and IPv6 packets.
+    //
+    // Unlike e.g. the web sink we need both defaults: libvncserver binds a dedicated socket per IP
+    // version, so an IPv6 address alone would not serve legacy IP clients.
     //
     // We can't call it listen_addresses because of
     // Command breakwater: Argument names must be unique, but 'listen_addresses' is in use by more than one argument or group
-    #[clap(long = "vnc-listen-address")]
+    #[clap(
+        long = "vnc-listen-address",
+        default_values = ["0.0.0.0:5900", "[::]:5900"],
+    )]
     pub vnc_listen_addresses: Vec<SocketAddr>,
 
     /// Text to display on the screen.
@@ -50,20 +57,6 @@ pub struct VncSinkCliArgs {
     /// If you use the default value a copy that ships with breakwater will be used - no need to download and provide the font.
     #[clap(long = "vnc-font", default_value = "Arial.ttf")]
     pub font: String,
-}
-
-impl VncSinkCliArgs {
-    /// Validates the arguments under the assumption that the VNC sink is enabled.
-    pub fn validate(&self) -> Result<(), String> {
-        if self.vnc_listen_addresses.is_empty() {
-            return Err(
-                "the VNC sink requires at least one '--vnc-listen-address' to be specified"
-                    .to_owned(),
-            );
-        }
-
-        Ok(())
-    }
 }
 
 // Sorry! Help needed :)

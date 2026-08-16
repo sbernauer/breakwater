@@ -9,19 +9,35 @@ All notable changes to this project will be documented in this file.
 - BREAKING: Add `TimeTrackingFrameBuffer` behind `time-tracking` features ([#84]).
   As this feature is mutually exclusive with `alpha` and `binary-pixel-sync`, `--all-features` will now fail to compile.
   Please choose the required features explicitly instead.
+- Add a `web` sink, which serves a Web UI showing the canvas, live statistics and a chat ([#100], [#104]).
+  Spectators only need a browser, the server needs neither a graphical environment nor any additional system libraries.
+  Enable it with `--enable-sink web`, it listens on `[::]:8080` unless told otherwise.
+  The new `web` feature is enabled by default.
 
 ### Changed
 
 - BREAKING: The CLI argument `--statistics-save-interval-s` was renamed to `--statistics-save-interval` and now accepts a human time duration.
   E.g. instead of `--statistics-save-interval-s 20` now use `--statistics-save-interval 20s` ([#96]).
+- BREAKING: The CLI argument `--egui-advertised-endpoint` was renamed to `--advertised-endpoint`, because it will be used for new sinks in the future as well ([#99]).
+- The CLI argument `--vnc-listen-address` now defaults to `0.0.0.0:5900` and `[::]:5900`, so that `--enable-sink vnc` alone is enough ([#101]).
+  Both defaults are needed, as libvncserver binds a dedicated socket per IP version.
 
 ### Fixed
 
 - Let breakwater exit as soon as a sink reports an error ([#95]).
+- Handle `SIGTERM` (as sent by e.g. `docker stop` or systemd) the same way as Ctrl+C ([#102]).
+  Previously the process was killed right away, so no sink got the chance to shut down.
+- Fix race condition on writing zeroed statistics file on startup ([#103]).
 
 [#84]: https://github.com/sbernauer/breakwater/pull/84
 [#95]: https://github.com/sbernauer/breakwater/pull/95
 [#96]: https://github.com/sbernauer/breakwater/pull/96
+[#99]: https://github.com/sbernauer/breakwater/pull/99
+[#100]: https://github.com/sbernauer/breakwater/pull/100
+[#101]: https://github.com/sbernauer/breakwater/pull/101
+[#102]: https://github.com/sbernauer/breakwater/pull/102
+[#103]: https://github.com/sbernauer/breakwater/pull/103
+[#104]: https://github.com/sbernauer/breakwater/pull/104
 
 ## [0.22.0] - 2026-06-20
 

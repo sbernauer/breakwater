@@ -7,6 +7,7 @@ It claims to be the fastest Pixelflut server in existence - at least at the time
 # Features
 1. Accepts Pixelflut commands
 2. Many possible outputs:
+  - Serve a Web UI, so that everybody can watch in their browser (including live statistics and a chat)
   - Start a native display window in your graphical environment (using either winit or egui)
   - Start a VNC server so that everybody can watch
   - Stream to an RTMP sink, so that you can e.g. directly live-stream into Twitch or YouTube
@@ -45,12 +46,24 @@ cargo run --release -- --enable-sink egui
 
 ## Running on server
 
-As servers mostly don't have an graphical system, you can start a VNC server and connect any VNC client to it.
+As servers mostly don't have a graphical system, the easiest way to let people watch is the web sink.
+It serves a Web UI showing the canvas, live statistics and a chat, so spectators only need a browser.
+The web feature is enabled by default and doesn't need any additional system libraries.
+
+```bash
+cargo run --release -- --enable-sink web
+```
+
+The Web UI is then available at `http://<your-server>:8080`.
+Use `--web-listen-address` to bind somewhere else, the argument can be repeated in case you need to
+bind to multiple addresses explicitly.
+
+Alternatively you can start a VNC server and connect any VNC client to it.
 You may need to install some additional packages with `sudo apt install clang pkg-config libvncserver-dev`
 Then you can directly run the server with
 
 ```bash
-cargo run --release --features vnc -- --enable-sink vnc --vnc-listen-address 0.0.0.0:5900 --vnc-listen-address '[::]:5900'
+cargo run --release --features vnc -- --enable-sink vnc
 ```
 The default settings should provide you with a ready-to-use server.
 
@@ -58,6 +71,7 @@ The default settings should provide you with a ready-to-use server.
 |------|-----------------------------|
 | 1234 | Pixelflut server            |
 | 5900 | VNC server                  |
+| 8080 | Web UI                      |
 | 9100 | Prometheus metrics exporter |
 
 The get a list of options try
@@ -70,7 +84,7 @@ cargo run --release -- --help
   <summary>Output</summary>
 
 ```bash
-cargo run --release --all-features -- --help
+cargo run --release --features vnc,ndi -- -h
     Finished release [optimized] target(s) in 0.04s
      Running `target/release/breakwater --help`
 Pixelflut server
@@ -96,6 +110,8 @@ Options:
 Network listener options:
   -l, --listener-address <LISTEN_ADDRESSES>
           Listen address to bind to (multiple can be specified). The default value will listen on all interfaces for IPv4 and IPv6 packets [default: [::]:1234]
+      --advertised-endpoint <ADVERTISED_ENDPOINTS>
+          Specify one or more pixelflut endpoints to display to spectators
       --network-buffer-size <NETWORK_BUFFER_SIZE>
           The size in bytes of the network buffer used for each open TCP connection. Please use at least 64 KB (64_000 bytes) [default: 262144]
   -c, --connections-per-ip <CONNECTIONS_PER_IP>
@@ -110,7 +126,7 @@ Statistics save file options:
           Interval in which the statistics save file should be updated [default: 10s]
 
 Sink options:
-  -s, --enable-sink <ENABLED_SINKS>  Enable an arbitrary number of sinks (argument can be repeated). The availability of sinks depends on the enabled features [possible values: ffmpeg, egui, winit, vnc, ndi]
+  -s, --enable-sink <ENABLED_SINKS>  Enable an arbitrary number of sinks (argument can be repeated). The availability of sinks depends on the enabled features [possible values: ffmpeg, egui, winit, ndi, vnc, web]
 
 ffmpeg sink options:
       --ffmpeg-rtmp-address <RTMP_ADDRESS>
@@ -119,23 +135,25 @@ ffmpeg sink options:
           Enable dump of video stream into file. File location will be `<VIDEO_SAVE_FOLDER>/pixelflut_dump_{timestamp}.mp4`
 
 egui sink options:
-      --egui-viewport <VIEWPORTS>
-          Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`. Might be specified multiple times for more than one viewport. Useful for multi-projector setups. Defaults to display the entire canvas
-      --egui-advertised-endpoint <ADVERTISED_ENDPOINTS>
-          Specify one or more pixelflut endpoints to display
-      --egui-ui <UI>
-          Provide a path to a dylib containing a custom egui overlay
+      --egui-viewport <VIEWPORTS>  Specify a view port to display the canvas or a certain part of it. Format: `<offset_x>x<offset_y>,<width>x<height>`. Might be specified multiple times for more than one viewport. Useful for multi-projector setups. Defaults to display the entire canvas
+      --egui-ui <UI>               Provide a path to a dylib containing a custom egui overlay
 
 NDI sink options:
       --ndi-source-name <SOURCE_NAME>  Readable NDI source name [default: "Pixelflut server (breakwater)"]
 
 VNC sink options:
       --vnc-listen-address <VNC_LISTEN_ADDRESSES>
-          VNC server listen address to bind to (multiple can be specified). Only one address of each IP version can be specified
+          VNC server listen address to bind to (multiple can be specified). Only one address of each IP version can be specified. The default values listen on all interfaces for IPv4 and IPv6 packets [default: 0.0.0.0:5900 [::]:5900]
       --vnc-text <TEXT>
           Text to display on the screen [default: "Pixelflut server (breakwater)"]
       --vnc-font <FONT>
           The font used to render the text on the screen. Should be a ttf file. If you use the default value a copy that ships with breakwater will be used - no need to download and provide the font [default: Arial.ttf]
+
+web sink options:
+      --web-listen-address <WEB_LISTEN_ADDRESSES>
+          Web server listen address to bind to (multiple can be specified). The default value will listen on all interfaces for IPv4 and IPv6 packets [default: [::]:8080]
+      --web-chat-messages-per-minute <CHAT_MESSAGES_PER_MINUTE>
+          Maximum number of chat messages a single IP address may send per minute in the WebUI [default: 10]
 ```
 </details>
 
@@ -150,6 +168,8 @@ As of writing the following features are supported:
 * `prometheus` (enabled by default): Enables the Prometheus metrics exporter. Can be disabled to support compilation on 32-bit targets.
 * `egui` (enabled by default): Enables an advanced customizable graphical frontend on your local system. Please note that this requires a graphical environment.
 * `winit` (enabled by default): Enables a minimalist graphical window on your local system. Please note that this requires a graphical environment.
+* `web` (enabled by default): Starts a web server serving a Web UI, which shows the canvas, live statistics and a chat.
+* `web-libdeflate` (disabled by default): Compresses the `web` sink's frames with libdeflate instead of the default zlib-rs. Offers a better compression/CPU usage ratio, but needs a C compiler to build (the library itself is vendored, there is nothing to install). See [the web sink's README](breakwater/src/sinks/web/README.md).
 * `ndi` (disabled by default): Enables NDI video streaming. This requires the proprietary NDI SDK to be installed, see below.
 * `vnc` (disabled by default): Starts a VNC server, where users can connect to. Needs `libvncserver-dev` to be installed. Please note that the VNC server offers basically no latency, but consumes quite some CPU.
 * `alpha` (disabled by default): Respect alpha values during `PX` commands. Disabled by default as this can cause performance degradation.
@@ -204,13 +224,16 @@ It touches on SIMD usage for Pixelflut.
 This command will start the Pixelflut server in a docker container
 
 ```bash
-docker run --rm --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 sbernauer/breakwater --enable-sink vnc --vnc-listen-address 0.0.0.0:5900
+docker run --rm --init -t -p 1234:1234 -p 8080:8080 -p 9100:9100 sbernauer/breakwater --enable-sink web
 ```
+
+You can then watch the canvas at http://localhost:8080.
+The image also contains the VNC sink, use `-p 5900:5900 ... --enable-sink vnc` if you prefer a VNC client (both sinks can be enabled at the same time).
 
 If you want to permanently save statistics (to keep them between restarts) you can use the following command:
 
 ```bash
-mkdir -p pixelflut && docker run --rm -u 1000:1000 --init -t -p 1234:1234 -p 5900:5900 -p 9100:9100 -v "$(pwd)/pixelflut:/pixelflut" sbernauer/breakwater --enable-sink vnc --vnc-listen-address 0.0.0.0:5900 --statistics-save-file /pixelflut/statistics.json
+mkdir -p pixelflut && docker run --rm -u 1000:1000 --init -t -p 1234:1234 -p 8080:8080 -p 9100:9100 -v "$(pwd)/pixelflut:/pixelflut" sbernauer/breakwater --enable-sink web --statistics-save-file /pixelflut/statistics.json
 ```
 
 # Ready to use Docker compose setup
@@ -227,6 +250,7 @@ You should now have access to the following services
 |------|-----------------------------|
 | 1234 | Pixelflut server            |
 | 5900 | VNC server                  |
+| 8080 | Web UI                      |
 | 9100 | Prometheus metrics exporter |
 | 9090 | Prometheus server           |
 | 3000 | Grafana                     |
@@ -242,10 +266,13 @@ owncast than exposes a Web UI where people can watch the game in a web-browser.
 Please note that the stream has a much higer delay compared to VNC and the fmmpeg command used internally consumes much CPU.
 Because of this the components are commented out by default, you need to comment them in!
 
+If you only want people to watch in their browser, use the web sink instead - it has a lower delay and doesn't need ffmpeg.
+owncast is still useful if you want an actual video stream, e.g. to embed it somewhere else or to archive it.
+
 ## Live streaming to internet services (e.g. Youtube, Twich)
 
 This should work the same way as streaming to owncast.
-Simply uncomment the `breakwater` command and adopt `--rtmp-address` accordingly.
+Simply uncomment the `breakwater` command and adopt `--ffmpeg-rtmp-address` accordingly.
 I never used this for a longer time period, so happy about feedback!
 
 # Known issues

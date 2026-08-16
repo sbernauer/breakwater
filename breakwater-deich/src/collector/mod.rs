@@ -82,13 +82,9 @@ pub async fn run(args: CollectorCliArgs) -> eyre::Result<()> {
     let statistics_save_mode = StatisticsSaveMode::from(args.statistics_save_file);
     let statistics = match &statistics_save_mode {
         StatisticsSaveMode::Enabled { save_file, .. } => {
-            match StatisticsInformationEvent::load_from_file(save_file)? {
-                Some(save_point) => {
-                    info!(%save_file, "Restored statistics from save file");
-                    CollectorStatistics::from_save_point(save_point)
-                }
-                None => CollectorStatistics::default(),
-            }
+            let save_point = StatisticsInformationEvent::load_from_file(save_file)?;
+            info!(%save_file, "Restored statistics from save file");
+            CollectorStatistics::from_save_point(save_point)
         }
         StatisticsSaveMode::Disabled => CollectorStatistics::default(),
     };
@@ -374,16 +370,13 @@ async fn publish_statistics(
         } => (interval(*save_interval), Some(save_file.clone())),
     };
 
-    // Previous tick's total byte count, so we can derive a per-second rate at the collector.
-    let mut previous_bytes = 0u64;
-
     loop {
         tokio::select! {
             _ = report.tick() => {
                 let event = statistics
                     .lock()
                     .expect("collector statistics lock poisoned")
-                    .published_event(&mut previous_bytes);
+                    .published_event();
                 // A send error just means no sink is currently subscribed; nothing to do about it.
                 let _ = statistics_information_tx.send(event);
             }

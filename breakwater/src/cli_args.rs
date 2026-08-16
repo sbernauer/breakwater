@@ -1,11 +1,8 @@
 use std::net::SocketAddr;
 
-use const_format::formatcp;
-
 use crate::sinks::cli_args::SinkCliArgs;
 
 pub const DEFAULT_NETWORK_BUFFER_SIZE: usize = 256 * 1024;
-pub const DEFAULT_NETWORK_BUFFER_SIZE_STR: &str = formatcp!("{}", DEFAULT_NETWORK_BUFFER_SIZE);
 
 #[derive(clap::Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -50,18 +47,56 @@ pub struct NetworkListenerCliArgs {
     #[clap(short, long = "listener-address", default_value = "[::]:1234")]
     pub listen_addresses: Vec<SocketAddr>,
 
+    /// Specify one or more pixelflut endpoints to display to spectators.
+    ///
+    /// By default they will be derived from the `--listener-address`es specified. Use this to
+    /// advertise custom addresses to connect to.
+    #[clap(long = "advertised-endpoint")]
+    pub advertised_endpoints: Vec<SocketAddr>,
+
     /// The size in bytes of the network buffer used for each open TCP connection.
-    /// Please use at least 64 KB (64_000 bytes).
+    /// Use at least 64 KB (64_000 bytes).
     #[clap(
         long,
-        default_value = DEFAULT_NETWORK_BUFFER_SIZE_STR,
-        value_parser = 64_000..100_000_000,
+        default_value_t = DEFAULT_NETWORK_BUFFER_SIZE,
+        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(64_000..=100_000_000),
     )]
-    pub network_buffer_size: i64,
+    pub network_buffer_size: usize,
 
     /// Allow only a certain number of connections per ip address
     #[clap(short, long)]
     pub connections_per_ip: Option<u64>,
+}
+
+impl NetworkListenerCliArgs {
+    /// Resolves the Pixelflut endpoints to advertise to users (so they know where to connect).
+    ///
+    /// If `--advertised-endpoint`s is set, those are returned verbatim. Otherwise we make a best
+    /// effort guess: For a single listener we resolve the local v4 + v6 IPs and append the port,
+    /// for multiple listeners we just list them.
+    pub fn resolve_advertised_endpoints(&self) -> Vec<SocketAddr> {
+        if !self.advertised_endpoints.is_empty() {
+            return self.advertised_endpoints.clone();
+        }
+
+        match &self.listen_addresses[..] {
+            // No listeners given, so also no endpoints to advertise
+            [] => vec![],
+            // In case of a single listener we get the local IPs (v4 + v6) and concat them with the
+            // port
+            [single_listener] => {
+                let port = single_listener.port();
+
+                [local_ip_address::local_ip(), local_ip_address::local_ipv6()]
+                    .into_iter()
+                    .filter_map(Result::ok)
+                    .map(|ip| SocketAddr::new(ip, port))
+                    .collect()
+            }
+            // If multiple listeners are used it's complicated, so we just print them
+            multiple_listeners => multiple_listeners.to_vec(),
+        }
+    }
 }
 
 #[derive(clap::Args, Debug)]

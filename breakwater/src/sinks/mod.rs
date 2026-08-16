@@ -22,6 +22,8 @@ pub mod ffmpeg;
 pub mod ndi;
 #[cfg(feature = "vnc")]
 pub mod vnc;
+#[cfg(feature = "web")]
+pub mod web;
 #[cfg(feature = "winit")]
 pub mod winit;
 
@@ -37,6 +39,9 @@ pub trait DisplaySinkType<FB>: DisplaySink<FB> {
     fn sink_type() -> Sink;
 }
 
+/// The sinks that were created for the enabled `--enable-sink`s.
+type BoxedSinks<FB> = Vec<Box<dyn DisplaySink<FB> + Send>>;
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub enum Sink {
     Ffmpeg,
@@ -44,19 +49,18 @@ pub enum Sink {
     Egui,
     #[cfg(feature = "winit")]
     Winit,
-    #[cfg(feature = "vnc")]
-    Vnc,
     #[cfg(feature = "ndi")]
     Ndi,
+    #[cfg(feature = "vnc")]
+    Vnc,
+    #[cfg(feature = "web")]
+    Web,
 }
 
-// Several of these parameters are only consumed by feature-gated sinks, so they appear unused when those
-// features are disabled. We can't use `#[expect(...)]` here, as it would fail when all features are enabled.
-#[allow(unused_variables)]
 pub async fn start_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static>(
     cli_args: &SinkCliArgs,
     fb: Arc<FB>,
-    listen_addresses: &[SocketAddr],
+    advertised_endpoints: &[SocketAddr],
     fps: u32,
     statistics_tx: mpsc::Sender<StatisticsEvent>,
     statistics_information_rx: broadcast::Receiver<StatisticsInformationEvent>,
@@ -68,7 +72,85 @@ pub async fn start_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'stat
 
     let (terminate_signal_tx, terminate_signal_rx) = broadcast::channel::<()>(1);
 
-    let mut sinks = Vec::<Box<dyn DisplaySink<FB> + Send>>::new();
+    let (sinks, ffmpeg_thread_present) = create_sinks(
+        cli_args,
+        &fb,
+        advertised_endpoints,
+        fps,
+        &statistics_tx,
+        &statistics_information_rx,
+        &terminate_signal_rx,
+    )?;
+
+    let mut sink_tasks = Vec::new();
+    for mut sink in sinks {
+        let terminate_signal_tx = terminate_signal_tx.clone();
+        sink_tasks.push(tokio::spawn(async move {
+            let result = sink.run().await;
+            // A sink exiting - whether because it crashed or stopped normally - should bring the
+            // whole server down, so signal termination to all other tasks (and the shutdown
+            // handler). Best-effort: ignore the error if there are no receivers left.
+            let _ = terminate_signal_tx.send(());
+            result
+        }));
+    }
+
+    // Egui needs some special handling around threads, so it differs a bit
+    #[cfg(feature = "egui")]
+    {
+        use crate::sinks::egui::EguiSink;
+        if enabled_sinks.contains(&EguiSink::<FB>::sink_type()) {
+            let mut egui_sink = EguiSink::new(
+                fb.clone(),
+                &cli_args.egui_sink,
+                advertised_endpoints,
+                statistics_information_rx.resubscribe(),
+                terminate_signal_rx.resubscribe(),
+            )
+            .context("failed to create egui sink")?;
+
+            tokio::spawn(wait_for_shutdown(
+                terminate_signal_tx.clone(),
+                terminate_signal_rx,
+            ));
+
+            // Some platforms require opening windows from the main thread.
+            // The tokio::main macro uses Runtime::block_on(future) which runs the future on
+            // the current thread, which should be the main thread right now.
+            egui_sink.run().await.context("failed to run egui sink")?;
+
+            // The egui window was closed - bring the rest of the server down too.
+            let _ = terminate_signal_tx.send(());
+        } else {
+            wait_for_shutdown(terminate_signal_tx, terminate_signal_rx).await?;
+        }
+    }
+
+    #[cfg(not(feature = "egui"))]
+    wait_for_shutdown(terminate_signal_tx, terminate_signal_rx).await?;
+
+    Ok((sink_tasks, ffmpeg_thread_present))
+}
+
+/// Creates all the sinks the user enabled via `--enable-sink`.
+///
+/// Also returns whether the ffmpeg sink is among them, as it might leave a ffmpeg process behind
+/// during shutdown - which we want to tell the user about.
+// Several of these parameters are only consumed by feature-gated sinks, so they appear unused when those
+// features are disabled. We can't use `#[expect(...)]` here, as it would fail when all features are enabled.
+#[allow(unused_variables, clippy::unnecessary_wraps)]
+fn create_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static>(
+    cli_args: &SinkCliArgs,
+    fb: &Arc<FB>,
+    advertised_endpoints: &[SocketAddr],
+    fps: u32,
+    statistics_tx: &mpsc::Sender<StatisticsEvent>,
+    statistics_information_rx: &broadcast::Receiver<StatisticsInformationEvent>,
+    terminate_signal_rx: &broadcast::Receiver<()>,
+) -> eyre::Result<(BoxedSinks<FB>, bool)> {
+    let enabled_sinks = &cli_args.enabled_sinks;
+
+    let mut sinks = BoxedSinks::<FB>::new();
 
     let mut ffmpeg_thread_present = false;
     if enabled_sinks.contains(&FfmpegSink::<FB>::sink_type()) {
@@ -101,7 +183,7 @@ pub async fn start_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'stat
                     fb.clone(),
                     &cli_args.vnc_sink,
                     fps,
-                    statistics_tx,
+                    statistics_tx.clone(),
                     statistics_information_rx.resubscribe(),
                     terminate_signal_rx.resubscribe(),
                 )
@@ -126,58 +208,30 @@ pub async fn start_sinks<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'stat
         }
     }
 
-    let mut sink_tasks = Vec::new();
-    for mut sink in sinks {
-        let terminate_signal_tx = terminate_signal_tx.clone();
-        sink_tasks.push(tokio::spawn(async move {
-            let result = sink.run().await;
-            // A sink exiting - whether because it crashed or stopped normally - should bring the
-            // whole server down, so signal termination to all other tasks (and the shutdown
-            // handler). Best-effort: ignore the error if there are no receivers left.
-            let _ = terminate_signal_tx.send(());
-            result
-        }));
-    }
-
-    // Egui needs some special handling around threads, so it differs a bit
-    #[cfg(feature = "egui")]
+    #[cfg(feature = "web")]
     {
-        use crate::sinks::egui::EguiSink;
-        if enabled_sinks.contains(&EguiSink::<FB>::sink_type()) {
-            let mut egui_sink = EguiSink::new(
-                fb.clone(),
-                &cli_args.egui_sink,
-                listen_addresses,
-                statistics_information_rx.resubscribe(),
-                terminate_signal_rx.resubscribe(),
-            )
-            .context("failed to create egui sink")?;
-
-            tokio::spawn(wait_for_shutdown(
-                terminate_signal_tx.clone(),
-                terminate_signal_rx,
+        use crate::sinks::web::WebSink;
+        if enabled_sinks.contains(&WebSink::<FB>::sink_type()) {
+            sinks.push(Box::new(
+                WebSink::new(
+                    fb.clone(),
+                    &cli_args.web_sink,
+                    advertised_endpoints.to_vec(),
+                    fps,
+                    statistics_information_rx.resubscribe(),
+                    terminate_signal_rx.resubscribe(),
+                )
+                .context("failed to create web sink")?,
             ));
-
-            // Some platforms require opening windows from the main thread.
-            // The tokio::main macro uses Runtime::block_on(future) which runs the future on
-            // the current thread, which should be the main thread right now.
-            egui_sink.run().await.context("failed to run egui sink")?;
-
-            // The egui window was closed - bring the rest of the server down too.
-            let _ = terminate_signal_tx.send(());
-        } else {
-            wait_for_shutdown(terminate_signal_tx, terminate_signal_rx).await?;
         }
     }
 
-    #[cfg(not(feature = "egui"))]
-    wait_for_shutdown(terminate_signal_tx, terminate_signal_rx).await?;
-
-    Ok((sink_tasks, ffmpeg_thread_present))
+    Ok((sinks, ffmpeg_thread_present))
 }
 
-/// Blocks until either the user requests a shutdown via Ctrl+C, or one of the sinks signals
-/// termination (e.g. because it crashed). Afterwards all remaining sinks are told to terminate.
+/// Blocks until either the user requests a shutdown via Ctrl+C or `SIGTERM`, or one of the sinks
+/// signals termination (e.g. because it crashed). Afterwards all remaining sinks are told to
+/// terminate.
 async fn wait_for_shutdown(
     terminate_signal_tx: broadcast::Sender<()>,
     mut terminate_signal_rx: broadcast::Receiver<()>,
@@ -186,6 +240,9 @@ async fn wait_for_shutdown(
         result = tokio::signal::ctrl_c() => {
             result.context("failed to wait for ctrl + c")?;
         }
+        result = wait_for_sigterm() => {
+            result?;
+        }
         // A sink signalled termination, e.g. because it crashed.
         _ = terminate_signal_rx.recv() => {}
     }
@@ -193,6 +250,27 @@ async fn wait_for_shutdown(
     // Tell all remaining sinks to terminate. Best-effort: this fails if all other receivers are
     // already gone (e.g. the only sink crashed and dropped its receiver), which is fine here.
     let _ = terminate_signal_tx.send(());
+
+    Ok(())
+}
+
+/// Resolves once we receive a `SIGTERM`, which is what e.g. `docker stop` and systemd send to ask a
+/// process to shut down. Without handling it the process would simply be killed, so no sink would
+/// get the chance to clean up.
+#[cfg(unix)]
+async fn wait_for_sigterm() -> eyre::Result<()> {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    let mut sigterm = signal(SignalKind::terminate()).context("failed to listen for SIGTERM")?;
+    sigterm.recv().await;
+
+    Ok(())
+}
+
+/// There is no `SIGTERM` on non-unix platforms, so we simply never resolve.
+#[cfg(not(unix))]
+async fn wait_for_sigterm() -> eyre::Result<()> {
+    std::future::pending::<()>().await;
 
     Ok(())
 }
