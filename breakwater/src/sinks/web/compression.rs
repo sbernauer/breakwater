@@ -19,7 +19,7 @@ trait CompressionBackend: Copy {
 
 /// The default: zlib-rs, the fastest of the zlib-compatible encoders and pure Rust, so the web
 /// sink stays buildable without a C toolchain.
-#[cfg(not(feature = "web-libdeflater"))]
+#[cfg(not(feature = "web-libdeflate"))]
 mod backend {
     use std::io::Write;
 
@@ -49,11 +49,11 @@ mod backend {
     }
 }
 
-/// Enabled by the `web-libdeflater` feature: compresses noticeably better per CPU spent, at the
+/// Enabled by the `web-libdeflate` feature: compresses noticeably better per CPU spent, at the
 /// price of needing a C compiler to build.
-#[cfg(feature = "web-libdeflater")]
+#[cfg(feature = "web-libdeflate")]
 mod backend {
-    use color_eyre::eyre;
+    use color_eyre::eyre::{self, Context};
     use libdeflater::{CompressionLvl, Compressor as LibdeflateCompressor};
 
     use super::CompressionBackend;
@@ -81,7 +81,8 @@ mod backend {
             let mut compressed = vec![0; compressor.zlib_compress_bound(data.len())];
             let compressed_len = compressor
                 .zlib_compress(data, &mut compressed)
-                .map_err(|err| eyre::eyre!("failed to compress frame chunk: {err:?}"))?;
+                .context("failed to compress frame chunk. \
+                    This should not happen, as we allocated enough memory using zlib_compress_bound")?;
             compressed.truncate(compressed_len);
 
             Ok(compressed)

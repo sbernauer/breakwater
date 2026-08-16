@@ -169,7 +169,7 @@ As of writing the following features are supported:
 * `egui` (enabled by default): Enables an advanced customizable graphical frontend on your local system. Please note that this requires a graphical environment.
 * `winit` (enabled by default): Enables a minimalist graphical window on your local system. Please note that this requires a graphical environment.
 * `web` (enabled by default): Starts a web server serving a Web UI, which shows the canvas, live statistics and a chat.
-* `web-libdeflater` (disabled by default): Compresses the `web` sink's frames with libdeflate instead of the default zlib-rs. Offers a better compression/CPU usage ratio, but needs a C compiler to build (the library itself is vendored, there is nothing to install). See [the web sink's README](breakwater/src/sinks/web/README.md).
+* `web-libdeflate` (disabled by default): Compresses the `web` sink's frames with libdeflate instead of the default zlib-rs. Offers a better compression/CPU usage ratio, but needs a C compiler to build (the library itself is vendored, there is nothing to install). See [the web sink's README](breakwater/src/sinks/web/README.md).
 * `ndi` (disabled by default): Enables NDI video streaming. This requires the proprietary NDI SDK to be installed, see below.
 * `vnc` (disabled by default): Starts a VNC server, where users can connect to. Needs `libvncserver-dev` to be installed. Please note that the VNC server offers basically no latency, but consumes quite some CPU.
 * `alpha` (disabled by default): Respect alpha values during `PX` commands. Disabled by default as this can cause performance degradation.
