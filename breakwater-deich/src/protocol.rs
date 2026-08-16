@@ -59,7 +59,7 @@ pub enum WorkerMessage {
 
     /// A periodic statistics snapshot, already aggregated per IP by the worker (~once per second)
     /// and cumulative within this connection's session. Self-contained — no raw bytes follow.
-    Statistics(StatisticsInformationEvent),
+    Statistics(Box<StatisticsInformationEvent>),
 }
 
 /// Configuration the collector hands to each worker. The collector is the single source of truth for
@@ -141,7 +141,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Connection<S> {
 
     /// Worker side: send a statistics snapshot.
     pub async fn send_statistics(&mut self, event: StatisticsInformationEvent) -> io::Result<()> {
-        self.send_message(&WorkerMessage::Statistics(event)).await
+        self.send_message(&WorkerMessage::Statistics(Box::new(event)))
+            .await
     }
 
     /// Collector side: read the next framebuffer or statistics message. For a framebuffer the raw
@@ -168,7 +169,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Connection<S> {
                     latency,
                 })
             }
-            WorkerMessage::Statistics(event) => Ok(WorkerData::Statistics(event)),
+            WorkerMessage::Statistics(event) => Ok(WorkerData::Statistics(*event)),
             WorkerMessage::Hello { worker_id } => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("unexpected second hello (worker id {worker_id}) mid-stream"),
