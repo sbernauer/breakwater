@@ -48,10 +48,13 @@ pub struct CollectorCliArgs {
 
     /// Specify one or more pixelflut endpoints to display to spectators.
     ///
+    /// We recommend `<hostname or IP>:<port>`, e.g. `pixelflut.example.com:1234`, `1.2.3.4:1234`
+    /// or `[2001:db8::1]:1234`. The value is only ever displayed, so anything goes.
+    ///
     /// You have to provide the endpoint, as it's typically behind an virtual IP or some other
     /// network setup breakwater-deich doesn't know about,
-    #[clap(required = true, long = "advertised-endpoint")]
-    pub advertised_endpoints: Vec<SocketAddr>,
+    #[clap(long = "advertised-endpoint", value_name = "HOST:PORT")]
+    pub advertised_endpoints: Vec<String>,
 
     /// Width of the canvas. Sent to every worker as part of its config.
     #[clap(long, default_value_t = 1920)]
