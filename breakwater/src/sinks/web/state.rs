@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
-    net::{IpAddr, SocketAddr},
+    net::IpAddr,
     sync::{Arc, Mutex},
 };
 
@@ -31,5 +31,5 @@ pub struct WebState {
     pub width: usize,
     pub height: usize,
     /// Pixelflut endpoints to advertise to users, sent once on connect.
-    pub advertised_endpoints: Vec<SocketAddr>,
+    pub advertised_endpoints: Vec<String>,
 }
