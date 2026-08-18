@@ -16,13 +16,14 @@ mod refactored;
 
 #[cfg(target_arch = "x86_64")]
 pub use assembler::AssemblerParser;
-pub use framebuffer::time_tracking::{
-    RGB_BITS, RGB_MASK, TIMESTAMP_BITS, TIMESTAMP_MAX, TimeTrackingFrameBuffer, TimeTrackingPixel,
-    get_current_ns_since_unix_epoch,
-};
 pub use framebuffer::{
     FB_BYTES_PER_PIXEL, FrameBuffer, MultiPixelSet, PixelColorBytes,
-    shared_memory::SharedMemoryFrameBuffer, simple::SimpleFrameBuffer,
+    shared_memory::SharedMemoryFrameBuffer,
+    simple::SimpleFrameBuffer,
+    time_tracking::{
+        RGB_BITS, RGB_MASK, TIMESTAMP_BITS, TIMESTAMP_MAX, TimeTrackingFrameBuffer,
+        TimeTrackingPixel, get_current_ns_since_unix_epoch, pixels_as_bytes_mut,
+    },
 };
 pub use memchr::MemchrParser;
 pub use original::{OriginalParser, OriginalParserFrameBuffer};
