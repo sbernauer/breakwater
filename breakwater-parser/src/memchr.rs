@@ -59,7 +59,12 @@ impl<FB: FrameBuffer> Parser for MemchrParser<FB> {
                     .parse()
                     .expect("rgba was not a number");
 
-                self.fb.set(x as usize, y as usize, rgba, current_ts);
+                #[cfg(feature = "alpha")]
+                todo!("implement alpha blending");
+
+                #[cfg(not(feature = "alpha"))]
+                self.fb
+                    .set(x as usize, y as usize, rgba | 0xff00_0000, current_ts);
             }
         }
 

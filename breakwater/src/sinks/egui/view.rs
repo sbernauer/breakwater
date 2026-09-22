@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use breakwater_parser::{FrameBuffer, PixelColorBytes};
-use egui::{Color32, ColorImage, ImageData, Pos2, Rect, TextureHandle, TextureOptions, Vec2};
+use egui::{Color32, ColorImage, Pos2, Rect, TextureHandle, TextureOptions, Vec2};
 use tokio::sync::broadcast;
 
 use super::{ViewportConfig, dynamic_overlay::UiOverlay};
@@ -116,18 +116,11 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> eframe::App for 
             }
         }
 
-        // update canvas texture
-        let rgba = self
-            .fb
-            .pixel_color_bytes()
-            .as_chunks()
-            .0
-            .iter()
-            .copied()
-            .map(|[r, g, b, _a]| Color32::from_rgb(r, g, b))
-            .collect();
         self.canvas_texture.set(
-            ColorImage::new([self.fb.get_width(), self.fb.get_height()], rgba),
+            ColorImage::from_rgba_unmultiplied(
+                [self.fb.get_width(), self.fb.get_height()],
+                self.fb.pixel_color_bytes(),
+            ),
             TextureOptions::NEAREST,
         );
 

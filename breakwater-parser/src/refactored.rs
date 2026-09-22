@@ -102,7 +102,7 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
 
         // TODO: Support alpha channel (behind alpha feature flag)
         self.fb
-            .set(x as usize, y as usize, rgba & 0x00ff_ffff, current_ts);
+            .set(x as usize, y as usize, rgba | 0xff00_0000, current_ts);
 
         idx += 8;
         (idx, previous)
@@ -135,7 +135,7 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
     fn handle_rgb(&self, idx: usize, buffer: &[u8], current_ts: FB::Timestamp, x: usize, y: usize) {
         let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(idx - 7) });
 
-        self.fb.set(x, y, rgba & 0x00ff_ffff, current_ts);
+        self.fb.set(x, y, rgba | 0xff00_0000, current_ts);
     }
 
     #[cfg(not(feature = "alpha"))]
@@ -150,7 +150,7 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
     ) {
         let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(idx - 9) });
 
-        self.fb.set(x, y, rgba & 0x00ff_ffff, current_ts);
+        self.fb.set(x, y, rgba | 0xff00_0000, current_ts);
     }
 
     #[cfg(feature = "alpha")]
@@ -181,8 +181,12 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
         let green: u32 = (((current >> 16) & 0xff) * alpha_comp + green * alpha) / 0xff;
         let blue: u32 = (((current >> 8) & 0xff) * alpha_comp + blue * alpha) / 0xff;
 
-        self.fb
-            .set(x, y, (red << 16) | (green << 8) | blue, current_ts);
+        self.fb.set(
+            x,
+            y,
+            (red << 16) | (green << 8) | blue | 0xff00_0000,
+            current_ts,
+        );
     }
 
     #[inline(always)]
