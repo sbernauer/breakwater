@@ -14,7 +14,6 @@ use crate::{
     statistics::StatisticsInformationEvent,
 };
 
-mod canvas_renderer;
 mod dynamic_overlay;
 mod view;
 
@@ -139,10 +138,10 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> DisplaySink<FB> 
     /// This should only run on the main thread
     #[instrument(skip(self), err)]
     async fn run(&mut self) -> eyre::Result<()> {
-        // block_in_place below should only be used in a MultiThread runtime
         assert_eq!(
             tokio::runtime::Handle::current().runtime_flavor(),
-            tokio::runtime::RuntimeFlavor::MultiThread
+            tokio::runtime::RuntimeFlavor::MultiThread,
+            "block_in_place below should only be used in a MultiThread runtime"
         );
 
         tokio::task::block_in_place(move || {
@@ -159,7 +158,6 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiSink<FB> {
     fn run_eframe_display(&self) -> Result<(), eframe::Error> {
         let options = eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default(),
-            renderer: eframe::Renderer::Glow,
             window_builder: Some(Box::new(|builder| builder.with_app_id("breakwater"))),
             ..Default::default()
         };
@@ -183,8 +181,7 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiSink<FB> {
                     stats,
                     advertised_endpoints,
                     ui_overlay,
-                )
-                .expect("failed to create egui frontend");
+                );
 
                 Ok(Box::new(frontend))
             }),
