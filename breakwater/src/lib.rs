@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 pub mod cli_args;
 pub mod connection_buffer;
 #[cfg(feature = "prometheus")]
