@@ -86,6 +86,8 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiView<FB> {
             Vec2::new(bg_rect.width() * w_shrink, bg_rect.height() * h_shrink),
         );
 
+        // clear background
+        bg.rect_filled(bg_rect, 0.0, Color32::BLACK);
         bg.image(self.canvas_texture.id(), draw_rect, vp_uv, Color32::WHITE);
     }
 }
