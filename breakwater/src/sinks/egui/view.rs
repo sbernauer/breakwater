@@ -1,14 +1,16 @@
 use std::sync::Arc;
 
 use breakwater_parser::{FrameBuffer, PixelColorBytes};
-use egui::{Color32, ColorImage, Pos2, Rect, TextureHandle, TextureOptions, Vec2};
+use eframe::wgpu::{TexelCopyBufferLayout, TexelCopyTextureInfo, Texture};
+use egui::{Color32, ColorImage, LayerId, Pos2, Rect, TextureId, TextureOptions, Vec2};
 use tokio::sync::broadcast;
 
 use super::{ViewportConfig, dynamic_overlay::UiOverlay};
 use crate::statistics::StatisticsInformationEvent;
 
 pub struct EguiView<FB: FrameBuffer + PixelColorBytes> {
-    canvas_texture: TextureHandle,
+    canvas_texture: Texture,
+    canvas_texture_id: TextureId,
 
     fb: Arc<FB>,
     viewports: Vec<ViewportConfig>,
@@ -30,14 +32,51 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiView<FB> {
         advertised_endpoints: Vec<String>,
         ui: Arc<UiOverlay>,
     ) -> Self {
-        let canvas_texture_id = cc.egui_ctx.tex_manager().write().alloc(
-            "canvas texture".into(),
-            ColorImage::filled([fb.get_width(), fb.get_height()], Color32::BLACK).into(),
-            TextureOptions::NEAREST,
-        );
-        let canvas_texture = TextureHandle::new(cc.egui_ctx.tex_manager(), canvas_texture_id);
+        let render_state = cc.wgpu_render_state.as_ref().expect("wgpu renderer active");
+
+        let canvas_texture_id;
+        {
+            let tex_manager = cc.egui_ctx.tex_manager();
+            let mut tex_manager = tex_manager.write();
+
+            canvas_texture_id = tex_manager.alloc(
+                "canvas texture".into(),
+                ColorImage::filled([fb.get_width(), fb.get_height()], Color32::BLACK).into(),
+                TextureOptions::NEAREST,
+            );
+
+            let mut delta = tex_manager.take_delta();
+
+            let mut renderer = render_state.renderer.write();
+            for id in delta.free.drain() {
+                renderer.free_texture(&id);
+            }
+            for (id, deltas) in delta.set.drain() {
+                for delta in deltas {
+                    if delta.image.width() != 0 && delta.image.height() != 0 {
+                        renderer.update_texture(
+                            &render_state.device,
+                            &render_state.queue,
+                            id,
+                            &delta,
+                        );
+                    }
+                }
+            }
+        }
+
+        let canvas_texture = render_state
+            .renderer
+            .read()
+            .texture(&canvas_texture_id)
+            .expect("where did our texture go??")
+            .texture
+            .as_ref()
+            .expect("this should be a real texture")
+            .clone();
 
         Self {
+            canvas_texture_id,
             canvas_texture,
 
             fb,
@@ -86,9 +125,9 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiView<FB> {
             Vec2::new(bg_rect.width() * w_shrink, bg_rect.height() * h_shrink),
         );
 
-        // clear background
+        // clear viewport
         bg.rect_filled(bg_rect, 0.0, Color32::BLACK);
-        bg.image(self.canvas_texture.id(), draw_rect, vp_uv, Color32::WHITE);
+        bg.image(self.canvas_texture_id, draw_rect, vp_uv, Color32::WHITE);
     }
 }
 
@@ -118,12 +157,14 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> eframe::App for 
             }
         }
 
-        self.canvas_texture.set(
-            ColorImage::from_rgba_unmultiplied(
-                [self.fb.get_width(), self.fb.get_height()],
-                self.fb.pixel_color_bytes(),
+        ui.layer_painter(LayerId::background()).add(
+            eframe::egui_wgpu::Callback::new_paint_callback(
+                ui.clip_rect(),
+                CanvasUpload {
+                    fb: self.fb.clone(),
+                    texture: self.canvas_texture.clone(),
+                },
             ),
-            TextureOptions::NEAREST,
         );
 
         for (i, vp) in self.viewports.iter().copied().enumerate() {
@@ -177,5 +218,53 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> eframe::App for 
             }
         }
         ctx.request_repaint();
+    }
+}
+
+struct CanvasUpload<FB> {
+    texture: Texture,
+    fb: Arc<FB>,
+}
+
+impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> eframe::egui_wgpu::CallbackTrait
+    for CanvasUpload<FB>
+{
+    fn prepare(
+        &self,
+        _device: &eframe::wgpu::Device,
+        queue: &eframe::wgpu::Queue,
+        _screen_descriptor: &eframe::egui_wgpu::ScreenDescriptor,
+        _egui_encoder: &mut eframe::wgpu::CommandEncoder,
+        _callback_resources: &mut eframe::egui_wgpu::CallbackResources,
+    ) -> Vec<eframe::wgpu::CommandBuffer> {
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: eframe::wgpu::Origin3d::ZERO,
+                aspect: eframe::wgpu::TextureAspect::All,
+            },
+            self.fb.pixel_color_bytes(),
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(self.fb.get_width() as u32 * 4 /* bytes per texel */),
+                rows_per_image: Some(self.fb.get_height() as _),
+            },
+            eframe::wgpu::Extent3d {
+                width: self.fb.get_width() as _,
+                height: self.fb.get_height() as _,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        vec![]
+    }
+
+    fn paint(
+        &self,
+        _info: egui::PaintCallbackInfo,
+        _render_pass: &mut eframe::wgpu::RenderPass<'static>,
+        _callback_resources: &eframe::egui_wgpu::CallbackResources,
+    ) {
     }
 }
