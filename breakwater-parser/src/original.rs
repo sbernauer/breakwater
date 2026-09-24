@@ -30,8 +30,7 @@ pub(crate) const PXMULTI_PATTERN: u64 = string_to_number(b"PXMULTI\0");
 pub struct OriginalParser<FB: FrameBuffer> {
     connection_x_offset: usize,
     connection_y_offset: usize,
-    /// How often the client requested the help on this connection. It needs to live across
-    /// [`Parser::parse`] calls, as every read from the socket results in a separate call.
+    /// How often the client requested the help on this connection. It is tracked per connection.
     help_count: u8,
     fb: Arc<FB>,
     #[cfg(feature = "binary-sync-pixels")]
