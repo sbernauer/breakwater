@@ -58,6 +58,8 @@ if cfg!(feature = "binary-sync-pixels") {
 
 pub const ALT_HELP_TEXT: &[u8] = b"Stop spamming HELP!\n";
 
+pub const MAX_HELP_CALLS_PER_CONNECTION: u8 = 3;
+
 pub trait Parser {
     /// Returns the last byte parsed. The next parsing loop will again contain all data that was not parsed.
     fn parse(&mut self, buffer: &[u8], response: &mut Vec<u8>) -> usize;

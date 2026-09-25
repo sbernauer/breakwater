@@ -1,9 +1,11 @@
 use std::{
-    simd::{Simd, num::SimdUint, u32x8},
+    simd::{ToBytes, num::SimdUint, u8x8, u16x4},
     sync::Arc,
 };
 
-use crate::{ALT_HELP_TEXT, HELP_TEXT, Parser, framebuffer::FrameBuffer};
+use crate::{
+    ALT_HELP_TEXT, HELP_TEXT, MAX_HELP_CALLS_PER_CONNECTION, Parser, framebuffer::FrameBuffer,
+};
 
 /// The framebuffer capabilities [`OriginalParser`] requires.
 ///
@@ -28,6 +30,8 @@ pub(crate) const PXMULTI_PATTERN: u64 = string_to_number(b"PXMULTI\0");
 pub struct OriginalParser<FB: FrameBuffer> {
     connection_x_offset: usize,
     connection_y_offset: usize,
+    /// How often the client requested the help on this connection. It is tracked per connection.
+    help_count: u8,
     fb: Arc<FB>,
     #[cfg(feature = "binary-sync-pixels")]
     remaining_pixel_sync: Option<RemainingPixelSync>,
@@ -45,6 +49,7 @@ impl<FB: FrameBuffer> OriginalParser<FB> {
         Self {
             connection_x_offset: 0,
             connection_y_offset: 0,
+            help_count: 0,
             fb,
             #[cfg(feature = "binary-sync-pixels")]
             remaining_pixel_sync: None,
@@ -62,7 +67,6 @@ impl<FB: OriginalParserFrameBuffer> Parser for OriginalParser<FB> {
         let current_ts = self.fb.current_ts();
 
         let mut last_byte_parsed = 0;
-        let mut help_count = 0;
 
         let mut i = 0; // We can't use a for loop here because Rust don't lets use skip characters by incrementing i
         let loop_end = buffer.len().saturating_sub(PARSER_LOOKAHEAD); // Let's extract the .len() call and the subtraction into it's own variable so we only compute it once
@@ -304,14 +308,14 @@ impl<FB: OriginalParserFrameBuffer> Parser for OriginalParser<FB> {
                 i += 4;
                 last_byte_parsed = i + 1;
 
-                match help_count {
-                    0..=2 => {
+                match self.help_count {
+                    0..MAX_HELP_CALLS_PER_CONNECTION => {
                         response.extend_from_slice(HELP_TEXT);
-                        help_count += 1;
+                        self.help_count += 1;
                     }
-                    3 => {
+                    MAX_HELP_CALLS_PER_CONNECTION => {
                         response.extend_from_slice(ALT_HELP_TEXT);
-                        help_count += 1;
+                        self.help_count += 1;
                     }
                     _ => {
                         // The client has requested the help to often, let's just ignore it
@@ -343,35 +347,26 @@ const fn string_to_number(input: &[u8]) -> u64 {
         | (input[0] as u64)
 }
 
-const SHIFT_PATTERN: Simd<u32, 8> = u32x8::from_array([4, 0, 12, 8, 20, 16, 28, 24]);
-const SIMD_6: Simd<u32, 8> = u32x8::from_array([6; 8]);
-const SIMD_F: Simd<u32, 8> = u32x8::from_array([0xf; 8]);
-const SIMD_9: Simd<u32, 8> = u32x8::from_array([9; 8]);
-
-/// Parse a slice of 8 characters into a single u32 number
-/// is undefined behavior for invalid characters
+/// Parses 8 hex characters into a u32, the first two characters end up in the least significant
+/// byte. Invalid characters result in some garbage color, but never in undefined behavior.
+///
+/// All characters are processed at once in 8 u8 lanes, which only needs SSE2 on x86. This is a
+/// lot faster than working on 8 u32 lanes (which needs variable shifts and a horizontal reduction)
+/// and also faster than doing the same in a general purpose register, as the parsing loop already
+/// keeps the integer ALUs busy.
 #[inline(always)]
 pub(crate) fn simd_unhex(value: *const u8) -> u32 {
-    // Feel free to find a better, but fast, way, to cast all integers as u32
-    let input = unsafe {
-        u32x8::from_array([
-            u32::from(*value),
-            u32::from(*value.add(1)),
-            u32::from(*value.add(2)),
-            u32::from(*value.add(3)),
-            u32::from(*value.add(4)),
-            u32::from(*value.add(5)),
-            u32::from(*value.add(6)),
-            u32::from(*value.add(7)),
-        ])
-    };
-    // Heavily inspired by https://github.com/nervosnetwork/faster-hex/blob/a4c06b387ddeeea311c9e84a3adcaf01015cf40e/src/decode.rs#L80
-    let sr6 = input >> SIMD_6;
-    let and15 = input & SIMD_F;
-    let mul = sr6 * SIMD_9;
-    let hexed = and15 + mul;
-    let shifted = hexed << SHIFT_PATTERN;
-    shifted.reduce_or()
+    let chars = u8x8::from_array(unsafe { (value as *const [u8; 8]).read_unaligned() });
+
+    // Per character `(char & 0xf) + (char >> 6) * 9`, which is 0-15 for `0-9`, `a-f` and `A-F`.
+    // Inspired by https://github.com/nervosnetwork/faster-hex/blob/a4c06b387ddeeea311c9e84a3adcaf01015cf40e/src/decode.rs#L80
+    let nibbles = (chars & u8x8::splat(0xf)) + (chars >> u8x8::splat(6)) * u8x8::splat(9);
+
+    // Every u16 lane holds the two characters forming one byte of the result, the first one being
+    // the high nibble. The truncating cast drops everything that got shifted beyond that byte.
+    let pairs = u16x4::from_le_bytes(nibbles);
+    let bytes = ((pairs << u16x4::splat(4)) | (pairs >> u16x4::splat(8))).cast::<u8>();
+    u32::from_le_bytes(bytes.to_array())
 }
 
 #[inline(always)]
@@ -404,4 +399,74 @@ pub(crate) fn parse_pixel_coordinates(
     *current_index += 1;
     let (y, y_visited) = parse_coordinate(buffer, current_index);
     (x, y, x_visited && y_visited)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::SimpleFrameBuffer;
+
+    #[test]
+    fn help_is_rate_limited_across_parse_calls() {
+        let mut parser = OriginalParser::new(Arc::new(SimpleFrameBuffer::new(640, 480)));
+
+        // Every parse call simulates a separate read from the socket, which (as the server does
+        // it) is followed by PARSER_LOOKAHEAD zeroed bytes
+        let mut buffer = b"HELP\n".to_vec();
+        buffer.resize(buffer.len() + PARSER_LOOKAHEAD, 0);
+
+        let expected: [&[u8]; 6] = [HELP_TEXT, HELP_TEXT, HELP_TEXT, ALT_HELP_TEXT, b"", b""];
+        for (call, expected) in expected.into_iter().enumerate() {
+            let mut response = Vec::new();
+            parser.parse(&buffer, &mut response);
+            assert_eq!(
+                response, expected,
+                "Unexpected response to HELP on parse call {call}"
+            );
+        }
+    }
+
+    /// Parses every pair of hex digits on its own, the first pair ends up in the least significant
+    /// byte
+    fn unhex_reference(chars: [u8; 8]) -> u32 {
+        let bytes: [u8; 4] = std::array::from_fn(|pair| {
+            let pair = std::str::from_utf8(&chars[pair * 2..pair * 2 + 2]).expect("Not utf-8");
+            u8::from_str_radix(pair, 16).expect("Not a hex number")
+        });
+        u32::from_le_bytes(bytes)
+    }
+
+    /// Only valid hex digits need to be parsed correctly, invalid ones can result in any color
+    #[test]
+    fn simd_unhex_matches_reference() {
+        const HEX_DIGITS: &[u8] = b"0123456789abcdefABCDEF";
+
+        // xorshift64, we don't want a dependency just to get some random bytes
+        let mut state = 0x1234_5678_9abc_def0_u64;
+        for _ in 0..1_000_000 {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+
+            let chars = state
+                .to_le_bytes()
+                .map(|byte| HEX_DIGITS[byte as usize % HEX_DIGITS.len()]);
+
+            assert_eq!(
+                simd_unhex(chars.as_ptr()),
+                unhex_reference(chars),
+                "Different result for {chars:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn simd_unhex_parses_hex() {
+        assert_eq!(simd_unhex(b"12345678".as_ptr()), 0x7856_3412);
+        assert_eq!(simd_unhex(b"abcdefAB".as_ptr()), 0xabef_cdab);
+        assert_eq!(simd_unhex(b"ABCDEFab".as_ptr()), 0xabef_cdab);
+        assert_eq!(simd_unhex(b"00ff00ff".as_ptr()), 0xff00_ff00);
+        // RGB followed by the newline and the next command
+        assert_eq!(simd_unhex(b"c0ffee\nP".as_ptr()) & 0x00ff_ffff, 0x00ee_ffc0);
+    }
 }
