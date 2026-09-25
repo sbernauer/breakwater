@@ -136,7 +136,7 @@ impl<FB: OriginalParserFrameBuffer> Parser for OriginalParser<FB> {
 
                             let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(i - 7) });
 
-                            self.fb.set(x, y, rgba & 0x00ff_ffff, current_ts);
+                            self.fb.set(x, y, rgba | 0xff00_0000, current_ts);
                             continue;
                         }
 
@@ -148,7 +148,7 @@ impl<FB: OriginalParserFrameBuffer> Parser for OriginalParser<FB> {
 
                             let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(i - 9) });
 
-                            self.fb.set(x, y, rgba & 0x00ff_ffff, current_ts);
+                            self.fb.set(x, y, rgba | 0xff00_0000, current_ts);
                             continue;
                         }
                         #[cfg(feature = "alpha")]
@@ -177,8 +177,12 @@ impl<FB: OriginalParserFrameBuffer> Parser for OriginalParser<FB> {
                             let blue: u32 =
                                 (((current >> 8) & 0xff) * alpha_comp + blue * alpha) / 0xff;
 
-                            self.fb
-                                .set(x, y, (red << 16) | (green << 8) | blue, current_ts);
+                            self.fb.set(
+                                x,
+                                y,
+                                (red << 16) | (green << 8) | blue | 0xff00_0000,
+                                current_ts,
+                            );
                             continue;
                         }
 
@@ -191,7 +195,7 @@ impl<FB: OriginalParserFrameBuffer> Parser for OriginalParser<FB> {
 
                             let rgba: u32 = (base << 16) | (base << 8) | base;
 
-                            self.fb.set(x, y, rgba, current_ts);
+                            self.fb.set(x, y, rgba | 0xff00_0000, current_ts);
 
                             continue;
                         }

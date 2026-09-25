@@ -1,20 +1,18 @@
 use std::sync::Arc;
 
 use breakwater_parser::{FrameBuffer, PixelColorBytes};
-use color_eyre::eyre::{self, ContextCompat};
-use eframe::egui_glow;
+use eframe::wgpu::{TexelCopyBufferLayout, TexelCopyTextureInfo, Texture};
+use egui::{Color32, ColorImage, LayerId, Pos2, Rect, TextureId, TextureOptions, Vec2};
 use tokio::sync::broadcast;
 
-use super::{
-    ViewportConfig,
-    canvas_renderer::{CanvasRenderer, Vertex},
-    dynamic_overlay::UiOverlay,
-};
+use super::{ViewportConfig, dynamic_overlay::UiOverlay};
 use crate::statistics::StatisticsInformationEvent;
 
 pub struct EguiView<FB: FrameBuffer + PixelColorBytes> {
+    canvas_texture: Texture,
+    canvas_texture_id: TextureId,
+
     fb: Arc<FB>,
-    canvas_renderer: Arc<CanvasRenderer<FB>>,
     viewports: Vec<ViewportConfig>,
     terminate_rx: broadcast::Receiver<()>,
     stats_rx: broadcast::Receiver<StatisticsInformationEvent>,
@@ -33,102 +31,104 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> EguiView<FB> {
         stats_rx: broadcast::Receiver<StatisticsInformationEvent>,
         advertised_endpoints: Vec<String>,
         ui: Arc<UiOverlay>,
-    ) -> eyre::Result<Self> {
-        let gl_context = cc
-            .gl
+    ) -> Self {
+        let render_state = cc.wgpu_render_state.as_ref().expect("wgpu renderer active");
+
+        let canvas_texture_id;
+        {
+            let tex_manager = cc.egui_ctx.tex_manager();
+            let mut tex_manager = tex_manager.write();
+
+            canvas_texture_id = tex_manager.alloc(
+                "canvas texture".into(),
+                ColorImage::filled([fb.get_width(), fb.get_height()], Color32::BLACK).into(),
+                TextureOptions::NEAREST,
+            );
+
+            let mut delta = tex_manager.take_delta();
+
+            let mut renderer = render_state.renderer.write();
+            for id in delta.free.drain() {
+                renderer.free_texture(&id);
+            }
+            for (id, deltas) in delta.set.drain() {
+                for delta in deltas {
+                    if delta.image.width() != 0 && delta.image.height() != 0 {
+                        renderer.update_texture(
+                            &render_state.device,
+                            &render_state.queue,
+                            id,
+                            &delta,
+                        );
+                    }
+                }
+            }
+        }
+
+        let canvas_texture = render_state
+            .renderer
+            .read()
+            .texture(&canvas_texture_id)
+            .expect("where did our texture go??")
+            .texture
             .as_ref()
-            .context("egui backend 'glow' is not available")?;
+            .expect("this should be a real texture")
+            .clone();
 
-        let canvas_renderer = CanvasRenderer::new(
-            gl_context,
-            fb.clone(),
-            viewports.len().try_into().expect("at least one viewport"),
-        );
-        let canvas_renderer = Arc::new(canvas_renderer);
-
-        Ok(Self {
-            latest_stats: StatisticsInformationEvent::default(),
-            ui,
+        Self {
+            canvas_texture_id,
+            canvas_texture,
 
             fb,
             viewports,
-            canvas_renderer,
             terminate_rx,
             stats_rx,
             advertised_endpoints,
-        })
+
+            ui,
+            latest_stats: StatisticsInformationEvent::default(),
+        }
     }
 
-    fn draw_canvas(&self, ctx: &egui::Context, view_port_index: usize, view_port: ViewportConfig) {
-        let rect = ctx.content_rect();
-        let painter = ctx.layer_painter(egui::LayerId::background());
+    fn draw_canvas(&self, ctx: &egui::Context, view_port: ViewportConfig) {
+        // get egui background painter
+        let bg = ctx.layer_painter(egui::LayerId::background());
+        let bg_rect = bg.clip_rect();
+        let bg_ratio = bg_rect.aspect_ratio();
 
-        let canvas_renderer = self.canvas_renderer.clone();
-        let fb = self.fb.clone();
+        let vp_rect = Rect::from_min_size(
+            Pos2::new(view_port.x as _, view_port.y as _),
+            Vec2::new(view_port.width as _, view_port.height as _),
+        );
+        let vp_ratio = vp_rect.aspect_ratio();
 
-        let callback = egui::PaintCallback {
-            rect,
-            callback: std::sync::Arc::new(egui_glow::CallbackFn::new(move |info, painter| {
-                let new_vertices = calc_new_vertices(
-                    &view_port,
-                    [
-                        info.viewport_in_pixels().width_px,
-                        info.viewport_in_pixels().height_px,
-                    ],
-                    [fb.get_width(), fb.get_height()],
-                );
+        // determine how to shrink the area we draw to
+        // to keep the correct aspect ratio
+        let mut w_shrink = 1.0;
+        let mut h_shrink = 1.0;
 
-                canvas_renderer.prepare(painter.gl(), view_port_index, Some(new_vertices));
-                canvas_renderer.paint(painter.gl(), view_port_index);
-            })),
-        };
+        if vp_ratio > bg_ratio {
+            h_shrink = bg_ratio / vp_ratio;
+        } else {
+            w_shrink = vp_ratio / bg_ratio;
+        }
 
-        painter.add(callback);
+        let fb_w = self.fb.get_width() as f32;
+        let fb_h = self.fb.get_height() as f32;
+        let vp_uv = Rect::from_two_pos(
+            Pos2::new(vp_rect.min.x / fb_w, vp_rect.min.y / fb_h),
+            Pos2::new(vp_rect.max.x / fb_w, vp_rect.max.y / fb_h),
+        );
+
+        let draw_rect = Rect::from_center_size(
+            bg_rect.center(),
+            Vec2::new(bg_rect.width() * w_shrink, bg_rect.height() * h_shrink),
+        );
+
+        // clear viewport
+        bg.rect_filled(bg_rect, 0.0, Color32::BLACK);
+        bg.image(self.canvas_texture_id, draw_rect, vp_uv, Color32::WHITE);
     }
-}
-
-/// calculates vertices that the canvas keeps its aspect ratio, but is resized to fit onto the given viewport
-fn calc_new_vertices(
-    canvas_view_port: &ViewportConfig,
-    [pixel_width, pixel_height]: [i32; 2],
-    [canvas_width, canvas_height]: [usize; 2],
-) -> [Vertex; 4] {
-    let mut a = 1f32;
-    let mut b = 1f32;
-
-    if pixel_width as f32 / pixel_height as f32
-        > canvas_view_port.width as f32 / canvas_view_port.height as f32
-    {
-        a = (pixel_height as f32 / pixel_width as f32)
-            * (canvas_view_port.width as f32 / canvas_view_port.height as f32);
-    } else {
-        b = (pixel_width as f32 / pixel_height as f32)
-            * (canvas_view_port.height as f32 / canvas_view_port.width as f32);
-    }
-
-    let u = canvas_view_port.x as f32 / canvas_width as f32;
-    let uu = canvas_view_port.width as f32 / canvas_width as f32;
-    let v = canvas_view_port.y as f32 / canvas_height as f32;
-    let vv = canvas_view_port.height as f32 / canvas_height as f32;
-
-    [
-        Vertex {
-            position: [-a, b],
-            tex_coords: [u, v],
-        },
-        Vertex {
-            position: [-a, -b],
-            tex_coords: [u, v + vv],
-        },
-        Vertex {
-            position: [a, b],
-            tex_coords: [u + uu, v],
-        },
-        Vertex {
-            position: [a, -b],
-            tex_coords: [u + uu, v + vv],
-        },
-    ]
 }
 
 impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> eframe::App for EguiView<FB> {
@@ -157,10 +157,20 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> eframe::App for 
             }
         }
 
+        ui.layer_painter(LayerId::background()).add(
+            eframe::egui_wgpu::Callback::new_paint_callback(
+                ui.clip_rect(),
+                CanvasUpload {
+                    fb: self.fb.clone(),
+                    texture: self.canvas_texture.clone(),
+                },
+            ),
+        );
+
         for (i, vp) in self.viewports.iter().copied().enumerate() {
             if i == 0 {
                 // first view port on main window
-                self.draw_canvas(ctx, i, vp);
+                self.draw_canvas(ctx, vp);
                 self.ui.draw_ui(
                     i as u32,
                     ctx,
@@ -186,7 +196,7 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> eframe::App for 
                             return true;
                         }
 
-                        self.draw_canvas(ctx, i, vp);
+                        self.draw_canvas(ctx, vp);
                         self.ui.draw_ui(
                             i as u32,
                             ctx,
@@ -208,5 +218,53 @@ impl<FB: FrameBuffer + PixelColorBytes + Send + Sync + 'static> eframe::App for 
             }
         }
         ctx.request_repaint();
+    }
+}
+
+struct CanvasUpload<FB> {
+    texture: Texture,
+    fb: Arc<FB>,
+}
+
+impl<FB: FrameBuffer + PixelColorBytes + Sync + Send> eframe::egui_wgpu::CallbackTrait
+    for CanvasUpload<FB>
+{
+    fn prepare(
+        &self,
+        _device: &eframe::wgpu::Device,
+        queue: &eframe::wgpu::Queue,
+        _screen_descriptor: &eframe::egui_wgpu::ScreenDescriptor,
+        _egui_encoder: &mut eframe::wgpu::CommandEncoder,
+        _callback_resources: &mut eframe::egui_wgpu::CallbackResources,
+    ) -> Vec<eframe::wgpu::CommandBuffer> {
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: eframe::wgpu::Origin3d::ZERO,
+                aspect: eframe::wgpu::TextureAspect::All,
+            },
+            self.fb.pixel_color_bytes(),
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(self.fb.get_width() as u32 * 4 /* bytes per texel */),
+                rows_per_image: Some(self.fb.get_height() as _),
+            },
+            eframe::wgpu::Extent3d {
+                width: self.fb.get_width() as _,
+                height: self.fb.get_height() as _,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        vec![]
+    }
+
+    fn paint(
+        &self,
+        _info: egui::PaintCallbackInfo,
+        _render_pass: &mut eframe::wgpu::RenderPass<'static>,
+        _callback_resources: &eframe::egui_wgpu::CallbackResources,
+    ) {
     }
 }

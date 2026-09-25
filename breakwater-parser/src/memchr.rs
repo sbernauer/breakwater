@@ -59,7 +59,9 @@ impl<FB: FrameBuffer> Parser for MemchrParser<FB> {
                     .parse()
                     .expect("rgba was not a number");
 
-                self.fb.set(x as usize, y as usize, rgba, current_ts);
+                // TODO: Support alpha channel (behind alpha feature flag)
+                self.fb
+                    .set(x as usize, y as usize, rgba | 0xff00_0000, current_ts);
             }
         }
 
