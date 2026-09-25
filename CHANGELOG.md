@@ -23,6 +23,7 @@ All notable changes to this project will be documented in this file.
 - The CLI argument `--vnc-listen-address` now defaults to `0.0.0.0:5900` and `[::]:5900`, so that `--enable-sink vnc` alone is enough ([#101]).
   Both defaults are needed, as libvncserver binds a dedicated socket per IP version.
 - Improve derivation of the advertised endpoints from the `--listener-address`es ([#105]).
+- We now only allow 3 HELP calls per connection. Previously, it was 3 HELP calls per read from the socket ([#107]).
 
 ### Fixed
 
@@ -41,6 +42,7 @@ All notable changes to this project will be documented in this file.
 [#103]: https://github.com/sbernauer/breakwater/pull/103
 [#104]: https://github.com/sbernauer/breakwater/pull/104
 [#105]: https://github.com/sbernauer/breakwater/pull/105
+[#107]: https://github.com/sbernauer/breakwater/pull/107
 
 ## [0.22.0] - 2026-06-20
 
