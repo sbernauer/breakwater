@@ -274,27 +274,26 @@ fearless_simd::kernel!(
         // All indices are < 16 or `ZERO`, so the lower 16 bytes are all we need
         let shuffled = _mm_shuffle_epi8(_mm256_castsi256_si128(chars), indices);
 
-        // `0-9` -> 0-9, and the low nibble of `a-f` and `A-F` is 1-6. Zeroed bytes stay 0.
+        // `0-9` -> 0-9, and the low nibble of `a-f` and `A-F` is 1-6. Letters (> '@') need 9 added
+        // to become 10-15. Zeroed bytes stay 0.
         let low_nibbles = _mm_and_si128(shuffled, _mm_set1_epi8(0x0f));
+        let letters = _mm_cmpgt_epi8(shuffled, _mm_set1_epi8(0x40));
+        let nibbles = _mm_add_epi8(low_nibbles, _mm_and_si128(letters, _mm_set1_epi8(9)));
+
+        // i16 lanes 0-2: `high * 16 + low` for the three channels, lane 3 is 0 (alpha).
+        // i16 lanes 4-7: `d0 * 10 + d1` for the digit pairs of x and y.
+        let pairs = _mm_maddubs_epi16(
+            nibbles,
+            _mm_setr_epi8(16, 1, 16, 1, 16, 1, 0, 0, 10, 1, 10, 1, 10, 1, 10, 1),
+        );
 
         // x and y: `(d0 * 10 + d1) * 100 + (d2 * 10 + d3)`, in the two upper i32 lanes
-        let pairs = _mm_maddubs_epi16(
-            low_nibbles,
-            _mm_setr_epi8(0, 0, 0, 0, 0, 0, 0, 0, 10, 1, 10, 1, 10, 1, 10, 1),
-        );
         let coordinates = _mm_madd_epi16(pairs, _mm_setr_epi16(0, 0, 0, 0, 100, 1, 100, 1));
         let x = _mm_extract_epi32::<2>(coordinates) as u32;
         let y = _mm_extract_epi32::<3>(coordinates) as u32;
 
-        // rgb: letters (> '@') need 9 added to their low nibble to become 10-15
-        let letters = _mm_cmpgt_epi8(shuffled, _mm_set1_epi8(0x40));
-        let nibbles = _mm_add_epi8(low_nibbles, _mm_and_si128(letters, _mm_set1_epi8(9)));
-        // `high * 16 + low` for the three channels in the lower i16 lanes, lane 3 is 0 (alpha)
-        let channels = _mm_maddubs_epi16(
-            nibbles,
-            _mm_setr_epi8(16, 1, 16, 1, 16, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
-        );
-        let rgb = _mm_cvtsi128_si32(_mm_packus_epi16(channels, channels)) as u32;
+        // The channels fit into a byte, the saturated coordinate pairs end up in bytes 4-7
+        let rgb = _mm_cvtsi128_si32(_mm_packus_epi16(pairs, pairs)) as u32;
 
         (x, y, rgb, pattern.valid)
     }
