@@ -57,11 +57,13 @@ impl<FB: FrameBuffer> Parser for FearParser<FB> {
             if current_command & 0x00ff_ffff == PX_PATTERN {
                 i += 3;
 
-                let (x, y, rgb, bytes_parsed) = dispatch!(self.simd_level, simd => simd_parse(simd, unsafe { buffer.as_ptr().add(i)}));
+                let (x, y, rgb, valid, newline_pos) = dispatch!(self.simd_level, simd => simd_parse(simd, unsafe { buffer.as_ptr().add(i)}));
 
-                if bytes_parsed > 0 {
-                    last_byte_parsed = i + bytes_parsed as usize;
-                    i += bytes_parsed as usize + 1; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
+                // Branch on `valid` instead of folding it into the advance: a predicted branch keeps
+                // the next `i` independent of the shuffle table load.
+                if valid {
+                    last_byte_parsed = i + newline_pos as usize;
+                    i += newline_pos as usize + 1; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
                     self.fb
                         .set(x as usize, y as usize, rgb & 0x00ff_ffff, current_ts);
@@ -154,7 +156,7 @@ impl<FB: FrameBuffer> Parser for FearParser<FB> {
 }
 
 #[simd]
-fn simd_parse<S: Simd>(simd: S, buffer: *const u8) -> (u16, u16, u32, u8) {
+fn simd_parse<S: Simd>(simd: S, buffer: *const u8) -> (u16, u16, u32, bool, u8) {
     // Constants
     let simd_0_chars = u8x32::splat(simd, b'0');
     let simd_spaces = u8x32::splat(simd, b' ');
@@ -170,15 +172,19 @@ fn simd_parse<S: Simd>(simd: S, buffer: *const u8) -> (u16, u16, u32, u8) {
     let chars = u8x32::simd_from(simd, buffer_first_32);
     let digits = chars.sub(simd_0_chars);
 
-    let spaces_bitmask = chars.simd_eq(simd_spaces).to_bitmask() as u16;
-    let newlines_bitmask = chars.simd_eq(simd_newlines).to_bitmask() as u16;
-    let spaces_bitmask = (spaces_bitmask | newlines_bitmask) & SPACES_BITMASK_MASK;
+    let spaces_bitmask = chars.simd_eq(simd_spaces).to_bitmask() as u16 & SPACES_BITMASK_MASK;
+    let newlines_bitmask = chars.simd_eq(simd_newlines).to_bitmask() as u32;
+
+    // The command length comes straight from the newline position (32 if there is none), so the
+    // caller's next `i` doesn't have to wait for the table load below.
+    let newline_pos = newlines_bitmask.trailing_zeros() as u8;
 
     // dbg!(format!("{spaces_bitmask:032b}"));
 
     // SAFETY: As SHUFFLE_PATTERNS has length `u16::MAX as usize + 1` and we use a us16 to index into it it will always succeed
-    let (bytes_parsed, shuffle_pattern) =
+    let (table_bytes_parsed, shuffle_pattern) =
         unsafe { *SHUFFLE_PATTERNS.get_unchecked(spaces_bitmask as usize) };
+    let valid = table_bytes_parsed > 0;
     let shuffle_pattern = u8x32::simd_from(simd, shuffle_pattern);
 
     // This swizzles the input digits (ASCII - b'0') so that x is at byte 0-3, y at byte 4-7 and
@@ -200,7 +206,7 @@ fn simd_parse<S: Simd>(simd: S, buffer: *const u8) -> (u16, u16, u32, u8) {
     let rgb = (hex << 4) | (hex >> 8);
     let rgb = u32::from_le_bytes([rgb[10] as u8, rgb[9] as u8, rgb[8] as u8, 0]);
 
-    (x, y, rgb, bytes_parsed)
+    (x, y, rgb, valid, newline_pos)
 }
 
 // Let's add the stuff manually, we can always automate later
@@ -399,7 +405,9 @@ mod tests {
     fn simd_parse(buffer: *const u8) -> (u16, u16, u32, u8) {
         let level = Level::new();
 
-        dispatch!(level, simd => super::simd_parse(simd, buffer))
+        let (x, y, rgb, valid, newline_pos) =
+            dispatch!(level, simd => super::simd_parse(simd, buffer));
+        (x, y, rgb, if valid { newline_pos } else { 0 })
     }
 
     #[rstest]
