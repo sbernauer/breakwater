@@ -1,8 +1,13 @@
-use std::ops::Sub;
+#[cfg(target_arch = "x86_64")]
+use std::arch::x86_64::{
+    _mm_add_epi8, _mm_and_si128, _mm_cmpgt_epi8, _mm_cvtsi128_si32, _mm_extract_epi32,
+    _mm_load_si128, _mm_madd_epi16, _mm_maddubs_epi16, _mm_packus_epi16, _mm_set1_epi8,
+    _mm_setr_epi8, _mm_setr_epi16, _mm_shuffle_epi8, _mm256_castsi256_si128, _mm256_cmpeq_epi8,
+    _mm256_loadu_si256, _mm256_movemask_epi8, _mm256_set1_epi8,
+};
 use std::sync::Arc;
 
-use fearless_simd::{Bytes, Level, Simd, SimdFrom, SimdMask, dispatch};
-use fearless_simd::{SimdBase, u8x32, u16x16};
+use fearless_simd::{Level, Simd, SimdBase, SimdFrom, SimdMask, dispatch, u8x32};
 use fearless_simd_macros::simd;
 
 use crate::original::{HELP_PATTERN, PX_PATTERN};
@@ -12,10 +17,22 @@ use crate::{ALT_HELP_TEXT, FrameBuffer, HELP_TEXT, MAX_HELP_CALLS_PER_CONNECTION
 pub const PARSER_LOOKAHEAD: usize = 32;
 
 // Longest possible space bitmask = "1234 1234 " => 10 chars
-const SPACES_BITMASK_MASK: u16 = 0b0000_0000_0000_0000_0011_1111_1111;
+const SPACES_BITMASK_BITS: u32 = 10;
+const SPACES_BITMASK_MASK: u32 = (1 << SPACES_BITMASK_BITS) - 1;
 
-static SHUFFLE_PATTERNS: [(u8, [u8; 32]); u16::MAX as usize + 1] =
-    manually_calculated_shuffle_patterns();
+/// Shuffle index that makes `pshufb` produce a zero byte
+const ZERO: u8 = 0x80;
+
+#[derive(Clone, Copy)]
+#[repr(C, align(32))]
+struct ShufflePattern {
+    /// Source byte for every output byte, see [`shuffle_patterns`] for the layout
+    indices: [u8; 16],
+    /// Whether the spaces bitmask belongs to a valid `x y rrggbb` command
+    valid: bool,
+}
+
+static SHUFFLE_PATTERNS: [ShufflePattern; 1 << SPACES_BITMASK_BITS] = shuffle_patterns();
 
 pub struct FearParser<FB: FrameBuffer> {
     /// How often the client requested the help on this connection. It is tracked per connection.
@@ -65,8 +82,8 @@ impl<FB: FrameBuffer> Parser for FearParser<FB> {
                     last_byte_parsed = i + newline_pos as usize;
                     i += newline_pos as usize + 1; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                    self.fb
-                        .set(x as usize, y as usize, rgb & 0x00ff_ffff, current_ts);
+                    // The alpha byte of `rgb` is always zero
+                    self.fb.set(x as usize, y as usize, rgb, current_ts);
                     continue;
                 }
 
@@ -155,243 +172,149 @@ impl<FB: FrameBuffer> Parser for FearParser<FB> {
     }
 }
 
+/// Parses `x y rrggbb` from the 32 bytes after `PX `.
+///
+/// Returns `(x, y, rgb, valid, newline_pos)`. `rgb` has the red channel in the lowest byte and a
+/// zero alpha byte. `newline_pos` is 32 if there is no newline.
 #[simd]
-fn simd_parse<S: Simd>(simd: S, buffer: *const u8) -> (u16, u16, u32, bool, u8) {
-    // Constants
-    let simd_0_chars = u8x32::splat(simd, b'0');
-    let simd_spaces = u8x32::splat(simd, b' ');
-    let simd_newlines = u8x32::splat(simd, b'\n');
-    let decimal_factors_x =
-        u16x16::simd_from(simd, [1000, 100, 10, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    let decimal_factors_y =
-        u16x16::simd_from(simd, [0, 0, 0, 0, 1000, 100, 10, 1, 0, 0, 0, 0, 0, 0, 0, 0]);
+fn simd_parse<S: Simd>(simd: S, buffer: *const u8) -> (u32, u32, u32, bool, u8) {
+    // SAFETY: The caller guarantees `PARSER_LOOKAHEAD` readable bytes
+    let chars = unsafe { &*(buffer as *const [u8; 32]) };
 
-    // Actual code starts here
-    let buffer_first_32 = unsafe { (buffer as *const [u8; 32]).read_unaligned() };
+    #[cfg(target_arch = "x86_64")]
+    if let Some(avx2) = simd.level().as_avx2() {
+        return simd_parse_avx2(avx2, chars);
+    }
 
-    let chars = u8x32::simd_from(simd, buffer_first_32);
-    let digits = chars.sub(simd_0_chars);
-
-    let spaces_bitmask = chars.simd_eq(simd_spaces).to_bitmask() as u16 & SPACES_BITMASK_MASK;
-    let newlines_bitmask = chars.simd_eq(simd_newlines).to_bitmask() as u32;
-
-    // The command length comes straight from the newline position (32 if there is none), so the
-    // caller's next `i` doesn't have to wait for the table load below.
-    let newline_pos = newlines_bitmask.trailing_zeros() as u8;
-
-    // dbg!(format!("{spaces_bitmask:032b}"));
-
-    // SAFETY: As SHUFFLE_PATTERNS has length `u16::MAX as usize + 1` and we use a us16 to index into it it will always succeed
-    let (table_bytes_parsed, shuffle_pattern) =
-        unsafe { *SHUFFLE_PATTERNS.get_unchecked(spaces_bitmask as usize) };
-    let valid = table_bytes_parsed > 0;
-    let shuffle_pattern = u8x32::simd_from(simd, shuffle_pattern);
-
-    // This swizzles the input digits (ASCII - b'0') so that x is at byte 0-3, y at byte 4-7 and
-    // rgb at bytes 8-10.
-    let digits = digits.swizzle_dyn_precise(shuffle_pattern);
-    let digits = u16x16::from_bytes(digits);
-
-    let x = (digits * decimal_factors_x).reduce_sum();
-    let y = (digits * decimal_factors_y).reduce_sum();
-
-    // After subtracting b'0': `0-9` -> 0x00-0x09, `A-F` -> 0x11-0x16, `a-f` -> 0x31-0x36.
-    // Bit 4 is set exactly for letters, whose low nibble is 1-6, so per byte
-    // `(d & 0xf) + ((d >> 4) & 1) * 9` yields 0-15. Every byte stays <= 24, so nothing carries into
-    // the neighbouring byte and both characters of a u16 lane are handled at once. Decimal digits
-    // and zeroed lanes are fixed points, so this doesn't affect x and y.
-    let hex = (digits & 0x0f0f) + ((digits >> 4) & 0x0101) * 9;
-
-    // Low byte of every lane becomes `(first << 4) | second`; the truncating casts below drop the rest.
-    let rgb = (hex << 4) | (hex >> 8);
-    let rgb = u32::from_le_bytes([rgb[10] as u8, rgb[9] as u8, rgb[8] as u8, 0]);
-
-    (x, y, rgb, valid, newline_pos)
+    simd_parse_portable(simd, chars)
 }
 
-// Let's add the stuff manually, we can always automate later
-#[allow(clippy::too_many_lines)]
-#[allow(clippy::large_stack_arrays)] // TODO: Think about this
-const fn manually_calculated_shuffle_patterns() -> [(u8, [u8; 32]); u16::MAX as usize + 1] {
-    let mut shuffle_patterns = [(0, [255; 32]); u16::MAX as usize + 1];
+#[cfg(target_arch = "x86_64")]
+fearless_simd::kernel!(
+    #[inline(always)]
+    fn simd_parse_avx2(avx2: Avx2, chars: &[u8; 32]) -> (u32, u32, u32, bool, u8) {
+        // SAFETY: `chars` is 32 bytes long
+        let chars = unsafe { _mm256_loadu_si256(chars.as_ptr().cast()) };
 
-    // 9 9
-    shuffle_patterns[0b0000_0000_0000_1010] = (
-        10,
-        [
-            255, 255, 255, 255, 255, 255, 0, 255, // X coordinate
-            255, 255, 255, 255, 255, 255, 2, 255, // y coordinate
-            4, 5, 6, 7, 8, 9, 255, 255, // rgb + padding
-            255, 255, 255, 255, 255, 255, 255, 255, // padding
-        ],
-    );
+        let spaces_bitmask =
+            _mm256_movemask_epi8(_mm256_cmpeq_epi8(chars, _mm256_set1_epi8(b' ' as i8))) as u32;
+        let newlines_bitmask =
+            _mm256_movemask_epi8(_mm256_cmpeq_epi8(chars, _mm256_set1_epi8(b'\n' as i8))) as u32;
 
-    // 9 99
-    shuffle_patterns[0b0000_0000_0001_0010] = (
-        11,
-        [
-            255, 255, 255, 255, 255, 255, 0, 255, // X coordinate
-            255, 255, 255, 255, 2, 255, 3, 255, // y coordinate
-            5, 6, 7, 8, 9, 10, 255, 255, // rgb + padding
-            255, 255, 255, 255, 255, 255, 255, 255, // padding
-        ],
-    );
+        // The command length comes straight from the newline position, so the caller's next `i`
+        // doesn't have to wait for the table load below.
+        let newline_pos = newlines_bitmask.trailing_zeros() as u8;
 
-    // 9 999
-    shuffle_patterns[0b0000_0000_0010_0010] = (
-        12,
-        [
-            255, 255, 255, 255, 255, 255, 0, 255, // X coordinate
-            255, 255, 2, 255, 3, 255, 4, 255, // y coordinate
-            6, 7, 8, 9, 10, 11, 255, 255, // rgb + padding
-            255, 255, 255, 255, 255, 255, 255, 255, // padding
-        ],
-    );
+        let pattern = &SHUFFLE_PATTERNS[(spaces_bitmask & SPACES_BITMASK_MASK) as usize];
+        // SAFETY: `ShufflePattern` is 32 byte aligned and starts with the 16 indices
+        let indices = unsafe { _mm_load_si128(pattern.indices.as_ptr().cast()) };
+        // All indices are < 16 or `ZERO`, so the lower 16 bytes are all we need
+        let shuffled = _mm_shuffle_epi8(_mm256_castsi256_si128(chars), indices);
 
-    // 9 9999
-    shuffle_patterns[0b0000_0000_0100_0010] = (
-        13,
-        [
-            255, 255, 255, 255, 255, 255, 0, 255, // X coordinate
-            2, 255, 3, 255, 4, 255, 5, 255, // y coordinate
-            7, 8, 9, 10, 11, 12, 255, 255, // rgb + padding
-            255, 255, 255, 255, 255, 255, 255, 255, // padding
-        ],
-    );
+        // `0-9` -> 0-9, and the low nibble of `a-f` and `A-F` is 1-6. Zeroed bytes stay 0.
+        let low_nibbles = _mm_and_si128(shuffled, _mm_set1_epi8(0x0f));
 
-    // 99 9
-    shuffle_patterns[0b0000_0000_0001_0100] = (
-        11,
-        [
-            255, 255, 255, 255, 0, 255, 1, 255, // X coordinate
-            255, 255, 255, 255, 255, 255, 3, 255, // y coordinate
-            5, 6, 7, 8, 9, 10, 255, 255, // rgb + padding
-            255, 255, 255, 255, 255, 255, 255, 255, // padding
-        ],
-    );
+        // x and y: `(d0 * 10 + d1) * 100 + (d2 * 10 + d3)`, in the two upper i32 lanes
+        let pairs = _mm_maddubs_epi16(
+            low_nibbles,
+            _mm_setr_epi8(0, 0, 0, 0, 0, 0, 0, 0, 10, 1, 10, 1, 10, 1, 10, 1),
+        );
+        let coordinates = _mm_madd_epi16(pairs, _mm_setr_epi16(0, 0, 0, 0, 100, 1, 100, 1));
+        let x = _mm_extract_epi32::<2>(coordinates) as u32;
+        let y = _mm_extract_epi32::<3>(coordinates) as u32;
 
-    // 99 99
-    shuffle_patterns[0b0000_0000_0010_0100] = (
-        12,
-        [
-            255, 255, 255, 255, 0, 255, 1, 255, // X coordinate
-            255, 255, 255, 255, 3, 255, 4, 255, // y coordinate
-            6, 7, 8, 9, 10, 11, 255, 255, // rgb + padding
-            255, 255, 255, 255, 255, 255, 255, 255, // padding
-        ],
-    );
+        // rgb: letters (> '@') need 9 added to their low nibble to become 10-15
+        let letters = _mm_cmpgt_epi8(shuffled, _mm_set1_epi8(0x40));
+        let nibbles = _mm_add_epi8(low_nibbles, _mm_and_si128(letters, _mm_set1_epi8(9)));
+        // `high * 16 + low` for the three channels in the lower i16 lanes, lane 3 is 0 (alpha)
+        let channels = _mm_maddubs_epi16(
+            nibbles,
+            _mm_setr_epi8(16, 1, 16, 1, 16, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+        );
+        let rgb = _mm_cvtsi128_si32(_mm_packus_epi16(channels, channels)) as u32;
 
-    // 99 999
-    shuffle_patterns[0b0000_0000_0100_0100] = (
-        13,
-        [
-            255, 255, 255, 255, 0, 255, 1, 255, // X coordinate
-            255, 255, 3, 255, 4, 255, 5, 255, // y coordinate
-            7, 8, 9, 10, 11, 12, 255, 255, // rgb + padding
-            255, 255, 255, 255, 255, 255, 255, 255, // padding
-        ],
-    );
+        (x, y, rgb, pattern.valid, newline_pos)
+    }
+);
 
-    // 99 9999
-    shuffle_patterns[0b0000_0000_1000_0100] = (
-        14,
-        [
-            255, 255, 255, 255, 0, 255, 1, 255, // X coordinate
-            3, 255, 4, 255, 5, 255, 6, 255, // y coordinate
-            8, 9, 10, 11, 12, 13, 255, 255, // rgb + padding
-            255, 255, 255, 255, 255, 255, 255, 255, // padding
-        ],
-    );
+/// Slow path for SIMD levels without AVX2, uses the same table as [`simd_parse_avx2`].
+#[inline(always)]
+fn simd_parse_portable<S: Simd>(simd: S, chars: &[u8; 32]) -> (u32, u32, u32, bool, u8) {
+    let vector = u8x32::simd_from(simd, *chars);
+    let spaces_bitmask = vector.simd_eq(u8x32::splat(simd, b' ')).to_bitmask() as u32;
+    let newlines_bitmask = vector.simd_eq(u8x32::splat(simd, b'\n')).to_bitmask() as u32;
+    let newline_pos = newlines_bitmask.trailing_zeros() as u8;
 
-    // 999 9
-    shuffle_patterns[0b0000_0000_0010_1000] = (
-        12,
-        [
-            255, 255, 0, 255, 1, 255, 2, 255, // X coordinate
-            255, 255, 255, 255, 255, 255, 4, 255, // y coordinate
-            6, 7, 8, 9, 10, 11, 255, 255, // rgb + padding
-            255, 255, 255, 255, 255, 255, 255, 255, // padding
-        ],
-    );
+    let pattern = &SHUFFLE_PATTERNS[(spaces_bitmask & SPACES_BITMASK_MASK) as usize];
+    let shuffled = pattern
+        .indices
+        .map(|index| if index < 16 { chars[index as usize] } else { 0 });
 
-    // 999 99
-    shuffle_patterns[0b0000_0000_0100_1000] = (
-        13,
-        [
-            255, 255, 0, 255, 1, 255, 2, 255, // X coordinate
-            255, 255, 255, 255, 4, 255, 5, 255, // y coordinate
-            7, 8, 9, 10, 11, 12, 255, 255, // rgb + padding
-            255, 255, 255, 255, 255, 255, 255, 255, // padding
-        ],
-    );
+    let decimal = |digits: &[u8]| {
+        digits
+            .iter()
+            .fold(0, |acc, digit| acc * 10 + u32::from(digit & 0x0f))
+    };
+    let nibble = |char: u8| (char & 0x0f) + u8::from(char > 0x40) * 9;
+    let channel = |i: usize| (nibble(shuffled[i]) << 4) | nibble(shuffled[i + 1]);
+    let rgb = u32::from_le_bytes([channel(0), channel(2), channel(4), 0]);
 
-    // 999 999
-    shuffle_patterns[0b0000_0000_1000_1000] = (
-        14,
-        [
-            255, 255, 0, 255, 1, 255, 2, 255, // X coordinate
-            255, 255, 4, 255, 5, 255, 6, 255, // y coordinate
-            8, 9, 10, 11, 12, 13, 255, 255, // rgb + padding
-            255, 255, 255, 255, 255, 255, 255, 255, // padding
-        ],
-    );
+    (
+        decimal(&shuffled[8..12]),
+        decimal(&shuffled[12..16]),
+        rgb,
+        pattern.valid,
+        newline_pos,
+    )
+}
 
-    // 999 9999
-    shuffle_patterns[0b0000_0001_0000_1000] = (
-        15,
-        [
-            255, 255, 0, 255, 1, 255, 2, 255, // X coordinate
-            4, 255, 5, 255, 6, 255, 7, 255, // y coordinate
-            9, 10, 11, 12, 13, 14, 255, 255, // rgb + padding
-            255, 255, 255, 255, 255, 255, 255, 255, // padding
-        ],
-    );
+/// Builds the shuffle patterns for all combinations of 1-4 digit coordinates, indexed by the
+/// bitmask of the two spaces after them.
+///
+/// Output layout: bytes 0-5 are `rrggbb`, bytes 6-7 zero, bytes 8-11 the x digits and bytes 12-15
+/// the y digits. Coordinates are right-aligned and padded with zero bytes, which act as `0`
+/// digits.
+#[expect(clippy::large_stack_arrays, reason = "only evaluated at compile time")]
+const fn shuffle_patterns() -> [ShufflePattern; 1 << SPACES_BITMASK_BITS] {
+    let mut patterns = [ShufflePattern {
+        indices: [ZERO; 16],
+        valid: false,
+    }; 1 << SPACES_BITMASK_BITS];
 
-    // 9999 9
-    shuffle_patterns[0b0000_0000_0101_0000] = (
-        13,
-        [
-            0, 255, 1, 255, 2, 255, 3, 255, // X coordinate
-            255, 255, 255, 255, 255, 255, 5, 255, // y coordinate
-            7, 8, 9, 10, 11, 12, 255, 255, // rgb + padding
-            255, 255, 255, 255, 255, 255, 255, 255, // padding
-        ],
-    );
+    let mut x_len = 1;
+    while x_len <= 4 {
+        let mut y_len = 1;
+        while y_len <= 4 {
+            let y_start = x_len + 1;
+            let rgb_start = y_start + y_len + 1;
+            let mut indices = [ZERO; 16];
 
-    // 9999 99
-    shuffle_patterns[0b0000_0000_1001_0000] = (
-        14,
-        [
-            0, 255, 1, 255, 2, 255, 3, 255, // X coordinate
-            255, 255, 255, 255, 5, 255, 6, 255, // y coordinate
-            8, 9, 10, 11, 12, 13, 255, 255, // rgb + padding
-            255, 255, 255, 255, 255, 255, 255, 255, // padding
-        ],
-    );
+            let mut i = 0;
+            while i < 6 {
+                indices[i] = (rgb_start + i) as u8;
+                i += 1;
+            }
+            let mut i = 0;
+            while i < x_len {
+                indices[12 - x_len + i] = i as u8;
+                i += 1;
+            }
+            let mut i = 0;
+            while i < y_len {
+                indices[16 - y_len + i] = (y_start + i) as u8;
+                i += 1;
+            }
 
-    // 9999 999
-    shuffle_patterns[0b0000_0001_0001_0000] = (
-        15,
-        [
-            0, 255, 1, 255, 2, 255, 3, 255, // X coordinate
-            255, 255, 5, 255, 6, 255, 7, 255, // y coordinate
-            9, 10, 11, 12, 13, 14, 255, 255, // rgb + padding
-            255, 255, 255, 255, 255, 255, 255, 255, // padding
-        ],
-    );
+            patterns[(1 << x_len) | (1 << (y_start + y_len))] = ShufflePattern {
+                indices,
+                valid: true,
+            };
+            y_len += 1;
+        }
+        x_len += 1;
+    }
 
-    // 9999 9999
-    shuffle_patterns[0b0000_0010_0001_0000] = (
-        16,
-        [
-            0, 255, 1, 255, 2, 255, 3, 255, // X coordinate
-            5, 255, 6, 255, 7, 255, 8, 255, // y coordinate
-            10, 11, 12, 13, 14, 15, 255, 255, // rgb + padding
-            255, 255, 255, 255, 255, 255, 255, 255, // padding
-        ],
-    );
-
-    shuffle_patterns
+    patterns
 }
 
 #[cfg(test)]
@@ -407,7 +330,7 @@ mod tests {
 
         let (x, y, rgb, valid, newline_pos) =
             dispatch!(level, simd => super::simd_parse(simd, buffer));
-        (x, y, rgb, if valid { newline_pos } else { 0 })
+        (x as u16, y as u16, rgb, if valid { newline_pos } else { 0 })
     }
 
     #[rstest]
