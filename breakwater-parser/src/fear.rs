@@ -2,8 +2,10 @@
 use std::arch::x86_64::{
     _mm_add_epi8, _mm_and_si128, _mm_cmpgt_epi8, _mm_cvtsi128_si32, _mm_extract_epi32,
     _mm_load_si128, _mm_madd_epi16, _mm_maddubs_epi16, _mm_packus_epi16, _mm_set1_epi8,
-    _mm_setr_epi8, _mm_setr_epi16, _mm_shuffle_epi8, _mm256_castsi256_si128, _mm256_cmpeq_epi8,
-    _mm256_loadu_si256, _mm256_movemask_epi8, _mm256_set1_epi8,
+    _mm_setr_epi8, _mm_setr_epi16, _mm_shuffle_epi8, _mm256_add_epi16, _mm256_castsi256_si128,
+    _mm256_cmpeq_epi8, _mm256_cvtepu8_epi16, _mm256_loadu_si256, _mm256_movemask_epi8,
+    _mm256_set1_epi8, _mm256_set1_epi16, _mm256_storeu_si256, _mm512_castsi512_si128,
+    _mm512_loadu_si512, _mm512_maskz_compress_epi8,
 };
 use std::sync::Arc;
 
@@ -20,8 +22,8 @@ pub const PARSER_LOOKAHEAD: usize = 64;
 /// that fit into L1
 const CHUNK_SIZE: usize = 16 * 1024;
 
-/// Stage 1 writes this many newline offsets per 64 byte block, no matter how many it found
-const OFFSETS_PER_BLOCK: usize = 8;
+/// Stage 1 writes up to this many newline offsets per 64 byte block, no matter how many it found
+const MAX_OFFSETS_PER_BLOCK: usize = 16;
 
 // Longest possible space bitmask = "1234 1234 " => 10 chars
 const SPACES_BITMASK_BITS: u32 = 10;
@@ -57,7 +59,7 @@ impl<FB: FrameBuffer> FearParser<FB> {
             fb,
             simd_level: Level::new(),
             // At most one newline per byte, plus the unconditional writes of the last block
-            newline_offsets: vec![0; CHUNK_SIZE + OFFSETS_PER_BLOCK].into_boxed_slice(),
+            newline_offsets: vec![0; CHUNK_SIZE + MAX_OFFSETS_PER_BLOCK].into_boxed_slice(),
         }
     }
 }
@@ -123,22 +125,21 @@ fn parse_simd<S: Simd, FB: FrameBuffer>(
             let block_count = newlines.count_ones() as usize;
             let block_offset = (block - chunk_start) as u16;
 
-            // Always write `OFFSETS_PER_BLOCK` offsets, so the loop doesn't branch on the number of
+            // Always write a fixed number of offsets, so the loop doesn't branch on the number of
             // newlines. The ones past `block_count` are garbage, the next block overwrites them.
-            let offsets: &mut [u16; OFFSETS_PER_BLOCK] = (&mut parser.newline_offsets
-                [newline_count..newline_count + OFFSETS_PER_BLOCK])
+            let offsets: &mut [u16; MAX_OFFSETS_PER_BLOCK] = (&mut parser.newline_offsets
+                [newline_count..newline_count + MAX_OFFSETS_PER_BLOCK])
                 .try_into()
                 .unwrap();
-            for offset in offsets {
-                *offset = block_offset + newlines.trailing_zeros() as u16;
-                newlines &= newlines.wrapping_sub(1);
-            }
-            // Only garbage input has this many newlines per block
-            let mut index = newline_count + OFFSETS_PER_BLOCK;
-            while newlines != 0 {
-                parser.newline_offsets[index] = block_offset + newlines.trailing_zeros() as u16;
-                newlines &= newlines - 1;
-                index += 1;
+            let written = write_newline_offsets(simd, newlines, block_offset, offsets);
+            if block_count > written {
+                // Only garbage input has this many newlines per block
+                let mut index = newline_count;
+                while newlines != 0 {
+                    parser.newline_offsets[index] = block_offset + newlines.trailing_zeros() as u16;
+                    newlines &= newlines - 1;
+                    index += 1;
+                }
             }
 
             newline_count += block_count;
@@ -240,6 +241,62 @@ fn parse_simd<S: Simd, FB: FrameBuffer>(
     last_byte_parsed
     // last_byte_parsed.saturating_sub(1)
 }
+
+/// Writes `block_offset` plus the positions of the lowest set bits of `newlines` to `offsets`,
+/// followed by garbage. Returns how many offsets are written, which doesn't depend on `newlines`.
+#[inline(always)]
+fn write_newline_offsets<S: Simd>(
+    simd: S,
+    newlines: u64,
+    block_offset: u16,
+    offsets: &mut [u16; MAX_OFFSETS_PER_BLOCK],
+) -> usize {
+    #[cfg(target_arch = "x86_64")]
+    if let Some(avx512) = simd.level().as_avx512() {
+        newline_offsets_avx512(avx512, newlines, block_offset, offsets);
+        return MAX_OFFSETS_PER_BLOCK;
+    }
+
+    let mut newlines = newlines;
+    for offset in &mut offsets[..8] {
+        *offset = block_offset + newlines.trailing_zeros() as u16;
+        newlines &= newlines.wrapping_sub(1);
+    }
+    8
+}
+
+#[cfg(target_arch = "x86_64")]
+static BYTE_INDICES: [u8; 64] = {
+    let mut indices = [0; 64];
+    let mut i = 0;
+    while i < 64 {
+        indices[i] = i as u8;
+        i += 1;
+    }
+    indices
+};
+
+#[cfg(target_arch = "x86_64")]
+fearless_simd::kernel!(
+    #[inline(always)]
+    fn newline_offsets_avx512(
+        avx512: Avx512,
+        newlines: u64,
+        block_offset: u16,
+        offsets: &mut [u16; MAX_OFFSETS_PER_BLOCK],
+    ) {
+        // SAFETY: `BYTE_INDICES` is 64 bytes long
+        let indices = unsafe { _mm512_loadu_si512(BYTE_INDICES.as_ptr().cast()) };
+        // Packs the positions of all newlines into the lowest bytes
+        let positions = _mm512_maskz_compress_epi8(newlines, indices);
+        let positions = _mm256_add_epi16(
+            _mm256_cvtepu8_epi16(_mm512_castsi512_si128(positions)),
+            _mm256_set1_epi16(block_offset as i16),
+        );
+        // SAFETY: `offsets` holds 16 u16s, which is 32 bytes
+        unsafe { _mm256_storeu_si256(offsets.as_mut_ptr().cast(), positions) };
+    }
+);
 
 /// Parses `x y rrggbb` from the 32 bytes after `PX `.
 ///
