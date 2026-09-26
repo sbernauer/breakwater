@@ -63,6 +63,8 @@ impl<FB: FrameBuffer> FearParser<FB> {
 }
 
 impl<FB: FrameBuffer> Parser for FearParser<FB> {
+    // Inlined into the caller the loops get less registers, so loop invariants get spilled
+    #[inline(never)]
     fn parse(&mut self, buffer: &[u8], response: &mut Vec<u8>) -> usize {
         let level = self.simd_level;
         dispatch!(level, simd => parse_simd(simd, self, buffer, response))
