@@ -7,14 +7,21 @@ use std::arch::x86_64::{
 };
 use std::sync::Arc;
 
-use fearless_simd::{Level, Simd, SimdBase, SimdFrom, SimdMask, dispatch, u8x32};
+use fearless_simd::{Level, Simd, SimdBase, SimdFrom, SimdMask, dispatch, u8x32, u8x64};
 use fearless_simd_macros::simd;
 
 use crate::original::{HELP_PATTERN, PX_PATTERN};
 use crate::{ALT_HELP_TEXT, FrameBuffer, HELP_TEXT, MAX_HELP_CALLS_PER_CONNECTION, Parser};
 
-/// We work on 32 byte vectors
-pub const PARSER_LOOKAHEAD: usize = 32;
+/// Stage 1 reads 64 byte blocks, a command reads 3 + 32 bytes from the start of its line
+pub const PARSER_LOOKAHEAD: usize = 64;
+
+/// Stage 2 re-reads the input stage 1 just scanned, so we alternate between the stages on chunks
+/// that fit into L1
+const CHUNK_SIZE: usize = 16 * 1024;
+
+/// Stage 1 writes this many newline offsets per 64 byte block, no matter how many it found
+const OFFSETS_PER_BLOCK: usize = 8;
 
 // Longest possible space bitmask = "1234 1234 " => 10 chars
 const SPACES_BITMASK_BITS: u32 = 10;
@@ -39,6 +46,8 @@ pub struct FearParser<FB: FrameBuffer> {
     help_count: u8,
     fb: Arc<FB>,
     simd_level: Level,
+    /// Stage 1 output: offsets of the newlines in the current chunk, relative to the chunk start
+    newline_offsets: Box<[u16]>,
 }
 
 impl<FB: FrameBuffer> FearParser<FB> {
@@ -47,46 +56,111 @@ impl<FB: FrameBuffer> FearParser<FB> {
             help_count: 0,
             fb,
             simd_level: Level::new(),
+            // At most one newline per byte, plus the unconditional writes of the last block
+            newline_offsets: vec![0; CHUNK_SIZE + OFFSETS_PER_BLOCK].into_boxed_slice(),
         }
     }
 }
 
 impl<FB: FrameBuffer> Parser for FearParser<FB> {
-    #[allow(clippy::too_many_lines)]
     fn parse(&mut self, buffer: &[u8], response: &mut Vec<u8>) -> usize {
-        // As this is a potentially(?) expensive operation we only call it one in this parsing loop
-        // All the pixels likely where in the same TCP packets (+- 1/2 or so) it doesn't matter after all
-        // Encode the timestamp exactly once here, not per pixel: it's constant for the whole parse
-        // call, so computing it per write would just waste throughput on the hot path.
-        let current_ts = self.fb.current_ts();
+        let level = self.simd_level;
+        dispatch!(level, simd => parse_simd(simd, self, buffer, response))
+    }
 
-        let mut last_byte_parsed = 0;
+    fn parser_lookahead(&self) -> usize {
+        PARSER_LOOKAHEAD
+    }
+}
 
-        let mut i = 0; // We can't use a for loop here because Rust don't lets use skip characters by incrementing i
-        let loop_end = buffer.len().saturating_sub(PARSER_LOOKAHEAD); // Let's extract the .len() call and the subtraction into it's own variable so we only compute it once
+/// Parses in two stages, so that the start of a command never depends on parsing the previous one:
+///
+/// 1. Find all newlines in a chunk, in fixed 64 byte steps.
+/// 2. Parse every line ending at one of those newlines. The lines are independent of each other,
+///    so the CPU can work on several of them at once.
+///
+/// Commands are only recognized at the start of a line.
+#[simd]
+#[allow(clippy::too_many_lines)]
+fn parse_simd<S: Simd, FB: FrameBuffer>(
+    simd: S,
+    parser: &mut FearParser<FB>,
+    buffer: &[u8],
+    response: &mut Vec<u8>,
+) -> usize {
+    // As this is a potentially(?) expensive operation we only call it one in this parsing loop
+    // All the pixels likely where in the same TCP packets (+- 1/2 or so) it doesn't matter after all
+    // Encode the timestamp exactly once here, not per pixel: it's constant for the whole parse
+    // call, so computing it per write would just waste throughput on the hot path.
+    let current_ts = parser.fb.current_ts();
 
-        while i < loop_end {
-            // let next = &buffer[i..][..10];
-            // dbg!(String::from_utf8_lossy(next));
+    let mut last_byte_parsed = 0;
 
+    // Only lines ending before this are parsed, the lookahead guarantees all reads stay in bounds
+    let loop_end = buffer.len().saturating_sub(PARSER_LOOKAHEAD);
+    let newline_chars = u8x64::splat(simd, b'\n');
+    let mut line_start = 0;
+
+    let mut chunk_start = 0;
+    while chunk_start < loop_end {
+        let chunk_end = (chunk_start + CHUNK_SIZE).min(loop_end);
+
+        // Stage 1: collect the offsets of all newlines in the chunk
+        let mut newline_count = 0;
+        let mut block = chunk_start;
+        while block < chunk_end {
+            // SAFETY: `block < loop_end`, so the lookahead guarantees 64 readable bytes
+            let chars = unsafe { (buffer.as_ptr().add(block) as *const [u8; 64]).read_unaligned() };
+            let mut newlines = u8x64::simd_from(simd, chars)
+                .simd_eq(newline_chars)
+                .to_bitmask();
+            let remaining = chunk_end - block;
+            if remaining < 64 {
+                newlines &= (1 << remaining) - 1;
+            }
+            let block_count = newlines.count_ones() as usize;
+            let block_offset = (block - chunk_start) as u16;
+
+            // Always write `OFFSETS_PER_BLOCK` offsets, so the loop doesn't branch on the number of
+            // newlines. The ones past `block_count` are garbage, the next block overwrites them.
+            let offsets: &mut [u16; OFFSETS_PER_BLOCK] = (&mut parser.newline_offsets
+                [newline_count..newline_count + OFFSETS_PER_BLOCK])
+                .try_into()
+                .unwrap();
+            for offset in offsets {
+                *offset = block_offset + newlines.trailing_zeros() as u16;
+                newlines &= newlines.wrapping_sub(1);
+            }
+            // Only garbage input has this many newlines per block
+            let mut index = newline_count + OFFSETS_PER_BLOCK;
+            while newlines != 0 {
+                parser.newline_offsets[index] = block_offset + newlines.trailing_zeros() as u16;
+                newlines &= newlines - 1;
+                index += 1;
+            }
+
+            newline_count += block_count;
+            block += 64;
+        }
+
+        // Stage 2: parse the lines
+        for &offset in &parser.newline_offsets[..newline_count] {
+            let newline = chunk_start + offset as usize;
+            let start = line_start;
+            line_start = newline + 1;
+
+            // SAFETY: `start <= newline < loop_end`, so the lookahead guarantees 8 readable bytes
             let current_command =
-                unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };
+                unsafe { (buffer.as_ptr().add(start) as *const u64).read_unaligned() };
             if current_command & 0x00ff_ffff == PX_PATTERN {
-                i += 3;
+                // SAFETY: `start + 3 + 32 <= loop_end + 35`, which the lookahead covers
+                let (x, y, rgb, valid) =
+                    simd_parse(simd, unsafe { buffer.as_ptr().add(start + 3) });
 
-                let (x, y, rgb, valid, newline_pos) = dispatch!(self.simd_level, simd => simd_parse(simd, unsafe { buffer.as_ptr().add(i)}));
-
-                // Branch on `valid` instead of folding it into the advance: a predicted branch keeps
-                // the next `i` independent of the shuffle table load.
                 if valid {
-                    last_byte_parsed = i + newline_pos as usize;
-                    i += newline_pos as usize + 1; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
-
                     // The alpha byte of `rgb` is always zero
-                    self.fb.set(x as usize, y as usize, rgb, current_ts);
-                    continue;
+                    parser.fb.set(x as usize, y as usize, rgb, current_ts);
                 }
-
                 // if present {
                 //     // Separator between coordinates and color
                 //     if unsafe { *buffer.get_unchecked(i) } == b' ' {
@@ -138,46 +212,39 @@ impl<FB: FrameBuffer> Parser for FearParser<FB> {
                 //         continue;
                 //     }
                 // }
-            }
-
-            if current_command & 0xffff_ffff == HELP_PATTERN {
-                i += 4;
-                last_byte_parsed = i + 1;
-
-                match self.help_count {
+            } else if current_command & 0xffff_ffff == HELP_PATTERN {
+                match parser.help_count {
                     0..MAX_HELP_CALLS_PER_CONNECTION => {
                         response.extend_from_slice(HELP_TEXT);
-                        self.help_count += 1;
+                        parser.help_count += 1;
                     }
                     MAX_HELP_CALLS_PER_CONNECTION => {
                         response.extend_from_slice(ALT_HELP_TEXT);
-                        self.help_count += 1;
+                        parser.help_count += 1;
                     }
                     _ => {
                         // The client has requested the help to often, let's just ignore it
                     }
                 }
-                continue;
             }
-
-            i += 1;
         }
 
-        last_byte_parsed
-        // last_byte_parsed.saturating_sub(1)
+        if newline_count > 0 {
+            last_byte_parsed = line_start - 1;
+        }
+        chunk_start = chunk_end;
     }
 
-    fn parser_lookahead(&self) -> usize {
-        PARSER_LOOKAHEAD
-    }
+    last_byte_parsed
+    // last_byte_parsed.saturating_sub(1)
 }
 
 /// Parses `x y rrggbb` from the 32 bytes after `PX `.
 ///
-/// Returns `(x, y, rgb, valid, newline_pos)`. `rgb` has the red channel in the lowest byte and a
-/// zero alpha byte. `newline_pos` is 32 if there is no newline.
+/// Returns `(x, y, rgb, valid)`. `rgb` has the red channel in the lowest byte and a zero alpha
+/// byte.
 #[simd]
-fn simd_parse<S: Simd>(simd: S, buffer: *const u8) -> (u32, u32, u32, bool, u8) {
+fn simd_parse<S: Simd>(simd: S, buffer: *const u8) -> (u32, u32, u32, bool) {
     // SAFETY: The caller guarantees `PARSER_LOOKAHEAD` readable bytes
     let chars = unsafe { &*(buffer as *const [u8; 32]) };
 
@@ -192,18 +259,12 @@ fn simd_parse<S: Simd>(simd: S, buffer: *const u8) -> (u32, u32, u32, bool, u8) 
 #[cfg(target_arch = "x86_64")]
 fearless_simd::kernel!(
     #[inline(always)]
-    fn simd_parse_avx2(avx2: Avx2, chars: &[u8; 32]) -> (u32, u32, u32, bool, u8) {
+    fn simd_parse_avx2(avx2: Avx2, chars: &[u8; 32]) -> (u32, u32, u32, bool) {
         // SAFETY: `chars` is 32 bytes long
         let chars = unsafe { _mm256_loadu_si256(chars.as_ptr().cast()) };
 
         let spaces_bitmask =
             _mm256_movemask_epi8(_mm256_cmpeq_epi8(chars, _mm256_set1_epi8(b' ' as i8))) as u32;
-        let newlines_bitmask =
-            _mm256_movemask_epi8(_mm256_cmpeq_epi8(chars, _mm256_set1_epi8(b'\n' as i8))) as u32;
-
-        // The command length comes straight from the newline position, so the caller's next `i`
-        // doesn't have to wait for the table load below.
-        let newline_pos = newlines_bitmask.trailing_zeros() as u8;
 
         let pattern = &SHUFFLE_PATTERNS[(spaces_bitmask & SPACES_BITMASK_MASK) as usize];
         // SAFETY: `ShufflePattern` is 32 byte aligned and starts with the 16 indices
@@ -233,17 +294,15 @@ fearless_simd::kernel!(
         );
         let rgb = _mm_cvtsi128_si32(_mm_packus_epi16(channels, channels)) as u32;
 
-        (x, y, rgb, pattern.valid, newline_pos)
+        (x, y, rgb, pattern.valid)
     }
 );
 
 /// Slow path for SIMD levels without AVX2, uses the same table as [`simd_parse_avx2`].
 #[inline(always)]
-fn simd_parse_portable<S: Simd>(simd: S, chars: &[u8; 32]) -> (u32, u32, u32, bool, u8) {
+fn simd_parse_portable<S: Simd>(simd: S, chars: &[u8; 32]) -> (u32, u32, u32, bool) {
     let vector = u8x32::simd_from(simd, *chars);
     let spaces_bitmask = vector.simd_eq(u8x32::splat(simd, b' ')).to_bitmask() as u32;
-    let newlines_bitmask = vector.simd_eq(u8x32::splat(simd, b'\n')).to_bitmask() as u32;
-    let newline_pos = newlines_bitmask.trailing_zeros() as u8;
 
     let pattern = &SHUFFLE_PATTERNS[(spaces_bitmask & SPACES_BITMASK_MASK) as usize];
     let shuffled = pattern
@@ -264,7 +323,6 @@ fn simd_parse_portable<S: Simd>(simd: S, chars: &[u8; 32]) -> (u32, u32, u32, bo
         decimal(&shuffled[12..16]),
         rgb,
         pattern.valid,
-        newline_pos,
     )
 }
 
@@ -328,8 +386,10 @@ mod tests {
     fn simd_parse(buffer: *const u8) -> (u16, u16, u32, u8) {
         let level = Level::new();
 
-        let (x, y, rgb, valid, newline_pos) =
-            dispatch!(level, simd => super::simd_parse(simd, buffer));
+        let (x, y, rgb, valid) = dispatch!(level, simd => super::simd_parse(simd, buffer));
+        // SAFETY: The tests pass 32 byte buffers
+        let chars = unsafe { &*(buffer as *const [u8; 32]) };
+        let newline_pos = chars.iter().position(|&c| c == b'\n').unwrap_or(32) as u8;
         (x as u16, y as u16, rgb, if valid { newline_pos } else { 0 })
     }
 
