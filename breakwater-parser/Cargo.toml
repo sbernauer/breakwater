@@ -14,6 +14,8 @@ harness = false
 [dependencies]
 color-eyre.workspace = true
 const_format.workspace = true
+fearless_simd.workspace = true
+fearless_simd_macros.workspace = true
 memchr.workspace = true
 shared_memory.workspace = true
 tracing.workspace = true

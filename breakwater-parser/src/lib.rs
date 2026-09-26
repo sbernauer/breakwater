@@ -9,6 +9,7 @@ use const_format::formatcp;
 
 #[cfg(target_arch = "x86_64")]
 mod assembler;
+mod fear;
 mod framebuffer;
 mod memchr;
 mod original;
@@ -16,6 +17,7 @@ mod refactored;
 
 #[cfg(target_arch = "x86_64")]
 pub use assembler::AssemblerParser;
+pub use fear::FearParser;
 pub use framebuffer::time_tracking::{
     RGB_BITS, RGB_MASK, TIMESTAMP_BITS, TIMESTAMP_MAX, TimeTrackingFrameBuffer, TimeTrackingPixel,
     get_current_ns_since_unix_epoch,

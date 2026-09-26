@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 #[cfg(target_arch = "x86_64")]
 use breakwater_parser::AssemblerParser;
 use breakwater_parser::{
-    MemchrParser, OriginalParser, Parser, RefactoredParser, SharedMemoryFrameBuffer,
+    FearParser, MemchrParser, OriginalParser, Parser, RefactoredParser, SharedMemoryFrameBuffer,
 };
 use criterion::{Criterion, criterion_group, criterion_main};
 use pixelbomber::image_handler::{self, ImageConfigBuilder};
@@ -21,15 +21,15 @@ fn compare_implementations(c: &mut Criterion) {
         false,
         false,
     );
-    invoke_benchmark(
-        c,
-        "parse_binary_draw_commands",
-        "benches/non-transparent.png",
-        false,
-        false,
-        false,
-        true,
-    );
+    // invoke_benchmark(
+    //     c,
+    //     "parse_binary_draw_commands",
+    //     "benches/non-transparent.png",
+    //     false,
+    //     false,
+    //     false,
+    //     true,
+    // );
     invoke_benchmark(
         c,
         "parse_draw_commands_unordered",
@@ -39,24 +39,24 @@ fn compare_implementations(c: &mut Criterion) {
         false,
         false,
     );
-    invoke_benchmark(
-        c,
-        "parse_draw_commands_with_offset",
-        "benches/non-transparent.png",
-        true,
-        true,
-        false,
-        false,
-    );
-    invoke_benchmark(
-        c,
-        "parse_mixed_draw_commands",
-        "benches/mixed.png",
-        false,
-        false,
-        true,
-        false,
-    );
+    // invoke_benchmark(
+    //     c,
+    //     "parse_draw_commands_with_offset",
+    //     "benches/non-transparent.png",
+    //     true,
+    //     true,
+    //     false,
+    //     false,
+    // );
+    // invoke_benchmark(
+    //     c,
+    //     "parse_mixed_draw_commands",
+    //     "benches/mixed.png",
+    //     false,
+    //     false,
+    //     true,
+    //     false,
+    // );
 }
 
 #[allow(clippy::fn_params_excessive_bools)]
@@ -103,7 +103,7 @@ fn invoke_benchmark(
             .expect("Failed to create shared memory framebuffer"),
     );
 
-    let parser_names = vec!["original", "refactored" /*"memchr"*/];
+    let parser_names = vec!["original", "fear" /*"memchr"*/];
 
     // #[cfg(target_arch = "x86_64")]
     // parser_names.push("assembler");
@@ -116,6 +116,7 @@ fn invoke_benchmark(
                 "memchr" => MemchrParser::new(fb.clone()).parse(input, &mut Vec::new()),
                 #[cfg(target_arch = "x86_64")]
                 "assembler" => AssemblerParser::default().parse(input, &mut Vec::new()),
+                "fear" => FearParser::new(fb.clone()).parse(input, &mut Vec::new()),
                 _ => panic!("Parser implementation {parse_name} not known"),
             });
         });
