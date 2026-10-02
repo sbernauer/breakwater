@@ -66,7 +66,11 @@ impl<FB: FrameBuffer> FearParser<FB> {
 }
 
 impl<FB: FrameBuffer> Parser for FearParser<FB> {
-    // Inlined into the caller the loops get less registers, so loop invariants get spilled
+    // Keep the parse loops in their own function. Inlined into the caller (e.g. criterion's
+    // `Bencher::iter` closure) they compete with the caller's code for registers: loop invariants
+    // got spilled to the stack and the SIMD constants stayed memory operands, reloaded for every
+    // line. That cost ~19% (ordered benchmark 5.97 instead of 7.38 ms when this was added).
+    // OriginalParser in contrast gets slower with `#[inline(never)]` (5.34 -> 5.82 ms).
     #[inline(never)]
     fn parse(&mut self, buffer: &[u8], response: &mut Vec<u8>) -> usize {
         let level = self.simd_level;
@@ -304,6 +308,7 @@ fn parse_text_command<FB: FrameBuffer>(
 
 /// Handles the `PX` commands the fast path doesn't, `line` is everything between `PX ` and the
 /// newline: reading a pixel (`PX x y`) and setting a gray one (`PX x y gg`).
+// Out of the stage 2 loop for the same reason as `parse_text_command`
 #[cold]
 #[inline(never)]
 fn parse_px_slow_path<FB: FrameBuffer>(
