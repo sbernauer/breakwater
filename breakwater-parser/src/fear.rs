@@ -7,7 +7,7 @@ use std::arch::x86_64::{
     _mm256_set1_epi8, _mm256_set1_epi16, _mm256_storeu_si256, _mm512_castsi512_si128,
     _mm512_loadu_si512, _mm512_maskz_compress_epi8,
 };
-use std::sync::Arc;
+use std::{io::Write, sync::Arc};
 
 use fearless_simd::{Level, Simd, SimdBase, SimdFrom, SimdMask, dispatch, u8x32, u8x64};
 use fearless_simd_macros::simd;
@@ -37,8 +37,9 @@ const ZERO: u8 = 0x80;
 struct ShufflePattern {
     /// Source byte for every output byte, see [`shuffle_patterns`] for the layout
     indices: [u8; 16],
-    /// Whether the spaces bitmask belongs to a valid `x y rrggbb` command
-    valid: bool,
+    /// Length of the `x y rrggbb` command after `PX ` (without the newline). 0 if the spaces
+    /// bitmask doesn't belong to one.
+    len: u8,
 }
 
 static SHUFFLE_PATTERNS: [ShufflePattern; 1 << SPACES_BITMASK_BITS] = shuffle_patterns();
@@ -157,12 +158,18 @@ fn parse_simd<S: Simd, FB: FrameBuffer>(
                 unsafe { (buffer.as_ptr().add(start) as *const u64).read_unaligned() };
             if current_command & 0x00ff_ffff == PX_PATTERN {
                 // SAFETY: `start + 3 + 32 <= loop_end + 35`, which the lookahead covers
-                let (x, y, rgb, valid) =
-                    simd_parse(simd, unsafe { buffer.as_ptr().add(start + 3) });
+                let (x, y, rgb, len) = simd_parse(simd, unsafe { buffer.as_ptr().add(start + 3) });
 
-                if valid {
+                // `PX ` contains no newline, so the line is at least that long
+                let line_len = newline - (start + 3);
+                let len = usize::from(len);
+                // `x y rrggbb`, or `x y rrggbbaa` with the alpha channel ignored. Checking the
+                // length also ensures the spaces that picked the pattern are part of this line.
+                if len != 0 && (line_len == len || line_len == len + 2) {
                     // The alpha byte of `rgb` is always zero
                     parser.fb.set(x as usize, y as usize, rgb, current_ts);
+                } else {
+                    parse_px_slow_path(&*parser.fb, &buffer[start + 3..newline], response);
                 }
                 // if present {
                 //     // Separator between coordinates and color
@@ -242,6 +249,43 @@ fn parse_simd<S: Simd, FB: FrameBuffer>(
     // last_byte_parsed.saturating_sub(1)
 }
 
+/// Handles the `PX` commands the fast path doesn't, `line` is everything between `PX ` and the
+/// newline. So far that's reading a pixel (`PX x y`).
+#[cold]
+#[inline(never)]
+fn parse_px_slow_path<FB: FrameBuffer>(fb: &FB, line: &[u8], response: &mut Vec<u8>) {
+    let Some((x, y)) = parse_coordinates(line) else {
+        return;
+    };
+
+    if let Some(rgb) = fb.get(x, y) {
+        // The framebuffer has the red channel in the lowest byte, this prints `rrggbb`
+        writeln!(response, "PX {x} {y} {:06x}", rgb.to_be() >> 8)
+            .expect("writing to a Vec never fails");
+    }
+}
+
+/// Parses exactly `x y`, both with 1-4 decimal digits
+fn parse_coordinates(line: &[u8]) -> Option<(usize, usize)> {
+    let space = line.iter().position(|&char| char == b' ')?;
+    Some((
+        parse_coordinate(&line[..space])?,
+        parse_coordinate(&line[space + 1..])?,
+    ))
+}
+
+fn parse_coordinate(digits: &[u8]) -> Option<usize> {
+    if !(1..=4).contains(&digits.len()) {
+        return None;
+    }
+
+    digits.iter().try_fold(0, |acc, digit| {
+        digit
+            .is_ascii_digit()
+            .then(|| acc * 10 + usize::from(digit - b'0'))
+    })
+}
+
 /// Writes `block_offset` plus the positions of the lowest set bits of `newlines` to `offsets`,
 /// followed by garbage. Returns how many offsets are written, which doesn't depend on `newlines`.
 #[inline(always)]
@@ -300,10 +344,10 @@ fearless_simd::kernel!(
 
 /// Parses `x y rrggbb` from the 32 bytes after `PX `.
 ///
-/// Returns `(x, y, rgb, valid)`. `rgb` has the red channel in the lowest byte and a zero alpha
-/// byte.
+/// Returns `(x, y, rgb, len)`, see [`ShufflePattern::len`] for `len`. `rgb` has the red channel in
+/// the lowest byte and a zero alpha byte.
 #[simd]
-fn simd_parse<S: Simd>(simd: S, buffer: *const u8) -> (u32, u32, u32, bool) {
+fn simd_parse<S: Simd>(simd: S, buffer: *const u8) -> (u32, u32, u32, u8) {
     // SAFETY: The caller guarantees `PARSER_LOOKAHEAD` readable bytes
     let chars = unsafe { &*(buffer as *const [u8; 32]) };
 
@@ -318,7 +362,7 @@ fn simd_parse<S: Simd>(simd: S, buffer: *const u8) -> (u32, u32, u32, bool) {
 #[cfg(target_arch = "x86_64")]
 fearless_simd::kernel!(
     #[inline(always)]
-    fn simd_parse_avx2(avx2: Avx2, chars: &[u8; 32]) -> (u32, u32, u32, bool) {
+    fn simd_parse_avx2(avx2: Avx2, chars: &[u8; 32]) -> (u32, u32, u32, u8) {
         // SAFETY: `chars` is 32 bytes long
         let chars = unsafe { _mm256_loadu_si256(chars.as_ptr().cast()) };
 
@@ -352,13 +396,13 @@ fearless_simd::kernel!(
         // The channels fit into a byte, the saturated coordinate pairs end up in bytes 4-7
         let rgb = _mm_cvtsi128_si32(_mm_packus_epi16(pairs, pairs)) as u32;
 
-        (x, y, rgb, pattern.valid)
+        (x, y, rgb, pattern.len)
     }
 );
 
 /// Slow path for SIMD levels without AVX2, uses the same table as [`simd_parse_avx2`].
 #[inline(always)]
-fn simd_parse_portable<S: Simd>(simd: S, chars: &[u8; 32]) -> (u32, u32, u32, bool) {
+fn simd_parse_portable<S: Simd>(simd: S, chars: &[u8; 32]) -> (u32, u32, u32, u8) {
     let vector = u8x32::simd_from(simd, *chars);
     let spaces_bitmask = vector.simd_eq(u8x32::splat(simd, b' ')).to_bitmask() as u32;
 
@@ -380,7 +424,7 @@ fn simd_parse_portable<S: Simd>(simd: S, chars: &[u8; 32]) -> (u32, u32, u32, bo
         decimal(&shuffled[8..12]),
         decimal(&shuffled[12..16]),
         rgb,
-        pattern.valid,
+        pattern.len,
     )
 }
 
@@ -394,7 +438,7 @@ fn simd_parse_portable<S: Simd>(simd: S, chars: &[u8; 32]) -> (u32, u32, u32, bo
 const fn shuffle_patterns() -> [ShufflePattern; 1 << SPACES_BITMASK_BITS] {
     let mut patterns = [ShufflePattern {
         indices: [ZERO; 16],
-        valid: false,
+        len: 0,
     }; 1 << SPACES_BITMASK_BITS];
 
     let mut x_len = 1;
@@ -423,7 +467,7 @@ const fn shuffle_patterns() -> [ShufflePattern; 1 << SPACES_BITMASK_BITS] {
 
             patterns[(1 << x_len) | (1 << (y_start + y_len))] = ShufflePattern {
                 indices,
-                valid: true,
+                len: (rgb_start + 6) as u8,
             };
             y_len += 1;
         }
@@ -439,16 +483,21 @@ mod tests {
     use fearless_simd::{Level, dispatch};
     use rstest::rstest;
 
-    use crate::{FearParser, Parser, SimpleFrameBuffer};
+    use crate::{FearParser, FrameBuffer, Parser, SimpleFrameBuffer};
 
     fn simd_parse(buffer: *const u8) -> (u16, u16, u32, u8) {
         let level = Level::new();
 
-        let (x, y, rgb, valid) = dispatch!(level, simd => super::simd_parse(simd, buffer));
+        let (x, y, rgb, len) = dispatch!(level, simd => super::simd_parse(simd, buffer));
         // SAFETY: The tests pass 32 byte buffers
         let chars = unsafe { &*(buffer as *const [u8; 32]) };
         let newline_pos = chars.iter().position(|&c| c == b'\n').unwrap_or(32) as u8;
-        (x as u16, y as u16, rgb, if valid { newline_pos } else { 0 })
+        (
+            x as u16,
+            y as u16,
+            rgb,
+            if len != 0 { newline_pos } else { 0 },
+        )
     }
 
     #[rstest]
@@ -473,6 +522,24 @@ mod tests {
         assert_eq!(y, expected_y);
         assert_eq!(rgb, expected_rgb);
         assert_eq!(bytes_parsed, expected_bytes_parsed);
+    }
+
+    #[test]
+    fn read_followed_by_longer_command() {
+        use std::sync::Arc;
+
+        // The space bitmask of `10 0\nPX 100 ` looks like `x y rrggbb` with a 4 digit y (`0\nPX`),
+        // only the line length tells it's a read
+        let mut input = b"PX 10 0\nPX 100 3 ffffff\n".to_vec();
+        input.extend([0; PARSER_LOOKAHEAD]);
+        let fb = Arc::new(SimpleFrameBuffer::new(1920, 1080));
+        let mut response = vec![];
+        FearParser::new(fb.clone()).parse(&input, &mut response);
+
+        assert_eq!(String::from_utf8_lossy(&response), "PX 10 0 000000\n");
+        // Where the misparsed y (`0\nPX` = 0, 10, 0, 8) would end up
+        assert_eq!(fb.get(10, 1008), Some(0));
+        assert_eq!(fb.get(100, 3), Some(0x00ff_ffff));
     }
 
     #[rstest]
