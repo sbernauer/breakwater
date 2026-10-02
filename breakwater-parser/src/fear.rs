@@ -12,7 +12,7 @@ use std::{io::Write, sync::Arc};
 use fearless_simd::{Level, Simd, SimdBase, SimdFrom, SimdMask, dispatch, u8x32, u8x64};
 use fearless_simd_macros::simd;
 
-use crate::original::{HELP_PATTERN, PX_PATTERN};
+use crate::original::{HELP_PATTERN, PX_PATTERN, SIZE_PATTERN};
 use crate::{ALT_HELP_TEXT, FrameBuffer, HELP_TEXT, MAX_HELP_CALLS_PER_CONNECTION, Parser};
 
 /// Stage 1 reads 64 byte blocks, a command reads 3 + 32 bytes from the start of its line
@@ -227,20 +227,13 @@ fn parse_simd<S: Simd, FB: FrameBuffer>(
                 //         continue;
                 //     }
                 // }
-            } else if current_command & 0xffff_ffff == HELP_PATTERN {
-                match parser.help_count {
-                    0..MAX_HELP_CALLS_PER_CONNECTION => {
-                        response.extend_from_slice(HELP_TEXT);
-                        parser.help_count += 1;
-                    }
-                    MAX_HELP_CALLS_PER_CONNECTION => {
-                        response.extend_from_slice(ALT_HELP_TEXT);
-                        parser.help_count += 1;
-                    }
-                    _ => {
-                        // The client has requested the help to often, let's just ignore it
-                    }
-                }
+            } else {
+                parse_text_command(
+                    current_command,
+                    &*parser.fb,
+                    &mut parser.help_count,
+                    response,
+                );
             }
         }
 
@@ -250,8 +243,63 @@ fn parse_simd<S: Simd, FB: FrameBuffer>(
         chunk_start = chunk_end;
     }
 
+    // The last line might miss its newline, e.g. a client sending `SIZE` and waiting for the
+    // answer. Only take the text commands from it, a `PX` command could still be incomplete.
+    if loop_end.saturating_sub(line_start) >= 4 {
+        // SAFETY: `line_start <= loop_end`, so the lookahead guarantees 8 readable bytes
+        let current_command =
+            unsafe { (buffer.as_ptr().add(line_start) as *const u64).read_unaligned() };
+        if parse_text_command(
+            current_command,
+            &*parser.fb,
+            &mut parser.help_count,
+            response,
+        ) {
+            last_byte_parsed = line_start + 3;
+        }
+    }
+
     last_byte_parsed
     // last_byte_parsed.saturating_sub(1)
+}
+
+/// Handles `HELP` and `SIZE`, `command` holds the first 8 bytes of the line. Returns whether it was
+/// one of them.
+// Keep this out of the stage 2 loop, which only needs to be fast for `PX`. Inlined, the formatting
+// code made the loop 27% slower on the ordered and 14% on the unordered benchmark, although they
+// don't contain a single text command: the bigger loop gets worse register allocation.
+#[cold]
+#[inline(never)]
+fn parse_text_command<FB: FrameBuffer>(
+    command: u64,
+    fb: &FB,
+    help_count: &mut u8,
+    response: &mut Vec<u8>,
+) -> bool {
+    match command & 0xffff_ffff {
+        HELP_PATTERN => {
+            match *help_count {
+                0..MAX_HELP_CALLS_PER_CONNECTION => {
+                    response.extend_from_slice(HELP_TEXT);
+                    *help_count += 1;
+                }
+                MAX_HELP_CALLS_PER_CONNECTION => {
+                    response.extend_from_slice(ALT_HELP_TEXT);
+                    *help_count += 1;
+                }
+                _ => {
+                    // The client has requested the help to often, let's just ignore it
+                }
+            }
+            true
+        }
+        SIZE_PATTERN => {
+            writeln!(response, "SIZE {} {}", fb.get_width(), fb.get_height())
+                .expect("writing to a Vec never fails");
+            true
+        }
+        _ => false,
+    }
 }
 
 /// Handles the `PX` commands the fast path doesn't, `line` is everything between `PX ` and the
