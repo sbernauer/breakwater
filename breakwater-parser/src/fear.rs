@@ -1,18 +1,18 @@
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::{
-    _mm_add_epi8, _mm_and_si128, _mm_cmpgt_epi8, _mm_cvtsi128_si32, _mm_extract_epi32,
-    _mm_load_si128, _mm_madd_epi16, _mm_maddubs_epi16, _mm_packus_epi16, _mm_set1_epi8,
-    _mm_setr_epi8, _mm_setr_epi16, _mm_shuffle_epi8, _mm256_add_epi16, _mm256_castsi256_si128,
-    _mm256_cmpeq_epi8, _mm256_cvtepu8_epi16, _mm256_loadu_si256, _mm256_movemask_epi8,
-    _mm256_set1_epi8, _mm256_set1_epi16, _mm256_storeu_si256, _mm512_castsi512_si128,
-    _mm512_loadu_si512, _mm512_maskz_compress_epi8,
+    __m128i, _mm_add_epi8, _mm_add_epi32, _mm_and_si128, _mm_cmpgt_epi8, _mm_cvtsi128_si32,
+    _mm_extract_epi32, _mm_load_si128, _mm_madd_epi16, _mm_maddubs_epi16, _mm_packus_epi16,
+    _mm_set1_epi8, _mm_setr_epi8, _mm_setr_epi16, _mm_shuffle_epi8, _mm256_add_epi16,
+    _mm256_castsi256_si128, _mm256_cmpeq_epi8, _mm256_cvtepu8_epi16, _mm256_loadu_si256,
+    _mm256_movemask_epi8, _mm256_set1_epi8, _mm256_set1_epi16, _mm256_storeu_si256,
+    _mm512_castsi512_si128, _mm512_loadu_si512, _mm512_maskz_compress_epi8,
 };
 use std::{io::Write, sync::Arc};
 
-use fearless_simd::{Level, Simd, SimdBase, SimdFrom, SimdMask, dispatch, u8x32, u8x64};
+use fearless_simd::{Level, Simd, SimdBase, SimdFrom, SimdMask, dispatch, u8x32, u8x64, u32x4};
 use fearless_simd_macros::simd;
 
-use crate::original::{HELP_PATTERN, PX_PATTERN, SIZE_PATTERN};
+use crate::original::{HELP_PATTERN, OFFSET_PATTERN, PX_PATTERN, SIZE_PATTERN};
 use crate::{ALT_HELP_TEXT, FrameBuffer, HELP_TEXT, MAX_HELP_CALLS_PER_CONNECTION, Parser};
 
 /// Stage 1 reads 64 byte blocks, a command reads 3 + 32 bytes from the start of its line
@@ -45,6 +45,10 @@ struct ShufflePattern {
 static SHUFFLE_PATTERNS: [ShufflePattern; 1 << SPACES_BITMASK_BITS] = shuffle_patterns();
 
 pub struct FearParser<FB: FrameBuffer> {
+    /// `[0, 0, x, y]` of the last `OFFSET x y`, which is added to the coordinates of all following
+    /// `PX` commands of the connection. The layout matches the lanes of the coordinates in
+    /// [`simd_parse`].
+    offsets: [u32; 4],
     /// How often the client requested the help on this connection. It is tracked per connection.
     help_count: u8,
     fb: Arc<FB>,
@@ -56,6 +60,7 @@ pub struct FearParser<FB: FrameBuffer> {
 impl<FB: FrameBuffer> FearParser<FB> {
     pub fn new(fb: Arc<FB>) -> Self {
         Self {
+            offsets: [0; 4],
             help_count: 0,
             fb,
             simd_level: Level::new(),
@@ -109,6 +114,11 @@ fn parse_simd<S: Simd, FB: FrameBuffer>(
     let loop_end = buffer.len().saturating_sub(PARSER_LOOKAHEAD);
     let newline_chars = u8x64::splat(simd, b'\n');
     let mut line_start = 0;
+    // Keep the offsets in a vector register, stage 2 already uses all general purpose registers. As
+    // two integers one of them got spilled to the stack, which cost 12% on the ordered benchmark.
+    // To stay a vector, the loop must never build it from scalars (LLVM then keeps the scalars
+    // and inserts them on every use), see `parse_offset`.
+    let mut offsets = u32x4::simd_from(simd, parser.offsets);
 
     let mut chunk_start = 0;
     while chunk_start < loop_end {
@@ -162,7 +172,8 @@ fn parse_simd<S: Simd, FB: FrameBuffer>(
                 unsafe { (buffer.as_ptr().add(start) as *const u64).read_unaligned() };
             if current_command & 0x00ff_ffff == PX_PATTERN {
                 // SAFETY: `start + 3 + 32 <= loop_end + 35`, which the lookahead covers
-                let (x, y, rgb, len) = simd_parse(simd, unsafe { buffer.as_ptr().add(start + 3) });
+                let (x, y, rgb, len) =
+                    simd_parse(simd, unsafe { buffer.as_ptr().add(start + 3) }, offsets);
 
                 // `PX ` contains no newline, so the line is at least that long
                 let line_len = newline - (start + 3);
@@ -173,9 +184,11 @@ fn parse_simd<S: Simd, FB: FrameBuffer>(
                     // The alpha byte of `rgb` is always zero
                     parser.fb.set(x as usize, y as usize, rgb, current_ts);
                 } else {
+                    let [_, _, x_offset, y_offset] = <[u32; 4]>::from(offsets);
                     parse_px_slow_path(
                         &*parser.fb,
                         &buffer[start + 3..newline],
+                        (x_offset as usize, y_offset as usize),
                         current_ts,
                         response,
                     );
@@ -231,6 +244,11 @@ fn parse_simd<S: Simd, FB: FrameBuffer>(
                 //         continue;
                 //     }
                 // }
+            } else if current_command & 0x00ff_ffff_ffff_ffff == OFFSET_PATTERN {
+                // `OFFSET ` contains no newline, so the line is at least that long
+                if let Some(new_offsets) = parse_offset(simd, &buffer[start + 7..newline]) {
+                    offsets = new_offsets;
+                }
             } else {
                 parse_text_command(
                     current_command,
@@ -262,6 +280,8 @@ fn parse_simd<S: Simd, FB: FrameBuffer>(
             last_byte_parsed = line_start + 3;
         }
     }
+
+    parser.offsets = offsets.into();
 
     last_byte_parsed
     // last_byte_parsed.saturating_sub(1)
@@ -306,6 +326,22 @@ fn parse_text_command<FB: FrameBuffer>(
     }
 }
 
+/// Parses the `x y` of `OFFSET x y` into `[0, 0, x, y]`, `line` is everything between `OFFSET `
+/// and the newline
+// Out of the stage 2 loop for the same reason as `parse_text_command`. It also builds the vector,
+// so that the loop only ever sees the offsets as a vector.
+#[cold]
+#[inline(never)]
+fn parse_offset<S: Simd>(simd: S, line: &[u8]) -> Option<u32x4<S>> {
+    let mut parts = line.split(|&char| char == b' ');
+    let (x, y) = parse_coordinates(&mut parts)?;
+    // Both have at most 4 digits
+    parts
+        .next()
+        .is_none()
+        .then(|| u32x4::simd_from(simd, [0, 0, x as u32, y as u32]))
+}
+
 /// Handles the `PX` commands the fast path doesn't, `line` is everything between `PX ` and the
 /// newline: reading a pixel (`PX x y`) and setting a gray one (`PX x y gg`).
 // Out of the stage 2 loop for the same reason as `parse_text_command`
@@ -314,21 +350,20 @@ fn parse_text_command<FB: FrameBuffer>(
 fn parse_px_slow_path<FB: FrameBuffer>(
     fb: &FB,
     line: &[u8],
+    (x_offset, y_offset): (usize, usize),
     ts: FB::Timestamp,
     response: &mut Vec<u8>,
 ) {
     let mut parts = line.split(|&char| char == b' ');
-    let (Some(x), Some(y)) = (
-        parts.next().and_then(parse_coordinate),
-        parts.next().and_then(parse_coordinate),
-    ) else {
+    let Some((x, y)) = parse_coordinates(&mut parts) else {
         return;
     };
 
     match (parts.next(), parts.next()) {
         (None, _) => {
-            if let Some(rgb) = fb.get(x, y) {
-                // The framebuffer has the red channel in the lowest byte, this prints `rrggbb`
+            if let Some(rgb) = fb.get(x + x_offset, y + y_offset) {
+                // The client gets its coordinates back, without the offset. The framebuffer has
+                // the red channel in the lowest byte, this prints `rrggbb`.
                 writeln!(response, "PX {x} {y} {:06x}", rgb.to_be() >> 8)
                     .expect("writing to a Vec never fails");
             }
@@ -336,11 +371,19 @@ fn parse_px_slow_path<FB: FrameBuffer>(
         (Some(&[high, low]), None) => {
             if let (Some(high), Some(low)) = (hex_digit(high), hex_digit(low)) {
                 let gray = (high << 4) | low;
-                fb.set(x, y, gray * 0x01_0101, ts);
+                fb.set(x + x_offset, y + y_offset, gray * 0x01_0101, ts);
             }
         }
         _ => {}
     }
+}
+
+/// Parses the next two space separated parts as coordinates
+fn parse_coordinates<'a>(parts: &mut impl Iterator<Item = &'a [u8]>) -> Option<(usize, usize)> {
+    Some((
+        parts.next().and_then(parse_coordinate)?,
+        parts.next().and_then(parse_coordinate)?,
+    ))
 }
 
 fn hex_digit(char: u8) -> Option<u32> {
@@ -417,25 +460,26 @@ fearless_simd::kernel!(
 
 /// Parses `x y rrggbb` from the 32 bytes after `PX `.
 ///
-/// Returns `(x, y, rgb, len)`, see [`ShufflePattern::len`] for `len`. `rgb` has the red channel in
-/// the lowest byte and a zero alpha byte.
+/// Returns `(x, y, rgb, len)`, see [`ShufflePattern::len`] for `len`. The offsets in lanes 2 and 3
+/// of `offsets` are added to x and y. `rgb` has the red channel in the lowest byte and a zero alpha
+/// byte.
 #[simd]
-fn simd_parse<S: Simd>(simd: S, buffer: *const u8) -> (u32, u32, u32, u8) {
+fn simd_parse<S: Simd>(simd: S, buffer: *const u8, offsets: u32x4<S>) -> (u32, u32, u32, u8) {
     // SAFETY: The caller guarantees `PARSER_LOOKAHEAD` readable bytes
     let chars = unsafe { &*(buffer as *const [u8; 32]) };
 
     #[cfg(target_arch = "x86_64")]
     if let Some(avx2) = simd.level().as_avx2() {
-        return simd_parse_avx2(avx2, chars);
+        return simd_parse_avx2(avx2, chars, offsets.into());
     }
 
-    simd_parse_portable(simd, chars)
+    simd_parse_portable(simd, chars, offsets)
 }
 
 #[cfg(target_arch = "x86_64")]
 fearless_simd::kernel!(
     #[inline(always)]
-    fn simd_parse_avx2(avx2: Avx2, chars: &[u8; 32]) -> (u32, u32, u32, u8) {
+    fn simd_parse_avx2(avx2: Avx2, chars: &[u8; 32], offsets: __m128i) -> (u32, u32, u32, u8) {
         // SAFETY: `chars` is 32 bytes long
         let chars = unsafe { _mm256_loadu_si256(chars.as_ptr().cast()) };
 
@@ -461,8 +505,12 @@ fearless_simd::kernel!(
             _mm_setr_epi8(16, 1, 16, 1, 16, 1, 0, 0, 10, 1, 10, 1, 10, 1, 10, 1),
         );
 
-        // x and y: `(d0 * 10 + d1) * 100 + (d2 * 10 + d3)`, in the two upper i32 lanes
-        let coordinates = _mm_madd_epi16(pairs, _mm_setr_epi16(0, 0, 0, 0, 100, 1, 100, 1));
+        // x and y: `(d0 * 10 + d1) * 100 + (d2 * 10 + d3)` plus the offset, in the two upper i32
+        // lanes
+        let coordinates = _mm_add_epi32(
+            _mm_madd_epi16(pairs, _mm_setr_epi16(0, 0, 0, 0, 100, 1, 100, 1)),
+            offsets,
+        );
         let x = _mm_extract_epi32::<2>(coordinates) as u32;
         let y = _mm_extract_epi32::<3>(coordinates) as u32;
 
@@ -475,7 +523,11 @@ fearless_simd::kernel!(
 
 /// Slow path for SIMD levels without AVX2, uses the same table as [`simd_parse_avx2`].
 #[inline(always)]
-fn simd_parse_portable<S: Simd>(simd: S, chars: &[u8; 32]) -> (u32, u32, u32, u8) {
+fn simd_parse_portable<S: Simd>(
+    simd: S,
+    chars: &[u8; 32],
+    offsets: u32x4<S>,
+) -> (u32, u32, u32, u8) {
     let vector = u8x32::simd_from(simd, *chars);
     let spaces_bitmask = vector.simd_eq(u8x32::splat(simd, b' ')).to_bitmask() as u32;
 
@@ -493,9 +545,10 @@ fn simd_parse_portable<S: Simd>(simd: S, chars: &[u8; 32]) -> (u32, u32, u32, u8
     let channel = |i: usize| (nibble(shuffled[i]) << 4) | nibble(shuffled[i + 1]);
     let rgb = u32::from_le_bytes([channel(0), channel(2), channel(4), 0]);
 
+    let [_, _, x_offset, y_offset] = <[u32; 4]>::from(offsets);
     (
-        decimal(&shuffled[8..12]),
-        decimal(&shuffled[12..16]),
+        decimal(&shuffled[8..12]) + x_offset,
+        decimal(&shuffled[12..16]) + y_offset,
         rgb,
         pattern.len,
     )
@@ -553,7 +606,7 @@ const fn shuffle_patterns() -> [ShufflePattern; 1 << SPACES_BITMASK_BITS] {
 #[cfg(test)]
 mod tests {
     use super::PARSER_LOOKAHEAD;
-    use fearless_simd::{Level, dispatch};
+    use fearless_simd::{Level, SimdFrom, dispatch, u32x4};
     use rstest::rstest;
 
     use crate::{FearParser, FrameBuffer, Parser, SimpleFrameBuffer};
@@ -561,7 +614,11 @@ mod tests {
     fn simd_parse(buffer: *const u8) -> (u16, u16, u32, u8) {
         let level = Level::new();
 
-        let (x, y, rgb, len) = dispatch!(level, simd => super::simd_parse(simd, buffer));
+        let (x, y, rgb, len) = dispatch!(level, simd => super::simd_parse(
+            simd,
+            buffer,
+            u32x4::simd_from(simd, [0; 4])
+        ));
         // SAFETY: The tests pass 32 byte buffers
         let chars = unsafe { &*(buffer as *const [u8; 32]) };
         let newline_pos = chars.iter().position(|&c| c == b'\n').unwrap_or(32) as u8;
