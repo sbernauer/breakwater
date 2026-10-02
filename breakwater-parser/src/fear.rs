@@ -169,7 +169,12 @@ fn parse_simd<S: Simd, FB: FrameBuffer>(
                     // The alpha byte of `rgb` is always zero
                     parser.fb.set(x as usize, y as usize, rgb, current_ts);
                 } else {
-                    parse_px_slow_path(&*parser.fb, &buffer[start + 3..newline], response);
+                    parse_px_slow_path(
+                        &*parser.fb,
+                        &buffer[start + 3..newline],
+                        current_ts,
+                        response,
+                    );
                 }
                 // if present {
                 //     // Separator between coordinates and color
@@ -250,28 +255,43 @@ fn parse_simd<S: Simd, FB: FrameBuffer>(
 }
 
 /// Handles the `PX` commands the fast path doesn't, `line` is everything between `PX ` and the
-/// newline. So far that's reading a pixel (`PX x y`).
+/// newline: reading a pixel (`PX x y`) and setting a gray one (`PX x y gg`).
 #[cold]
 #[inline(never)]
-fn parse_px_slow_path<FB: FrameBuffer>(fb: &FB, line: &[u8], response: &mut Vec<u8>) {
-    let Some((x, y)) = parse_coordinates(line) else {
+fn parse_px_slow_path<FB: FrameBuffer>(
+    fb: &FB,
+    line: &[u8],
+    ts: FB::Timestamp,
+    response: &mut Vec<u8>,
+) {
+    let mut parts = line.split(|&char| char == b' ');
+    let (Some(x), Some(y)) = (
+        parts.next().and_then(parse_coordinate),
+        parts.next().and_then(parse_coordinate),
+    ) else {
         return;
     };
 
-    if let Some(rgb) = fb.get(x, y) {
-        // The framebuffer has the red channel in the lowest byte, this prints `rrggbb`
-        writeln!(response, "PX {x} {y} {:06x}", rgb.to_be() >> 8)
-            .expect("writing to a Vec never fails");
+    match (parts.next(), parts.next()) {
+        (None, _) => {
+            if let Some(rgb) = fb.get(x, y) {
+                // The framebuffer has the red channel in the lowest byte, this prints `rrggbb`
+                writeln!(response, "PX {x} {y} {:06x}", rgb.to_be() >> 8)
+                    .expect("writing to a Vec never fails");
+            }
+        }
+        (Some(&[high, low]), None) => {
+            if let (Some(high), Some(low)) = (hex_digit(high), hex_digit(low)) {
+                let gray = (high << 4) | low;
+                fb.set(x, y, gray * 0x01_0101, ts);
+            }
+        }
+        _ => {}
     }
 }
 
-/// Parses exactly `x y`, both with 1-4 decimal digits
-fn parse_coordinates(line: &[u8]) -> Option<(usize, usize)> {
-    let space = line.iter().position(|&char| char == b' ')?;
-    Some((
-        parse_coordinate(&line[..space])?,
-        parse_coordinate(&line[space + 1..])?,
-    ))
+fn hex_digit(char: u8) -> Option<u32> {
+    char::from(char).to_digit(16)
 }
 
 fn parse_coordinate(digits: &[u8]) -> Option<usize> {
