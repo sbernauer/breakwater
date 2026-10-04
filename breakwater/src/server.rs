@@ -8,7 +8,8 @@ use std::{
 };
 
 use breakwater_parser::{
-    FearParser, FrameBuffer, OriginalParser, OriginalParserFrameBuffer, Parser, ParserKind,
+    FearParser, FrameBuffer, OriginalParser, OriginalParserFrameBuffer, Parser,
+    ParserImplementation, RefactoredParser,
 };
 use color_eyre::eyre::{self, Context};
 use futures::{StreamExt, stream::SelectAll};
@@ -39,7 +40,7 @@ pub struct Server<FB: FrameBuffer> {
     network_buffer_size: usize,
     connections_per_ip: HashMap<IpAddr, u64>,
     max_connections_per_ip: Option<u64>,
-    parser: ParserKind,
+    parser: ParserImplementation,
 }
 
 impl<FB: OriginalParserFrameBuffer + Send + Sync + 'static> Server<FB> {
@@ -50,7 +51,7 @@ impl<FB: OriginalParserFrameBuffer + Send + Sync + 'static> Server<FB> {
         statistics_tx: mpsc::Sender<StatisticsEvent>,
         network_buffer_size: usize,
         max_connections_per_ip: Option<u64>,
-        parser: ParserKind,
+        parser: ParserImplementation,
     ) -> eyre::Result<Self> {
         parser.check_supported()?;
 
@@ -137,7 +138,7 @@ impl<FB: OriginalParserFrameBuffer + Send + Sync + 'static> Server<FB> {
             // exactly as if the parser was hardcoded. No dynamic dispatch and no code of the other
             // parser in the same function.
             match self.parser {
-                ParserKind::Original => spawn_connection(
+                ParserImplementation::Original => spawn_connection(
                     stream,
                     ip,
                     OriginalParser::new(fb),
@@ -145,7 +146,15 @@ impl<FB: OriginalParserFrameBuffer + Send + Sync + 'static> Server<FB> {
                     network_buffer_size,
                     connection_dropped_tx,
                 ),
-                ParserKind::Fear => spawn_connection(
+                ParserImplementation::Refactored => spawn_connection(
+                    stream,
+                    ip,
+                    RefactoredParser::new(fb),
+                    statistics_tx,
+                    network_buffer_size,
+                    connection_dropped_tx,
+                ),
+                ParserImplementation::Fear => spawn_connection(
                     stream,
                     ip,
                     FearParser::new(fb),
