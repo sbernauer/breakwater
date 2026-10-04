@@ -178,9 +178,12 @@ fn parse_simd<S: Simd, FB: FrameBuffer>(
                 // `PX ` contains no newline, so the line is at least that long
                 let line_len = newline - (start + 3);
                 let len = usize::from(len);
-                // `x y rrggbb`, or `x y rrggbbaa` with the alpha channel ignored. Checking the
-                // length also ensures the spaces that picked the pattern are part of this line.
-                if len != 0 && (line_len == len || line_len == len + 2) {
+                // `x y rrggbb`, and without the `alpha` feature also `x y rrggbbaa` with the alpha
+                // channel ignored. Checking the length also ensures the spaces that picked the
+                // pattern are part of this line.
+                if len != 0
+                    && (line_len == len || (!cfg!(feature = "alpha") && line_len == len + 2))
+                {
                     // The alpha byte of `rgb` is always zero
                     parser.fb.set(x as usize, y as usize, rgb, current_ts);
                 } else {
@@ -343,7 +346,8 @@ fn parse_offset<S: Simd>(simd: S, line: &[u8]) -> Option<u32x4<S>> {
 }
 
 /// Handles the `PX` commands the fast path doesn't, `line` is everything between `PX ` and the
-/// newline: reading a pixel (`PX x y`) and setting a gray one (`PX x y gg`).
+/// newline: reading a pixel (`PX x y`), setting a gray one (`PX x y gg`) and with the `alpha`
+/// feature blending one (`PX x y rrggbbaa`).
 // Out of the stage 2 loop for the same reason as `parse_text_command`
 #[cold]
 #[inline(never)]
@@ -374,6 +378,12 @@ fn parse_px_slow_path<FB: FrameBuffer>(
                 fb.set(x + x_offset, y + y_offset, gray * 0x01_0101, ts);
             }
         }
+        #[cfg(feature = "alpha")]
+        (Some(color), None) if color.len() == 8 => {
+            if let Some(rgba) = parse_rgba(color) {
+                blend_pixel(fb, x + x_offset, y + y_offset, rgba, ts);
+            }
+        }
         _ => {}
     }
 }
@@ -388,6 +398,38 @@ fn parse_coordinates<'a>(parts: &mut impl Iterator<Item = &'a [u8]>) -> Option<(
 
 fn hex_digit(char: u8) -> Option<u32> {
     char::from(char).to_digit(16)
+}
+
+/// Parses `rrggbbaa`, the red channel ends up in the lowest byte
+#[cfg(feature = "alpha")]
+fn parse_rgba(color: &[u8]) -> Option<u32> {
+    let mut bytes = [0; 4];
+    for (byte, &[high, low]) in bytes.iter_mut().zip(color.as_chunks::<2>().0) {
+        *byte = ((hex_digit(high)? << 4) | hex_digit(low)?) as u8;
+    }
+    Some(u32::from_le_bytes(bytes))
+}
+
+/// Blends `rgba` over the current pixel, with exactly the formula of `OriginalParser` so both stay
+/// comparable. That includes its bug of reading the channels of the current pixel one byte off
+/// (`>> 24/16/8` instead of `>> 16/8/0`).
+#[cfg(feature = "alpha")]
+fn blend_pixel<FB: FrameBuffer>(fb: &FB, x: usize, y: usize, rgba: u32, ts: FB::Timestamp) {
+    let alpha = (rgba >> 24) & 0xff;
+    let Some(current) = fb.get(x, y) else {
+        return;
+    };
+    if alpha == 0 {
+        return;
+    }
+
+    let alpha_comp = 0xff - alpha;
+    let blend = |shift: u32| {
+        let current = (current >> (shift + 8)) & 0xff;
+        let new = (rgba >> shift) & 0xff;
+        ((current * alpha_comp + new * alpha) / 0xff) << shift
+    };
+    fb.set(x, y, blend(16) | blend(8) | blend(0), ts);
 }
 
 fn parse_coordinate(digits: &[u8]) -> Option<usize> {
@@ -666,6 +708,29 @@ mod tests {
             simd_parse("1 2 abcdef", [0, 0, 10, 20]),
             (11, 22, 0x00ef_cdab, 10)
         );
+    }
+
+    #[cfg(feature = "alpha")]
+    #[test]
+    fn alpha_blends_like_original_parser() {
+        use std::sync::Arc;
+
+        use crate::OriginalParser;
+
+        let mut input = b"PX 0 0 abcdef\nPX 0 0 12345680\nPX 1 0 ffffff00\nPX 2 0 ffffff88\n\
+            PX 3 0 102030ff\nPX 3 0 abcdef11\nOFFSET 1 1\nPX 3 3 abcdef80\nPX 9999 0 abcdef80\n"
+            .to_vec();
+        input.extend([0; PARSER_LOOKAHEAD]);
+        let fb_original = Arc::new(SimpleFrameBuffer::new(10, 10));
+        let fb_fear = Arc::new(SimpleFrameBuffer::new(10, 10));
+        OriginalParser::new(fb_original.clone()).parse(&input, &mut vec![]);
+        FearParser::new(fb_fear.clone()).parse(&input, &mut vec![]);
+
+        for y in 0..10 {
+            for x in 0..10 {
+                assert_eq!(fb_original.get(x, y), fb_fear.get(x, y), "pixel {x} {y}");
+            }
+        }
     }
 
     #[test]
