@@ -18,7 +18,7 @@ use crate::{ALT_HELP_TEXT, FrameBuffer, HELP_TEXT, MAX_HELP_CALLS_PER_CONNECTION
 /// Stage 1 reads 64 byte blocks, a command reads 3 + 32 bytes from the start of its line
 pub const PARSER_LOOKAHEAD: usize = 64;
 
-/// A feature this build enables, but FearParser can't support. It works on lines, so the binary
+/// A feature this build enables, but SimdParser can't support. It works on lines, so the binary
 /// commands are out: their payload can contain newlines and doesn't end with one.
 pub(crate) const UNSUPPORTED_ENABLED_FEATURE: Option<&str> = if cfg!(feature = "binary-set-pixel") {
     Some("binary-set-pixel")
@@ -54,7 +54,7 @@ struct ShufflePattern {
 
 static SHUFFLE_PATTERNS: [ShufflePattern; 1 << SPACES_BITMASK_BITS] = shuffle_patterns();
 
-pub struct FearParser<FB: FrameBuffer> {
+pub struct SimdParser<FB: FrameBuffer> {
     /// `[0, 0, x, y]` of the last `OFFSET x y`, which is added to the coordinates of all following
     /// `PX` commands of the connection. The layout matches the lanes of the coordinates in
     /// [`simd_parse`].
@@ -67,7 +67,7 @@ pub struct FearParser<FB: FrameBuffer> {
     newline_offsets: Box<[u16]>,
 }
 
-impl<FB: FrameBuffer> FearParser<FB> {
+impl<FB: FrameBuffer> SimdParser<FB> {
     pub fn new(fb: Arc<FB>) -> Self {
         Self {
             offsets: [0; 4],
@@ -80,7 +80,7 @@ impl<FB: FrameBuffer> FearParser<FB> {
     }
 }
 
-impl<FB: FrameBuffer> Parser for FearParser<FB> {
+impl<FB: FrameBuffer> Parser for SimdParser<FB> {
     // Keep the parse loops in their own function. Inlined into the caller (e.g. criterion's
     // `Bencher::iter` closure) they compete with the caller's code for registers: loop invariants
     // got spilled to the stack and the SIMD constants stayed memory operands, reloaded for every
@@ -108,7 +108,7 @@ impl<FB: FrameBuffer> Parser for FearParser<FB> {
 #[allow(clippy::too_many_lines)]
 fn parse_simd<S: Simd, FB: FrameBuffer>(
     simd: S,
-    parser: &mut FearParser<FB>,
+    parser: &mut SimdParser<FB>,
     buffer: &[u8],
     response: &mut Vec<u8>,
 ) -> usize {
@@ -661,7 +661,7 @@ mod tests {
     use fearless_simd::{Level, SimdFrom, dispatch, u32x4};
     use rstest::rstest;
 
-    use crate::{FearParser, FrameBuffer, Parser, SimpleFrameBuffer};
+    use crate::{FrameBuffer, Parser, SimdParser, SimpleFrameBuffer};
 
     /// Runs [`super::simd_parse`] on `input` padded to 32 bytes, and checks that the portable
     /// fallback agrees
@@ -732,13 +732,13 @@ mod tests {
             .to_vec();
         input.extend([0; PARSER_LOOKAHEAD]);
         let fb_original = Arc::new(SimpleFrameBuffer::new(10, 10));
-        let fb_fear = Arc::new(SimpleFrameBuffer::new(10, 10));
+        let fb_simd = Arc::new(SimpleFrameBuffer::new(10, 10));
         OriginalParser::new(fb_original.clone()).parse(&input, &mut vec![]);
-        FearParser::new(fb_fear.clone()).parse(&input, &mut vec![]);
+        SimdParser::new(fb_simd.clone()).parse(&input, &mut vec![]);
 
         for y in 0..10 {
             for x in 0..10 {
-                assert_eq!(fb_original.get(x, y), fb_fear.get(x, y), "pixel {x} {y}");
+                assert_eq!(fb_original.get(x, y), fb_simd.get(x, y), "pixel {x} {y}");
             }
         }
     }
@@ -753,7 +753,7 @@ mod tests {
         input.extend([0; PARSER_LOOKAHEAD]);
         let fb = Arc::new(SimpleFrameBuffer::new(1920, 1080));
         let mut response = vec![];
-        FearParser::new(fb.clone()).parse(&input, &mut response);
+        SimdParser::new(fb.clone()).parse(&input, &mut response);
 
         assert_eq!(String::from_utf8_lossy(&response), "PX 10 0 000000\n");
         // Where the misparsed y (`0\nPX` = 0, 10, 0, 8) would end up
@@ -771,7 +771,7 @@ mod tests {
         input.extend([0; PARSER_LOOKAHEAD]);
         let mut response = vec![];
         let fb = Arc::new(SimpleFrameBuffer::new(10, 10));
-        let mut parser = FearParser::new(fb);
+        let mut parser = SimdParser::new(fb);
         parser.parse(&input, &mut response);
     }
 }

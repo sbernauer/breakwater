@@ -9,16 +9,15 @@ use const_format::formatcp;
 
 #[cfg(target_arch = "x86_64")]
 mod assembler;
-mod fear;
 mod framebuffer;
 mod memchr;
 mod original;
 mod parser_implementation;
 mod refactored;
+mod simd;
 
 #[cfg(target_arch = "x86_64")]
 pub use assembler::AssemblerParser;
-pub use fear::FearParser;
 pub use framebuffer::time_tracking::{
     RGB_BITS, RGB_MASK, TIMESTAMP_BITS, TIMESTAMP_MAX, TimeTrackingFrameBuffer, TimeTrackingPixel,
     get_current_ns_since_unix_epoch,
@@ -31,6 +30,7 @@ pub use memchr::MemchrParser;
 pub use original::{OriginalParser, OriginalParserFrameBuffer};
 pub use parser_implementation::ParserImplementation;
 pub use refactored::RefactoredParser;
+pub use simd::SimdParser;
 
 pub const HELP_TEXT: &[u8] = formatcp!("\
 Pixelflut server powered by breakwater https://github.com/sbernauer/breakwater

@@ -7,8 +7,8 @@ use std::{
 };
 
 use breakwater_parser::{
-    FearParser, FrameBuffer, HELP_TEXT, OriginalParser, OriginalParserFrameBuffer,
-    ParserImplementation, RefactoredParser, SharedMemoryFrameBuffer,
+    FrameBuffer, HELP_TEXT, OriginalParser, OriginalParserFrameBuffer, ParserImplementation,
+    RefactoredParser, SharedMemoryFrameBuffer, SimdParser,
 };
 use rstest::{fixture, rstest};
 use tokio::sync::mpsc;
@@ -60,7 +60,7 @@ async fn test_correct_responses_to_general_commands(
     #[values(
         ParserImplementation::Original,
         ParserImplementation::Refactored,
-        ParserImplementation::Fear
+        ParserImplementation::Simd
     )]
     parser: ParserImplementation,
 ) {
@@ -114,7 +114,7 @@ async fn test_setting_pixel(
     #[values(
         ParserImplementation::Original,
         ParserImplementation::Refactored,
-        ParserImplementation::Fear
+        ParserImplementation::Simd
     )]
     parser: ParserImplementation,
 ) {
@@ -130,7 +130,7 @@ async fn test_safe<FB: OriginalParserFrameBuffer>(
     #[values(
         ParserImplementation::Original,
         ParserImplementation::Refactored,
-        ParserImplementation::Fear
+        ParserImplementation::Simd
     )]
     parser: ParserImplementation,
     fb: Arc<FB>,
@@ -171,7 +171,7 @@ async fn test_drawing_rect<FB: OriginalParserFrameBuffer>(
     #[values(
         ParserImplementation::Original,
         ParserImplementation::Refactored,
-        ParserImplementation::Fear
+        ParserImplementation::Simd
     )]
     parser: ParserImplementation,
     fb: Arc<FB>,
@@ -505,11 +505,11 @@ async fn run_connection<FB: OriginalParserFrameBuffer>(
             )
             .await
         }
-        ParserImplementation::Fear => {
+        ParserImplementation::Simd => {
             handle_connection(
                 stream,
                 ip(),
-                FearParser::new(fb),
+                SimdParser::new(fb),
                 statistics_tx,
                 DEFAULT_NETWORK_BUFFER_SIZE,
                 None,
