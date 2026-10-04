@@ -14,6 +14,8 @@ All notable changes to this project will be documented in this file.
   Enable it with `--enable-sink web`, it listens on `[::]:8080` unless told otherwise.
   The new `web` feature is enabled by default.
 - Support arbitrary strings as `--advertised-endpoint` ([#105]).
+- Add the CLI argument `--parser` to select the parser implementation: `original` (default) or `refactored` ([#109]).
+  `refactored` doesn't support the `binary-sync-pixels` feature, so breakwater refuses to start with that combination.
 
 ### Changed
 
@@ -43,6 +45,7 @@ All notable changes to this project will be documented in this file.
 [#104]: https://github.com/sbernauer/breakwater/pull/104
 [#105]: https://github.com/sbernauer/breakwater/pull/105
 [#107]: https://github.com/sbernauer/breakwater/pull/107
+[#109]: https://github.com/sbernauer/breakwater/pull/109
 
 ## [0.22.0] - 2026-06-20
 

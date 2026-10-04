@@ -12,6 +12,7 @@ name = "parsing"
 harness = false
 
 [dependencies]
+clap = { workspace = true, optional = true }
 color-eyre.workspace = true
 const_format.workspace = true
 memchr.workspace = true
@@ -25,6 +26,7 @@ rstest.workspace = true
 
 [features]
 alpha = []
+clap = ["dep:clap"]
 binary-set-pixel = []
 binary-sync-pixels = []
 # For ever pixel on the framebuffer the write timestamp is tracked
