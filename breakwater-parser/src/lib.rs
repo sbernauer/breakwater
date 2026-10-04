@@ -12,7 +12,7 @@ mod assembler;
 mod framebuffer;
 mod memchr;
 mod original;
-mod parser_kind;
+mod parser_implementation;
 mod refactored;
 
 #[cfg(target_arch = "x86_64")]
@@ -27,7 +27,7 @@ pub use framebuffer::{
 };
 pub use memchr::MemchrParser;
 pub use original::{OriginalParser, OriginalParserFrameBuffer};
-pub use parser_kind::ParserKind;
+pub use parser_implementation::ParserImplementation;
 pub use refactored::RefactoredParser;
 
 pub const HELP_TEXT: &[u8] = formatcp!("\

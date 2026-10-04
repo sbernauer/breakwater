@@ -1,0 +1,60 @@
+use std::fmt::{self, Display};
+
+use color_eyre::eyre::{self, bail};
+
+use crate::refactored;
+
+/// Different parser implementations, with their strengths and weaknesses.
+/// Not all parsers implement the same feature set.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+pub enum ParserImplementation {
+    /// The OG parser, most feature rich. Ugly but performant.
+    #[default]
+    Original,
+
+    /// The original parser restructured into smaller functions. Doesn't support binary-sync-pixels.
+    Refactored,
+}
+
+impl ParserImplementation {
+    /// Checks that the parser supports everything this build enables.
+    ///
+    /// # Errors
+    ///
+    /// If the parser doesn't support an enabled feature.
+    pub fn check_supported(self) -> eyre::Result<()> {
+        let unsupported_feature = match self {
+            Self::Original => None,
+            Self::Refactored => refactored::UNSUPPORTED_ENABLED_FEATURE,
+        };
+        if let Some(feature) = unsupported_feature {
+            bail!("the {self} parser doesn't support the {feature} feature this build enables");
+        }
+        Ok(())
+    }
+}
+
+/// The name as used on the command line
+impl Display for ParserImplementation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Original => "original",
+            Self::Refactored => "refactored",
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ParserImplementation;
+
+    #[test]
+    fn check_supported() {
+        assert!(ParserImplementation::Original.check_supported().is_ok());
+        assert_eq!(
+            ParserImplementation::Refactored.check_supported().is_ok(),
+            !cfg!(feature = "binary-sync-pixels")
+        );
+    }
+}

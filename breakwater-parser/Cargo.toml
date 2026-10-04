@@ -26,7 +26,6 @@ rstest.workspace = true
 
 [features]
 alpha = []
-# Derives clap::ValueEnum for ParserKind
 clap = ["dep:clap"]
 binary-set-pixel = []
 binary-sync-pixels = []

@@ -7,8 +7,8 @@ use std::{
 };
 
 use breakwater_parser::{
-    FrameBuffer, HELP_TEXT, OriginalParser, OriginalParserFrameBuffer, ParserKind,
-    SharedMemoryFrameBuffer,
+    FrameBuffer, HELP_TEXT, OriginalParser, OriginalParserFrameBuffer, ParserImplementation,
+    RefactoredParser, SharedMemoryFrameBuffer,
 };
 use rstest::{fixture, rstest};
 use tokio::sync::mpsc;
@@ -57,7 +57,8 @@ fn statistics_channel() -> (
 async fn test_correct_responses_to_general_commands(
     #[case] input: &str,
     #[case] expected: &str,
-    #[values(ParserKind::Original)] parser: ParserKind,
+    #[values(ParserImplementation::Original, ParserImplementation::Refactored)]
+    parser: ParserImplementation,
 ) {
     assert_returns(parser, input.as_bytes(), expected).await;
 }
@@ -106,7 +107,8 @@ async fn test_correct_responses_to_general_commands(
 async fn test_setting_pixel(
     #[case] input: &str,
     #[case] expected: &str,
-    #[values(ParserKind::Original)] parser: ParserKind,
+    #[values(ParserImplementation::Original, ParserImplementation::Refactored)]
+    parser: ParserImplementation,
 ) {
     assert_returns(parser, input.as_bytes(), expected).await;
 }
@@ -117,7 +119,8 @@ async fn test_setting_pixel(
 #[tokio::test]
 async fn test_safe<FB: OriginalParserFrameBuffer>(
     #[case] input: &str,
-    #[values(ParserKind::Original)] parser: ParserKind,
+    #[values(ParserImplementation::Original, ParserImplementation::Refactored)]
+    parser: ParserImplementation,
     fb: Arc<FB>,
     statistics_channel: (
         mpsc::Sender<StatisticsEvent>,
@@ -153,7 +156,8 @@ async fn test_drawing_rect<FB: OriginalParserFrameBuffer>(
     #[case] height: usize,
     #[case] offset_x: usize,
     #[case] offset_y: usize,
-    #[values(ParserKind::Original)] parser: ParserKind,
+    #[values(ParserImplementation::Original, ParserImplementation::Refactored)]
+    parser: ParserImplementation,
     fb: Arc<FB>,
     statistics_channel: (
         mpsc::Sender<StatisticsEvent>,
@@ -253,6 +257,8 @@ async fn test_drawing_rect<FB: OriginalParserFrameBuffer>(
 async fn test_binary_set_pixel<FB: OriginalParserFrameBuffer>(
     #[case] input: &str,
     #[case] expected: &str,
+    #[values(ParserImplementation::Original, ParserImplementation::Refactored)]
+    parser: ParserImplementation,
     fb: Arc<FB>,
     statistics_channel: (
         mpsc::Sender<StatisticsEvent>,
@@ -260,7 +266,7 @@ async fn test_binary_set_pixel<FB: OriginalParserFrameBuffer>(
     ),
 ) {
     let mut stream = MockTcpStream::from_string(input);
-    run_connection(ParserKind::Original, &mut stream, fb, statistics_channel.0).await;
+    run_connection(parser, &mut stream, fb, statistics_channel.0).await;
 
     assert_eq!(expected, stream.get_output());
 }
@@ -270,7 +276,7 @@ async fn test_binary_set_pixel<FB: OriginalParserFrameBuffer>(
 async fn test_binary_sync_pixels() {
     // Test byte conversion works
     assert_returns(
-        ParserKind::Original,
+        ParserImplementation::Original,
         "PX 0 0 42\nPX 0 0\n".as_bytes(),
         "PX 0 0 424242\n",
     )
@@ -285,7 +291,7 @@ async fn test_binary_sync_pixels() {
         0, 0, 0, 0, /* length */
     ]);
     input.extend("PX 0 0\n".as_bytes());
-    assert_returns(ParserKind::Original, &input, "PX 0 0 000000\n").await;
+    assert_returns(ParserImplementation::Original, &input, "PX 0 0 000000\n").await;
 
     // Set first 10 pixels
     let mut input = Vec::new();
@@ -301,7 +307,7 @@ async fn test_binary_sync_pixels() {
         "PX 0 0\nPX 1 0\nPX 2 0\nPX 3 0\nPX 4 0\nPX 5 0\nPX 6 0\nPX 7 0\nPX 8 0\nPX 9 0\n"
             .as_bytes(),
     );
-    assert_returns(ParserKind::Original, &input, "PX 0 0 000000\nPX 1 0 000001\nPX 2 0 000002\nPX 3 0 000003\nPX 4 0 000004\nPX 5 0 000005\nPX 6 0 000006\nPX 7 0 000007\nPX 8 0 000008\nPX 9 0 000009\n").await;
+    assert_returns(ParserImplementation::Original, &input, "PX 0 0 000000\nPX 1 0 000001\nPX 2 0 000002\nPX 3 0 000003\nPX 4 0 000004\nPX 5 0 000005\nPX 6 0 000006\nPX 7 0 000007\nPX 8 0 000008\nPX 9 0 000009\n").await;
 }
 
 #[cfg(feature = "binary-sync-pixels")]
@@ -320,7 +326,7 @@ async fn test_binary_sync_pixels_last_pixel<FB: OriginalParserFrameBuffer>(fb: A
 
     input.extend(format!("PX 0 0\nPX {} {y}\nPX {x} {y}\n", x - 1).as_bytes());
     assert_returns(
-        ParserKind::Original,
+        ParserImplementation::Original,
         &input,
         &format!(
             "PX 0 0 000000\nPX {} {y} 000000\nPX {x} {y} 123456\n",
@@ -366,7 +372,7 @@ async fn test_binary_sync_pixels_in_the_middle<FB: OriginalParserFrameBuffer>(fb
     input.extend("PX 52 14\n".as_bytes());
     expected += "PX 52 14 000000\n";
 
-    assert_returns(ParserKind::Original, &input, &expected).await;
+    assert_returns(ParserImplementation::Original, &input, &expected).await;
 }
 
 #[cfg(feature = "binary-sync-pixels")]
@@ -387,7 +393,7 @@ async fn test_binary_sync_pixels_exceeding_screen<FB: OriginalParserFrameBuffer>
     input.extend(format!("PX {x} {y}\n").as_bytes());
     // As we exceeded the screen nothing should have been set
     assert_returns(
-        ParserKind::Original,
+        ParserImplementation::Original,
         &input,
         &format!("PX {x} {y} 000000\n"),
     )
@@ -436,7 +442,7 @@ async fn test_binary_sync_pixels_larger_than_buffer<FB: OriginalParserFrameBuffe
 
     let mut stream = MockTcpStream::from_bytes(input);
     run_connection(
-        ParserKind::Original,
+        ParserImplementation::Original,
         &mut stream,
         fb,
         statistics_channel().0,
@@ -446,7 +452,7 @@ async fn test_binary_sync_pixels_larger_than_buffer<FB: OriginalParserFrameBuffe
     assert_eq!(expected, stream.get_output());
 }
 
-async fn assert_returns(parser: ParserKind, input: &[u8], expected: &str) {
+async fn assert_returns(parser: ParserImplementation, input: &[u8], expected: &str) {
     let mut stream = MockTcpStream::from_bytes(input.to_owned());
     run_connection(parser, &mut stream, fb(), statistics_channel().0).await;
 
@@ -455,17 +461,28 @@ async fn assert_returns(parser: ParserKind, input: &[u8], expected: &str) {
 
 /// Handles a connection with the given parser, which the server picks per connection
 async fn run_connection<FB: OriginalParserFrameBuffer>(
-    parser: ParserKind,
+    parser: ParserImplementation,
     stream: &mut MockTcpStream,
     fb: Arc<FB>,
     statistics_tx: mpsc::Sender<StatisticsEvent>,
 ) {
     match parser {
-        ParserKind::Original => {
+        ParserImplementation::Original => {
             handle_connection(
                 stream,
                 ip(),
                 OriginalParser::new(fb),
+                statistics_tx,
+                DEFAULT_NETWORK_BUFFER_SIZE,
+                None,
+            )
+            .await
+        }
+        ParserImplementation::Refactored => {
+            handle_connection(
+                stream,
+                ip(),
+                RefactoredParser::new(fb),
                 statistics_tx,
                 DEFAULT_NETWORK_BUFFER_SIZE,
                 None,

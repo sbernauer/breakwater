@@ -3,7 +3,7 @@ use std::{
     net::{IpAddr, SocketAddr},
 };
 
-use breakwater_parser::ParserKind;
+use breakwater_parser::ParserImplementation;
 
 use crate::sinks::cli_args::SinkCliArgs;
 
@@ -77,7 +77,7 @@ pub struct NetworkListenerCliArgs {
 
     /// The parser for the Pixelflut commands
     #[clap(long, value_enum, default_value_t)]
-    pub parser: ParserKind,
+    pub parser: ParserImplementation,
 }
 
 impl NetworkListenerCliArgs {
@@ -170,7 +170,7 @@ mod tests {
                 .collect(),
             network_buffer_size: DEFAULT_NETWORK_BUFFER_SIZE,
             connections_per_ip: None,
-            parser: ParserKind::default(),
+            parser: ParserImplementation::default(),
         }
     }
 

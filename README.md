@@ -117,7 +117,7 @@ Network listener options:
   -c, --connections-per-ip <CONNECTIONS_PER_IP>
           Allow only a certain number of connections per ip address
       --parser <PARSER>
-          The parser for the Pixelflut commands [default: original] [possible values: original]
+          The parser for the Pixelflut commands [default: original] [possible values: original, refactored]
 
 Statistics save file options:
       --disable-statistics-save-file

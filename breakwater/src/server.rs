@@ -8,7 +8,8 @@ use std::{
 };
 
 use breakwater_parser::{
-    FrameBuffer, OriginalParser, OriginalParserFrameBuffer, Parser, ParserKind,
+    FrameBuffer, OriginalParser, OriginalParserFrameBuffer, Parser, ParserImplementation,
+    RefactoredParser,
 };
 use color_eyre::eyre::{self, Context};
 use futures::{StreamExt, stream::SelectAll};
@@ -39,7 +40,7 @@ pub struct Server<FB: FrameBuffer> {
     network_buffer_size: usize,
     connections_per_ip: HashMap<IpAddr, u64>,
     max_connections_per_ip: Option<u64>,
-    parser: ParserKind,
+    parser: ParserImplementation,
 }
 
 impl<FB: OriginalParserFrameBuffer + Send + Sync + 'static> Server<FB> {
@@ -50,8 +51,10 @@ impl<FB: OriginalParserFrameBuffer + Send + Sync + 'static> Server<FB> {
         statistics_tx: mpsc::Sender<StatisticsEvent>,
         network_buffer_size: usize,
         max_connections_per_ip: Option<u64>,
-        parser: ParserKind,
+        parser: ParserImplementation,
     ) -> eyre::Result<Self> {
+        parser.check_supported()?;
+
         let mut listener_streams = Vec::with_capacity(listen_addresses.len());
         for addr in listen_addresses {
             let listener = TcpListener::bind(addr)
@@ -135,10 +138,18 @@ impl<FB: OriginalParserFrameBuffer + Send + Sync + 'static> Server<FB> {
             // exactly as if the parser was hardcoded. No dynamic dispatch and no code of the other
             // parser in the same function.
             match self.parser {
-                ParserKind::Original => spawn_connection(
+                ParserImplementation::Original => spawn_connection(
                     stream,
                     ip,
                     OriginalParser::new(fb),
+                    statistics_tx,
+                    network_buffer_size,
+                    connection_dropped_tx,
+                ),
+                ParserImplementation::Refactored => spawn_connection(
+                    stream,
+                    ip,
+                    RefactoredParser::new(fb),
                     statistics_tx,
                     network_buffer_size,
                     connection_dropped_tx,
