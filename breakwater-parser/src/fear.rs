@@ -611,47 +611,61 @@ mod tests {
 
     use crate::{FearParser, FrameBuffer, Parser, SimpleFrameBuffer};
 
-    fn simd_parse(buffer: *const u8) -> (u16, u16, u32, u8) {
+    /// Runs [`super::simd_parse`] on `input` padded to 32 bytes, and checks that the portable
+    /// fallback agrees
+    fn simd_parse(input: &str, offsets: [u32; 4]) -> (u32, u32, u32, u8) {
+        let mut buffer = input.as_bytes().to_vec();
+        buffer.resize(32, 0);
         let level = Level::new();
 
-        let (x, y, rgb, len) = dispatch!(level, simd => super::simd_parse(
+        let result = dispatch!(level, simd => super::simd_parse(
             simd,
-            buffer,
-            u32x4::simd_from(simd, [0; 4])
+            buffer.as_ptr(),
+            u32x4::simd_from(simd, offsets)
         ));
-        // SAFETY: The tests pass 32 byte buffers
-        let chars = unsafe { &*(buffer as *const [u8; 32]) };
-        let newline_pos = chars.iter().position(|&c| c == b'\n').unwrap_or(32) as u8;
-        (
-            x as u16,
-            y as u16,
-            rgb,
-            if len != 0 { newline_pos } else { 0 },
-        )
+
+        #[cfg(target_arch = "x86_64")]
+        if let Some(sse4_2) = level.as_sse4_2() {
+            let chars: &[u8; 32] = buffer.as_slice().try_into().unwrap();
+            let portable =
+                super::simd_parse_portable(sse4_2, chars, u32x4::simd_from(sse4_2, offsets));
+            assert_eq!(portable, result, "portable fallback differs for {input:?}");
+        }
+
+        result
     }
 
     #[rstest]
+    // The spaces don't match any command, so everything is 0
     #[case("", 0, 0, 0, 0)]
     #[case(" ", 0, 0, 0, 0)]
     #[case("1 2", 0, 0, 0, 0)]
-    #[case("1 2 ", 1, 2, 10_066_329 /* invalid input produces garbage */, 3)]
-    #[case("1 2 abcdef", 1, 2, 0xab_cdef, 3)]
-    #[case("1234 5678 ", 1234, 5678, 10_066_329 /* invalid input produces garbage */, 9)]
-    #[case("1234 5678 09afAF", 1234, 5678, 0x09_afaf, 9)]
+    #[case("1 2 ", 1, 2, 0 /* invalid input produces garbage */, 10)]
+    #[case("1 2 abcdef", 1, 2, 0x00ef_cdab, 10)]
+    #[case("12 345 abcdef", 12, 345, 0x00ef_cdab, 13)]
+    #[case("1234 5678 ", 1234, 5678, 0 /* invalid input produces garbage */, 16)]
+    #[case("1234 5678 09afAF", 1234, 5678, 0x00af_af09, 16)]
+    // Only the first 6 hex digits matter, the length tells the caller about the alpha channel
+    #[case("1 2 abcdef42", 1, 2, 0x00ef_cdab, 10)]
     fn test_simd_parse(
         #[case] input: &str,
-        #[case] expected_x: u16,
-        #[case] expected_y: u16,
+        #[case] expected_x: u32,
+        #[case] expected_y: u32,
         #[case] expected_rgb: u32,
-        #[case] expected_bytes_parsed: u8,
+        #[case] expected_len: u8,
     ) {
-        let mut buffer: Vec<u8> = input.as_bytes().to_vec();
-        buffer.resize(32, 0);
-        let (x, y, rgb, bytes_parsed) = simd_parse(buffer.as_ptr());
-        assert_eq!(x, expected_x);
-        assert_eq!(y, expected_y);
-        assert_eq!(rgb, expected_rgb);
-        assert_eq!(bytes_parsed, expected_bytes_parsed);
+        assert_eq!(
+            simd_parse(input, [0; 4]),
+            (expected_x, expected_y, expected_rgb, expected_len)
+        );
+    }
+
+    #[test]
+    fn simd_parse_adds_offsets() {
+        assert_eq!(
+            simd_parse("1 2 abcdef", [0, 0, 10, 20]),
+            (11, 22, 0x00ef_cdab, 10)
+        );
     }
 
     #[test]
