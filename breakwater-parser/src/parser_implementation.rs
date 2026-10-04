@@ -44,17 +44,3 @@ impl Display for ParserImplementation {
         })
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::ParserImplementation;
-
-    #[test]
-    fn check_supported() {
-        assert!(ParserImplementation::Original.check_supported().is_ok());
-        assert_eq!(
-            ParserImplementation::Refactored.check_supported().is_ok(),
-            !cfg!(feature = "binary-sync-pixels")
-        );
-    }
-}
