@@ -7,13 +7,15 @@ use std::{
     time::Duration,
 };
 
-use breakwater_parser::{FrameBuffer, OriginalParserFrameBuffer, Parser};
+use breakwater_parser::{
+    FearParser, FrameBuffer, OriginalParser, OriginalParserFrameBuffer, Parser,
+};
 use color_eyre::eyre::{self, Context};
 use futures::{StreamExt, stream::SelectAll};
 use memadvise::Advice;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, ToSocketAddrs},
+    net::{TcpListener, TcpStream, ToSocketAddrs},
     sync::mpsc,
     time::Instant,
 };
@@ -30,6 +32,17 @@ const CONNECTION_DENIED_TEXT: &[u8] = b"Connection denied as connection limit is
 // Every client connection spawns a new thread, so we need to limit the number of stat events we send
 const STATISTICS_REPORT_INTERVAL: Duration = Duration::from_millis(250);
 
+/// The parser handling the Pixelflut commands of a connection
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
+pub enum ParserKind {
+    /// The proven parser
+    #[default]
+    Original,
+
+    /// Experimental SIMD parser. Doesn't support the binary commands.
+    Fear,
+}
+
 pub struct Server<FB: FrameBuffer> {
     incoming_connections: SelectAll<TcpListenerStream>,
     fb: Arc<FB>,
@@ -37,6 +50,7 @@ pub struct Server<FB: FrameBuffer> {
     network_buffer_size: usize,
     connections_per_ip: HashMap<IpAddr, u64>,
     max_connections_per_ip: Option<u64>,
+    parser: ParserKind,
 }
 
 impl<FB: OriginalParserFrameBuffer + Send + Sync + 'static> Server<FB> {
@@ -47,7 +61,22 @@ impl<FB: OriginalParserFrameBuffer + Send + Sync + 'static> Server<FB> {
         statistics_tx: mpsc::Sender<StatisticsEvent>,
         network_buffer_size: usize,
         max_connections_per_ip: Option<u64>,
+        parser: ParserKind,
     ) -> eyre::Result<Self> {
+        // FearParser works on lines, so it can't support the binary commands: their payload can
+        // contain newlines and doesn't end with one
+        if parser == ParserKind::Fear
+            && cfg!(any(
+                feature = "binary-set-pixel",
+                feature = "binary-sync-pixels"
+            ))
+        {
+            eyre::bail!(
+                "the fear parser doesn't support the binary commands, which this build enables \
+                (binary-set-pixel or binary-sync-pixels feature)"
+            );
+        }
+
         let mut listener_streams = Vec::with_capacity(listen_addresses.len());
         for addr in listen_addresses {
             let listener = TcpListener::bind(addr)
@@ -68,6 +97,7 @@ impl<FB: OriginalParserFrameBuffer + Send + Sync + 'static> Server<FB> {
             network_buffer_size,
             connections_per_ip: HashMap::new(),
             max_connections_per_ip,
+            parser,
         })
     }
 
@@ -122,38 +152,69 @@ impl<FB: OriginalParserFrameBuffer + Send + Sync + 'static> Server<FB> {
                 }
             }
 
-            let fb_for_thread = Arc::clone(&self.fb);
-            let statistics_tx_for_thread = self.statistics_tx.clone();
+            let fb = Arc::clone(&self.fb);
+            let statistics_tx = self.statistics_tx.clone();
             let network_buffer_size = self.network_buffer_size;
-            let connection_dropped_tx_clone = connection_dropped_tx.clone();
-            tokio::spawn(async move {
-                if let Err(error) = handle_connection(
+            let connection_dropped_tx = connection_dropped_tx.clone();
+            // Every parser gets its own task type, so its connection loop is compiled on its own,
+            // exactly as if the parser was hardcoded. No dynamic dispatch and no code of the other
+            // parser in the same function.
+            match self.parser {
+                ParserKind::Original => spawn_connection(
                     stream,
                     ip,
-                    fb_for_thread,
-                    statistics_tx_for_thread,
+                    OriginalParser::new(fb),
+                    statistics_tx,
                     network_buffer_size,
-                    connection_dropped_tx_clone,
-                )
-                .await
-                {
-                    tracing::error!(?error, %ip, "failed to handle connection");
-                }
-            });
+                    connection_dropped_tx,
+                ),
+                ParserKind::Fear => spawn_connection(
+                    stream,
+                    ip,
+                    FearParser::new(fb),
+                    statistics_tx,
+                    network_buffer_size,
+                    connection_dropped_tx,
+                ),
+            }
         }
 
         Ok(())
     }
 }
 
+fn spawn_connection(
+    stream: TcpStream,
+    ip: IpAddr,
+    parser: impl Parser + Send + 'static,
+    statistics_tx: mpsc::Sender<StatisticsEvent>,
+    network_buffer_size: usize,
+    connection_dropped_tx: Option<mpsc::UnboundedSender<IpAddr>>,
+) {
+    tokio::spawn(async move {
+        if let Err(error) = handle_connection(
+            stream,
+            ip,
+            parser,
+            statistics_tx,
+            network_buffer_size,
+            connection_dropped_tx,
+        )
+        .await
+        {
+            tracing::error!(?error, %ip, "failed to handle connection");
+        }
+    });
+}
+
 #[instrument(
-    skip(stream, fb, statistics_tx, connection_dropped_tx),
+    skip(stream, parser, statistics_tx, connection_dropped_tx),
     err(level = "debug")
 )]
-pub async fn handle_connection<FB: OriginalParserFrameBuffer>(
+pub async fn handle_connection(
     mut stream: impl AsyncReadExt + AsyncWriteExt + Send + Unpin,
     ip: IpAddr,
-    fb: Arc<FB>,
+    mut parser: impl Parser,
     statistics_tx: mpsc::Sender<StatisticsEvent>,
     network_buffer_size: usize,
     connection_dropped_tx: Option<mpsc::UnboundedSender<IpAddr>>,
@@ -173,14 +234,6 @@ pub async fn handle_connection<FB: OriginalParserFrameBuffer>(
     // Number bytes left over **on the first bytes of the buffer** from the previous loop iteration
     let mut leftover_bytes_in_buffer = 0;
 
-    // Not using `ParserImplementation` to avoid the dynamic dispatch.
-    // let mut parser = ParserImplementation::Simple(SimpleParser::new(fb));
-    // FearParser works on lines, so it can't support the binary commands: their payload can
-    // contain newlines and doesn't end with one
-    #[cfg(any(feature = "binary-set-pixel", feature = "binary-sync-pixels"))]
-    let mut parser = breakwater_parser::OriginalParser::new(fb);
-    #[cfg(not(any(feature = "binary-set-pixel", feature = "binary-sync-pixels")))]
-    let mut parser = breakwater_parser::FearParser::new(fb);
     let parser_lookahead = parser.parser_lookahead();
 
     // If we send e.g. an StatisticsEvent::BytesRead for every time we read something from the socket the statistics thread would go crazy.

@@ -110,12 +110,14 @@ Options:
 Network listener options:
   -l, --listener-address <LISTEN_ADDRESSES>
           Listen address to bind to (multiple can be specified). The default value will listen on all interfaces for IPv4 and IPv6 packets [default: [::]:1234]
-      --advertised-endpoint <ADVERTISED_ENDPOINTS>
+      --advertised-endpoint <HOST:PORT>
           Specify one or more pixelflut endpoints to display to spectators
       --network-buffer-size <NETWORK_BUFFER_SIZE>
-          The size in bytes of the network buffer used for each open TCP connection. Please use at least 64 KB (64_000 bytes) [default: 262144]
+          The size in bytes of the network buffer used for each open TCP connection. Use at least 64 KB (64_000 bytes) [default: 262144]
   -c, --connections-per-ip <CONNECTIONS_PER_IP>
           Allow only a certain number of connections per ip address
+      --parser <PARSER>
+          The parser for the Pixelflut commands [default: original] [possible values: original, fear]
 
 Statistics save file options:
       --disable-statistics-save-file
@@ -152,6 +154,10 @@ VNC sink options:
 web sink options:
       --web-listen-address <WEB_LISTEN_ADDRESSES>
           Web server listen address to bind to (multiple can be specified). The default value will listen on all interfaces for IPv4 and IPv6 packets [default: [::]:8080]
+      --web-frame-compression-level <FRAME_COMPRESSION_LEVEL>
+          The compression level to use to compress frames before sending them to the connected clients [default: 1]
+      --web-frame-compression-chunks <FRAME_COMPRESSION_CHUNKS>
+          The number of independently-compressed chunks a frame is split into before compression [default: 16]
       --web-chat-messages-per-minute <CHAT_MESSAGES_PER_MINUTE>
           Maximum number of chat messages a single IP address may send per minute in the WebUI [default: 10]
 ```
