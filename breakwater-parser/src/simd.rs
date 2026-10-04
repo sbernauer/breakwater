@@ -458,6 +458,13 @@ fn parse_coordinate(digits: &[u8]) -> Option<usize> {
 /// followed by garbage. Returns how many offsets are written, which doesn't depend on `newlines`.
 #[inline(always)]
 fn write_newline_offsets<S: Simd>(
+    #[cfg_attr(
+        not(target_arch = "x86_64"),
+        expect(
+            unused_variables,
+            reason = "Only the AVX-512 path on x86_64 needs the token"
+        )
+    )]
     simd: S,
     newlines: u64,
     block_offset: u16,
