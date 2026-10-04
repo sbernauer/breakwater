@@ -3,7 +3,9 @@ use std::{
     net::{IpAddr, SocketAddr},
 };
 
-use crate::{server::ParserKind, sinks::cli_args::SinkCliArgs};
+use breakwater_parser::ParserKind;
+
+use crate::sinks::cli_args::SinkCliArgs;
 
 pub const DEFAULT_NETWORK_BUFFER_SIZE: usize = 256 * 1024;
 

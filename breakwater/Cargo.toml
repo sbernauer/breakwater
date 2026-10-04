@@ -12,7 +12,7 @@ name = "breakwater"
 path = "src/main.rs"
 
 [dependencies]
-breakwater-parser.workspace = true
+breakwater-parser = { workspace = true, features = ["clap"] }
 breakwater-egui-overlay = { workspace = true, optional = true }
 
 async-trait.workspace = true

@@ -7,16 +7,14 @@ use std::{
 };
 
 use breakwater_parser::{
-    FearParser, FrameBuffer, HELP_TEXT, OriginalParser, OriginalParserFrameBuffer,
+    FearParser, FrameBuffer, HELP_TEXT, OriginalParser, OriginalParserFrameBuffer, ParserKind,
     SharedMemoryFrameBuffer,
 };
 use rstest::{fixture, rstest};
 use tokio::sync::mpsc;
 
 use crate::{
-    cli_args::DEFAULT_NETWORK_BUFFER_SIZE,
-    server::{ParserKind, handle_connection},
-    statistics::StatisticsEvent,
+    cli_args::DEFAULT_NETWORK_BUFFER_SIZE, server::handle_connection, statistics::StatisticsEvent,
     test_helpers::mock_tcp_stream::MockTcpStream,
 };
 

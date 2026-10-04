@@ -18,6 +18,16 @@ use crate::{ALT_HELP_TEXT, FrameBuffer, HELP_TEXT, MAX_HELP_CALLS_PER_CONNECTION
 /// Stage 1 reads 64 byte blocks, a command reads 3 + 32 bytes from the start of its line
 pub const PARSER_LOOKAHEAD: usize = 64;
 
+/// A feature this build enables, but FearParser can't support. It works on lines, so the binary
+/// commands are out: their payload can contain newlines and doesn't end with one.
+pub(crate) const UNSUPPORTED_ENABLED_FEATURE: Option<&str> = if cfg!(feature = "binary-set-pixel") {
+    Some("binary-set-pixel")
+} else if cfg!(feature = "binary-sync-pixels") {
+    Some("binary-sync-pixels")
+} else {
+    None
+};
+
 /// Stage 2 re-reads the input stage 1 just scanned, so we alternate between the stages on chunks
 /// that fit into L1
 const CHUNK_SIZE: usize = 16 * 1024;

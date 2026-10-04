@@ -8,7 +8,7 @@ use std::{
 };
 
 use breakwater_parser::{
-    FearParser, FrameBuffer, OriginalParser, OriginalParserFrameBuffer, Parser,
+    FearParser, FrameBuffer, OriginalParser, OriginalParserFrameBuffer, Parser, ParserKind,
 };
 use color_eyre::eyre::{self, Context};
 use futures::{StreamExt, stream::SelectAll};
@@ -32,17 +32,6 @@ const CONNECTION_DENIED_TEXT: &[u8] = b"Connection denied as connection limit is
 // Every client connection spawns a new thread, so we need to limit the number of stat events we send
 const STATISTICS_REPORT_INTERVAL: Duration = Duration::from_millis(250);
 
-/// The parser handling the Pixelflut commands of a connection
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
-pub enum ParserKind {
-    /// The proven parser
-    #[default]
-    Original,
-
-    /// Experimental SIMD parser. Doesn't support the binary commands.
-    Fear,
-}
-
 pub struct Server<FB: FrameBuffer> {
     incoming_connections: SelectAll<TcpListenerStream>,
     fb: Arc<FB>,
@@ -63,19 +52,7 @@ impl<FB: OriginalParserFrameBuffer + Send + Sync + 'static> Server<FB> {
         max_connections_per_ip: Option<u64>,
         parser: ParserKind,
     ) -> eyre::Result<Self> {
-        // FearParser works on lines, so it can't support the binary commands: their payload can
-        // contain newlines and doesn't end with one
-        if parser == ParserKind::Fear
-            && cfg!(any(
-                feature = "binary-set-pixel",
-                feature = "binary-sync-pixels"
-            ))
-        {
-            eyre::bail!(
-                "the fear parser doesn't support the binary commands, which this build enables \
-                (binary-set-pixel or binary-sync-pixels feature)"
-            );
-        }
+        parser.check_supported()?;
 
         let mut listener_streams = Vec::with_capacity(listen_addresses.len());
         for addr in listen_addresses {
