@@ -294,37 +294,43 @@ fn parse_lines<S: Simd, FB: FrameBuffer, const WITH_OFFSET: bool>(
             // `PX ` contains no newline, so the line is at least that long
             let line_len = newline - (start + 3);
             let len = usize::from(len);
-            // The pattern fits `x y`, the line length tells the color: `rrggbb`, `gg`, or
-            // without the `alpha` feature also `rrggbbaa` with the alpha channel ignored.
-            // Checking the length also ensures the spaces that picked the pattern are part of
-            // this line. Short gray lines like `1 2 ff` see the next line's space, so they
-            // take the slow path.
-            // Checked in order of frequency, so RGB and RGBA lines don't pay for gray ones.
-            let color = if len == 0 {
-                std::hint::cold_path();
-                None
-            } else if line_len == len || (!cfg!(feature = "alpha") && line_len == len + 2) {
-                // The alpha byte of `rgb` is always zero
-                Some(rgb)
-            } else if line_len + 4 == len {
-                std::hint::cold_path();
-                // For `gg` the first channel holds the gray value
-                Some((rgb & 0xff) * 0x0001_0101)
+            // The pattern fits `x y`, the line length tells the color format. Checking the length
+            // also ensures the spaces that picked the pattern are part of this line.
+            //
+            // `rrggbb`, and without the `alpha` feature (it blends in the slow path) `rrggbbaa`
+            // with the alpha channel ignored, share one check: `line_len - len` is 0 or 2. Their
+            // path doesn't take a single branch, everything else is cold. With a taken branch in
+            // there, the branch predictor mispredicted it for up to 17% of the lines, depending on
+            // the code layout.
+            let rgb_or_rgba = if cfg!(feature = "alpha") {
+                line_len == len
             } else {
-                std::hint::cold_path();
-                None
+                line_len.wrapping_sub(len) & !2 == 0
             };
-            if let Some(color) = color {
-                fb.set(x as usize, y as usize, color, current_ts);
+            if len != 0 && rgb_or_rgba {
+                // The alpha byte of `rgb` is always zero
+                fb.set(x as usize, y as usize, rgb, current_ts);
             } else {
-                let [_, _, x_offset, y_offset] = <[u32; 4]>::from(offsets);
-                parse_px_slow_path(
-                    fb,
-                    &buffer[start + 3..newline],
-                    (x_offset as usize, y_offset as usize),
-                    current_ts,
-                    response,
-                );
+                std::hint::cold_path();
+                if len != 0 && line_len + 4 == len {
+                    // `gg`, the first channel holds the gray value. Short gray lines like `1 2 ff`
+                    // see the next line's space in the pattern window and take the slow path.
+                    fb.set(
+                        x as usize,
+                        y as usize,
+                        (rgb & 0xff) * 0x0001_0101,
+                        current_ts,
+                    );
+                } else {
+                    let [_, _, x_offset, y_offset] = <[u32; 4]>::from(offsets);
+                    parse_px_slow_path(
+                        fb,
+                        &buffer[start + 3..newline],
+                        (x_offset as usize, y_offset as usize),
+                        current_ts,
+                        response,
+                    );
+                }
             }
             // if present {
             //     // Separator between coordinates and color
