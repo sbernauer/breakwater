@@ -136,26 +136,29 @@ fn parse_simd<S: Simd, FB: FrameBuffer>(
 
         // Stage 1: collect the offsets of all newlines in the chunk
         let mut newline_count = 0;
-        let mut block = chunk_start;
-        while block < chunk_end {
+        // Collects the newlines of the 64 byte block, as far as `mask` allows
+        let mut collect_block = |block: usize, mask: u64| {
             // SAFETY: `block < loop_end`, so the lookahead guarantees 64 readable bytes
             let chars = unsafe { (buffer.as_ptr().add(block) as *const [u8; 64]).read_unaligned() };
             let mut newlines = u8x64::simd_from(simd, chars)
                 .simd_eq(newline_chars)
-                .to_bitmask();
-            let remaining = chunk_end - block;
-            if remaining < 64 {
-                newlines &= (1 << remaining) - 1;
-            }
+                .to_bitmask()
+                & mask;
             let block_count = newlines.count_ones() as usize;
             let block_offset = (block - chunk_start) as u16;
 
             // Always write a fixed number of offsets, so the loop doesn't branch on the number of
             // newlines. The ones past `block_count` are garbage, the next block overwrites them.
-            let offsets: &mut [u16; MAX_OFFSETS_PER_BLOCK] = (&mut parser.newline_offsets
-                [newline_count..newline_count + MAX_OFFSETS_PER_BLOCK])
-                .try_into()
-                .unwrap();
+            // SAFETY: There is at most one newline per byte, so `newline_count` is at most
+            // `block - chunk_start < CHUNK_SIZE`. `newline_offsets` has `MAX_OFFSETS_PER_BLOCK`
+            // more entries than that.
+            let offsets = unsafe {
+                &mut *parser
+                    .newline_offsets
+                    .as_mut_ptr()
+                    .add(newline_count)
+                    .cast::<[u16; MAX_OFFSETS_PER_BLOCK]>()
+            };
             let written = write_newline_offsets(simd, newlines, block_offset, offsets);
             if block_count > written {
                 // Only garbage input has this many newlines per block
@@ -168,7 +171,16 @@ fn parse_simd<S: Simd, FB: FrameBuffer>(
             }
 
             newline_count += block_count;
+        };
+        // Only the last block can reach beyond `chunk_end`, so the others don't need a mask
+        let full_blocks_end = chunk_end - (chunk_end - chunk_start) % 64;
+        let mut block = chunk_start;
+        while block < full_blocks_end {
+            collect_block(block, u64::MAX);
             block += 64;
+        }
+        if block < chunk_end {
+            collect_block(block, (1 << (chunk_end - block)) - 1);
         }
 
         // Stage 2: parse the lines, see `parse_lines` for the two variants
