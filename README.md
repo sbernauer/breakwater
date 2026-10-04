@@ -102,6 +102,8 @@ Options:
           Listen address the Prometheus exporter should listen on [default: [::]:9100]
       --shared-memory-name <SHARED_MEMORY_NAME>
           Create (or use an existing) shared memory region for the framebuffer. This enables other applications to read and write Pixel values to the framebuffer or can be used to persist the canvas across restarts
+      --parser <PARSER>
+          The used parser implementation [default: original] [possible values: original, refactored]
   -h, --help
           Print help (see more with '--help')
   -V, --version
@@ -116,8 +118,6 @@ Network listener options:
           The size in bytes of the network buffer used for each open TCP connection. Use at least 64 KB (64_000 bytes) [default: 262144]
   -c, --connections-per-ip <CONNECTIONS_PER_IP>
           Allow only a certain number of connections per ip address
-      --parser <PARSER>
-          The parser for the Pixelflut commands [default: original] [possible values: original, refactored]
 
 Statistics save file options:
       --disable-statistics-save-file

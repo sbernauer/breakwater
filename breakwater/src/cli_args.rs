@@ -34,6 +34,10 @@ pub struct CliArgs {
     #[clap(long)]
     pub shared_memory_name: Option<String>,
 
+    /// The used parser implementation
+    #[clap(long, value_enum, default_value_t)]
+    pub parser: ParserImplementation,
+
     #[clap(flatten)]
     pub network_listener: NetworkListenerCliArgs,
 
@@ -74,10 +78,6 @@ pub struct NetworkListenerCliArgs {
     /// Allow only a certain number of connections per ip address
     #[clap(short, long)]
     pub connections_per_ip: Option<u64>,
-
-    /// The parser for the Pixelflut commands
-    #[clap(long, value_enum, default_value_t)]
-    pub parser: ParserImplementation,
 }
 
 impl NetworkListenerCliArgs {
@@ -170,7 +170,6 @@ mod tests {
                 .collect(),
             network_buffer_size: DEFAULT_NETWORK_BUFFER_SIZE,
             connections_per_ip: None,
-            parser: ParserImplementation::default(),
         }
     }
 
