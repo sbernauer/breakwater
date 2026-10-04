@@ -188,14 +188,25 @@ fn parse_simd<S: Simd, FB: FrameBuffer>(
                 // `PX ` contains no newline, so the line is at least that long
                 let line_len = newline - (start + 3);
                 let len = usize::from(len);
-                // `x y rrggbb`, and without the `alpha` feature also `x y rrggbbaa` with the alpha
-                // channel ignored. Checking the length also ensures the spaces that picked the
-                // pattern are part of this line.
-                if len != 0
-                    && (line_len == len || (!cfg!(feature = "alpha") && line_len == len + 2))
-                {
+                // The pattern fits `x y`, the line length tells the color: `rrggbb`, `gg`, or
+                // without the `alpha` feature also `rrggbbaa` with the alpha channel ignored.
+                // Checking the length also ensures the spaces that picked the pattern are part of
+                // this line. Short gray lines like `1 2 ff` see the next line's space, so they
+                // take the slow path.
+                // Checked in order of frequency, so RGB and RGBA lines don't pay for gray ones.
+                let color = if len == 0 {
+                    None
+                } else if line_len == len || (!cfg!(feature = "alpha") && line_len == len + 2) {
                     // The alpha byte of `rgb` is always zero
-                    parser.fb.set(x as usize, y as usize, rgb, current_ts);
+                    Some(rgb)
+                } else if line_len + 4 == len {
+                    // For `gg` the first channel holds the gray value
+                    Some((rgb & 0xff) * 0x0001_0101)
+                } else {
+                    None
+                };
+                if let Some(color) = color {
+                    parser.fb.set(x as usize, y as usize, color, current_ts);
                 } else {
                     let [_, _, x_offset, y_offset] = <[u32; 4]>::from(offsets);
                     parse_px_slow_path(
@@ -748,6 +759,22 @@ mod tests {
                 assert_eq!(fb_original.get(x, y), fb_simd.get(x, y), "pixel {x} {y}");
             }
         }
+    }
+
+    #[test]
+    fn gray() {
+        use std::sync::Arc;
+
+        // `1 2 ff` sees the space of the next `PX `, so it takes the slow path
+        let mut input = b"PX 1 2 ff\nPX 3 4 aabbcc\nPX 5 16 12\nPX 7 8 ab\n".to_vec();
+        input.extend([0; PARSER_LOOKAHEAD]);
+        let fb = Arc::new(SimpleFrameBuffer::new(20, 20));
+        SimdParser::new(fb.clone()).parse(&input, &mut vec![]);
+
+        assert_eq!(fb.get(1, 2), Some(0x00ff_ffff));
+        assert_eq!(fb.get(3, 4), Some(0x00cc_bbaa));
+        assert_eq!(fb.get(5, 16), Some(0x0012_1212));
+        assert_eq!(fb.get(7, 8), Some(0x00ab_abab));
     }
 
     #[test]
