@@ -21,15 +21,15 @@ fn compare_implementations(c: &mut Criterion) {
         false,
         false,
     );
-    // invoke_benchmark(
-    //     c,
-    //     "parse_binary_draw_commands",
-    //     "benches/non-transparent.png",
-    //     false,
-    //     false,
-    //     false,
-    //     true,
-    // );
+    invoke_benchmark(
+        c,
+        "parse_binary_draw_commands",
+        "benches/non-transparent.png",
+        false,
+        false,
+        false,
+        true,
+    );
     invoke_benchmark(
         c,
         "parse_draw_commands_unordered",
@@ -39,24 +39,24 @@ fn compare_implementations(c: &mut Criterion) {
         false,
         false,
     );
-    // invoke_benchmark(
-    //     c,
-    //     "parse_draw_commands_with_offset",
-    //     "benches/non-transparent.png",
-    //     true,
-    //     true,
-    //     false,
-    //     false,
-    // );
-    // invoke_benchmark(
-    //     c,
-    //     "parse_mixed_draw_commands",
-    //     "benches/mixed.png",
-    //     false,
-    //     false,
-    //     true,
-    //     false,
-    // );
+    invoke_benchmark(
+        c,
+        "parse_draw_commands_with_offset",
+        "benches/non-transparent.png",
+        true,
+        true,
+        false,
+        false,
+    );
+    invoke_benchmark(
+        c,
+        "parse_mixed_draw_commands",
+        "benches/mixed.png",
+        false,
+        false,
+        true,
+        false,
+    );
 }
 
 #[allow(clippy::fn_params_excessive_bools)]
