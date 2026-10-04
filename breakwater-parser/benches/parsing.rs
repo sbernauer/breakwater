@@ -103,7 +103,7 @@ fn invoke_benchmark(
             .expect("Failed to create shared memory framebuffer"),
     );
 
-    let parser_names = vec!["original", "fear" /*"memchr"*/];
+    let parser_names = vec!["original", "refactored", "fear" /*"memchr"*/];
 
     // #[cfg(target_arch = "x86_64")]
     // parser_names.push("assembler");
