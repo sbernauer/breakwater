@@ -18,11 +18,7 @@ pub enum ParserImplementation {
 }
 
 impl ParserImplementation {
-    /// Checks that the parser supports everything this build enables.
-    ///
-    /// # Errors
-    ///
-    /// If the parser doesn't support an enabled feature.
+    /// Checks that the parser supports everything this build enables, errors otherwise.
     pub fn check_supported(self) -> eyre::Result<()> {
         let unsupported_feature = match self {
             Self::Original => None,
@@ -34,8 +30,6 @@ impl ParserImplementation {
         Ok(())
     }
 }
-
-/// The name as used on the command line
 impl Display for ParserImplementation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
