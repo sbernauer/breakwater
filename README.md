@@ -116,6 +116,8 @@ Network listener options:
           The size in bytes of the network buffer used for each open TCP connection. Please use at least 64 KB (64_000 bytes) [default: 262144]
   -c, --connections-per-ip <CONNECTIONS_PER_IP>
           Allow only a certain number of connections per ip address
+      --parser <PARSER>
+          The parser for the Pixelflut commands [default: original] [possible values: original]
 
 Statistics save file options:
       --disable-statistics-save-file

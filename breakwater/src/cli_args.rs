@@ -3,6 +3,8 @@ use std::{
     net::{IpAddr, SocketAddr},
 };
 
+use breakwater_parser::ParserKind;
+
 use crate::sinks::cli_args::SinkCliArgs;
 
 pub const DEFAULT_NETWORK_BUFFER_SIZE: usize = 256 * 1024;
@@ -72,6 +74,10 @@ pub struct NetworkListenerCliArgs {
     /// Allow only a certain number of connections per ip address
     #[clap(short, long)]
     pub connections_per_ip: Option<u64>,
+
+    /// The parser for the Pixelflut commands
+    #[clap(long, value_enum, default_value_t)]
+    pub parser: ParserKind,
 }
 
 impl NetworkListenerCliArgs {
@@ -164,6 +170,7 @@ mod tests {
                 .collect(),
             network_buffer_size: DEFAULT_NETWORK_BUFFER_SIZE,
             connections_per_ip: None,
+            parser: ParserKind::default(),
         }
     }
 
