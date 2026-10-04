@@ -8,7 +8,7 @@ use std::{
 
 use breakwater_parser::{
     FrameBuffer, HELP_TEXT, OriginalParser, OriginalParserFrameBuffer, ParserImplementation,
-    RefactoredParser, SharedMemoryFrameBuffer,
+    RefactoredParser, SharedMemoryFrameBuffer, SimdParser,
 };
 use rstest::{fixture, rstest};
 use tokio::sync::mpsc;
@@ -57,7 +57,11 @@ fn statistics_channel() -> (
 async fn test_correct_responses_to_general_commands(
     #[case] input: &str,
     #[case] expected: &str,
-    #[values(ParserImplementation::Original, ParserImplementation::Refactored)]
+    #[values(
+        ParserImplementation::Original,
+        ParserImplementation::Refactored,
+        ParserImplementation::Simd
+    )]
     parser: ParserImplementation,
 ) {
     assert_returns(parser, input.as_bytes(), expected).await;
@@ -107,7 +111,11 @@ async fn test_correct_responses_to_general_commands(
 async fn test_setting_pixel(
     #[case] input: &str,
     #[case] expected: &str,
-    #[values(ParserImplementation::Original, ParserImplementation::Refactored)]
+    #[values(
+        ParserImplementation::Original,
+        ParserImplementation::Refactored,
+        ParserImplementation::Simd
+    )]
     parser: ParserImplementation,
 ) {
     assert_returns(parser, input.as_bytes(), expected).await;
@@ -119,7 +127,11 @@ async fn test_setting_pixel(
 #[tokio::test]
 async fn test_safe<FB: OriginalParserFrameBuffer>(
     #[case] input: &str,
-    #[values(ParserImplementation::Original, ParserImplementation::Refactored)]
+    #[values(
+        ParserImplementation::Original,
+        ParserImplementation::Refactored,
+        ParserImplementation::Simd
+    )]
     parser: ParserImplementation,
     fb: Arc<FB>,
     statistics_channel: (
@@ -156,7 +168,11 @@ async fn test_drawing_rect<FB: OriginalParserFrameBuffer>(
     #[case] height: usize,
     #[case] offset_x: usize,
     #[case] offset_y: usize,
-    #[values(ParserImplementation::Original, ParserImplementation::Refactored)]
+    #[values(
+        ParserImplementation::Original,
+        ParserImplementation::Refactored,
+        ParserImplementation::Simd
+    )]
     parser: ParserImplementation,
     fb: Arc<FB>,
     statistics_channel: (
@@ -483,6 +499,17 @@ async fn run_connection<FB: OriginalParserFrameBuffer>(
                 stream,
                 ip(),
                 RefactoredParser::new(fb),
+                statistics_tx,
+                DEFAULT_NETWORK_BUFFER_SIZE,
+                None,
+            )
+            .await
+        }
+        ParserImplementation::Simd => {
+            handle_connection(
+                stream,
+                ip(),
+                SimdParser::new(fb),
                 statistics_tx,
                 DEFAULT_NETWORK_BUFFER_SIZE,
                 None,

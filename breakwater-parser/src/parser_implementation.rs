@@ -2,7 +2,7 @@ use std::fmt::{self, Display};
 
 use color_eyre::eyre::{self, bail};
 
-use crate::refactored;
+use crate::{refactored, simd};
 
 /// Different parser implementations, with their strengths and weaknesses.
 /// Not all parsers implement the same feature set.
@@ -15,6 +15,9 @@ pub enum ParserImplementation {
 
     /// The original parser restructured into smaller functions. Doesn't support binary-sync-pixels.
     Refactored,
+
+    /// Experimental SIMD parser. Doesn't support the binary commands.
+    Simd,
 }
 
 impl ParserImplementation {
@@ -23,6 +26,7 @@ impl ParserImplementation {
         let unsupported_feature = match self {
             Self::Original => None,
             Self::Refactored => refactored::UNSUPPORTED_ENABLED_FEATURE,
+            Self::Simd => simd::UNSUPPORTED_ENABLED_FEATURE,
         };
         if let Some(feature) = unsupported_feature {
             bail!("the {self} parser doesn't support the {feature} feature this build enables");
@@ -36,6 +40,7 @@ impl Display for ParserImplementation {
         f.write_str(match self {
             Self::Original => "original",
             Self::Refactored => "refactored",
+            Self::Simd => "simd",
         })
     }
 }

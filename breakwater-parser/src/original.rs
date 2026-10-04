@@ -57,6 +57,11 @@ impl<FB: FrameBuffer> OriginalParser<FB> {
     }
 }
 
+// TODO: Use fearless_simd (like SimdParser) instead of std::simd and dispatch once per parse call.
+// std::simd and the compiler only use the CPU features enabled at compile time, but the Docker
+// image and the release binaries are built without `-C target-cpu=native` (so for baseline x86-64
+// with SSE2 only), so they never profit from AVX2 or AVX-512. fearless_simd detects the CPU
+// features at runtime instead.
 impl<FB: OriginalParserFrameBuffer> Parser for OriginalParser<FB> {
     #[allow(clippy::too_many_lines)]
     fn parse(&mut self, buffer: &[u8], response: &mut Vec<u8>) -> usize {

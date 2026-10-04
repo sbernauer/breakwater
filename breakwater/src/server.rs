@@ -9,7 +9,7 @@ use std::{
 
 use breakwater_parser::{
     FrameBuffer, OriginalParser, OriginalParserFrameBuffer, Parser, ParserImplementation,
-    RefactoredParser,
+    RefactoredParser, SimdParser,
 };
 use color_eyre::eyre::{self, Context};
 use futures::{StreamExt, stream::SelectAll};
@@ -150,6 +150,14 @@ impl<FB: OriginalParserFrameBuffer + Send + Sync + 'static> Server<FB> {
                     stream,
                     ip,
                     RefactoredParser::new(fb),
+                    statistics_tx,
+                    network_buffer_size,
+                    connection_dropped_tx,
+                ),
+                ParserImplementation::Simd => spawn_connection(
+                    stream,
+                    ip,
+                    SimdParser::new(fb),
                     statistics_tx,
                     network_buffer_size,
                     connection_dropped_tx,

@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 #[cfg(target_arch = "x86_64")]
 use breakwater_parser::AssemblerParser;
 use breakwater_parser::{
-    MemchrParser, OriginalParser, Parser, RefactoredParser, SharedMemoryFrameBuffer,
+    MemchrParser, OriginalParser, Parser, RefactoredParser, SharedMemoryFrameBuffer, SimdParser,
 };
 use criterion::{Criterion, criterion_group, criterion_main};
 use pixelbomber::image_handler::{self, ImageConfigBuilder};
@@ -103,7 +103,7 @@ fn invoke_benchmark(
             .expect("Failed to create shared memory framebuffer"),
     );
 
-    let parser_names = vec!["original", "refactored" /*"memchr"*/];
+    let parser_names = vec!["original", "refactored", "simd" /*"memchr"*/];
 
     // #[cfg(target_arch = "x86_64")]
     // parser_names.push("assembler");
@@ -116,6 +116,7 @@ fn invoke_benchmark(
                 "memchr" => MemchrParser::new(fb.clone()).parse(input, &mut Vec::new()),
                 #[cfg(target_arch = "x86_64")]
                 "assembler" => AssemblerParser::default().parse(input, &mut Vec::new()),
+                "simd" => SimdParser::new(fb.clone()).parse(input, &mut Vec::new()),
                 _ => panic!("Parser implementation {parse_name} not known"),
             });
         });

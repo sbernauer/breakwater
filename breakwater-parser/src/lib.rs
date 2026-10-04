@@ -14,6 +14,7 @@ mod memchr;
 mod original;
 mod parser_implementation;
 mod refactored;
+mod simd;
 
 #[cfg(target_arch = "x86_64")]
 pub use assembler::AssemblerParser;
@@ -29,6 +30,7 @@ pub use memchr::MemchrParser;
 pub use original::{OriginalParser, OriginalParserFrameBuffer};
 pub use parser_implementation::ParserImplementation;
 pub use refactored::RefactoredParser;
+pub use simd::SimdParser;
 
 pub const HELP_TEXT: &[u8] = formatcp!("\
 Pixelflut server powered by breakwater https://github.com/sbernauer/breakwater
