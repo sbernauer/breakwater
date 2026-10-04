@@ -171,116 +171,38 @@ fn parse_simd<S: Simd, FB: FrameBuffer>(
             block += 64;
         }
 
-        // Stage 2: parse the lines
-        for &offset in &parser.newline_offsets[..newline_count] {
-            let newline = chunk_start + offset as usize;
-            let start = line_start;
-            line_start = newline + 1;
-
-            // SAFETY: `start <= newline < loop_end`, so the lookahead guarantees 8 readable bytes
-            let current_command =
-                unsafe { (buffer.as_ptr().add(start) as *const u64).read_unaligned() };
-            if current_command & 0x00ff_ffff == PX_PATTERN {
-                // SAFETY: `start + 3 + 32 <= loop_end + 35`, which the lookahead covers
-                let (x, y, rgb, len) =
-                    simd_parse(simd, unsafe { buffer.as_ptr().add(start + 3) }, offsets);
-
-                // `PX ` contains no newline, so the line is at least that long
-                let line_len = newline - (start + 3);
-                let len = usize::from(len);
-                // The pattern fits `x y`, the line length tells the color: `rrggbb`, `gg`, or
-                // without the `alpha` feature also `rrggbbaa` with the alpha channel ignored.
-                // Checking the length also ensures the spaces that picked the pattern are part of
-                // this line. Short gray lines like `1 2 ff` see the next line's space, so they
-                // take the slow path.
-                // Checked in order of frequency, so RGB and RGBA lines don't pay for gray ones.
-                let color = if len == 0 {
-                    None
-                } else if line_len == len || (!cfg!(feature = "alpha") && line_len == len + 2) {
-                    // The alpha byte of `rgb` is always zero
-                    Some(rgb)
-                } else if line_len + 4 == len {
-                    // For `gg` the first channel holds the gray value
-                    Some((rgb & 0xff) * 0x0001_0101)
-                } else {
-                    None
-                };
-                if let Some(color) = color {
-                    parser.fb.set(x as usize, y as usize, color, current_ts);
-                } else {
-                    let [_, _, x_offset, y_offset] = <[u32; 4]>::from(offsets);
-                    parse_px_slow_path(
-                        &*parser.fb,
-                        &buffer[start + 3..newline],
-                        (x_offset as usize, y_offset as usize),
-                        current_ts,
-                        response,
-                    );
-                }
-                // if present {
-                //     // Separator between coordinates and color
-                //     if unsafe { *buffer.get_unchecked(i) } == b' ' {
-                //         i += 1;
-
-                //         // TODO: Determine what clients use more: RGB, RGBA or gg variant.
-                //         // If RGBA is used more often move the RGB code below the RGBA code
-
-                //         // Must be followed by 6 bytes RGB and newline or ...
-                //         if unsafe { *buffer.get_unchecked(i + 6) } == b'\n' {
-                //             last_byte_parsed = i + 6;
-                //             i += 7; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
-
-                //             let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(i - 7) });
-
-                //             self.fb.set(x, y, rgba & 0x00ff_ffff, current_ts);
-                //             continue;
-                //         }
-
-                //         // ... or must be followed by 8 bytes RGBA and newline
-                //         #[cfg(not(feature = "alpha"))]
-                //         if unsafe { *buffer.get_unchecked(i + 8) } == b'\n' {
-                //             last_byte_parsed = i + 8;
-                //             i += 9; // We can advance one byte more than normal - self.connection_y_offsetas we use continue and therefore not get incremented at the end of the loop
-
-                //             let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(i - 9) });
-
-                //             self.fb.set(x, y, rgba & 0x00ff_ffff, current_ts);
-                //             continue;
-                //         }
-                //     }
-
-                //     // End of command to read Pixel value
-                //     if unsafe { *buffer.get_unchecked(i) } == b'\n' {
-                //         last_byte_parsed = i;
-                //         i += 1;
-                //         if let Some(rgb) = self.fb.get(x, y) {
-                //             response.extend_from_slice(
-                //                 format!(
-                //                     "PX {} {} {:06x}\n",
-                //                     // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
-                //                     x,
-                //                     y,
-                //                     rgb.to_be() >> 8
-                //                 )
-                //                 .as_bytes(),
-                //             );
-                //         }
-                //         continue;
-                //     }
-                // }
-            } else if current_command & 0x00ff_ffff_ffff_ffff == OFFSET_PATTERN {
-                // `OFFSET ` contains no newline, so the line is at least that long
-                if let Some(new_offsets) = parse_offset(simd, &buffer[start + 7..newline]) {
-                    offsets = new_offsets;
-                }
-            } else {
-                parse_text_command(
-                    current_command,
+        // Stage 2: parse the lines, see `parse_lines` for the two variants
+        let newline_offsets = &parser.newline_offsets[..newline_count];
+        let mut parsed = 0;
+        while parsed < newline_count {
+            let lines = &newline_offsets[parsed..];
+            parsed += if <[u32; 4]>::from(offsets) == [0; 4] {
+                parse_lines::<_, _, false>(
+                    simd,
                     &*parser.fb,
                     &mut parser.help_count,
+                    buffer,
+                    chunk_start,
+                    lines,
+                    &mut line_start,
+                    &mut offsets,
+                    current_ts,
                     response,
-                );
-            }
+                )
+            } else {
+                parse_lines::<_, _, true>(
+                    simd,
+                    &*parser.fb,
+                    &mut parser.help_count,
+                    buffer,
+                    chunk_start,
+                    lines,
+                    &mut line_start,
+                    &mut offsets,
+                    current_ts,
+                    response,
+                )
+            };
         }
 
         if newline_count > 0 {
@@ -309,6 +231,163 @@ fn parse_simd<S: Simd, FB: FrameBuffer>(
 
     last_byte_parsed
     // last_byte_parsed.saturating_sub(1)
+}
+
+/// Stage 2: Parses the lines ending at the `newline_offsets` (relative to `chunk_start`). The first
+/// one starts at `line_start_out`, which is updated, as are the `offsets_out`. Returns how many
+/// lines it parsed.
+///
+/// Connections usually don't use `OFFSET`, so there are two variants. Without `WITH_OFFSET` the
+/// loop doesn't carry the offsets at all, which frees a register (stage 2 has none to spare) and
+/// saves the addition. It stops after an `OFFSET` that makes the offsets non-zero (and the other
+/// variant after one resetting them to zero), so the caller can switch.
+#[inline(always)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "It's the inner loop of parse_simd"
+)]
+fn parse_lines<S: Simd, FB: FrameBuffer, const WITH_OFFSET: bool>(
+    simd: S,
+    fb: &FB,
+    help_count: &mut u8,
+    buffer: &[u8],
+    chunk_start: usize,
+    newline_offsets: &[u16],
+    line_start_out: &mut usize,
+    offsets_out: &mut u32x4<S>,
+    current_ts: FB::Timestamp,
+    response: &mut Vec<u8>,
+) -> usize {
+    let mut line_start = *line_start_out;
+    // A constant zero lets the compiler drop the addition and the register
+    let mut offsets = if WITH_OFFSET {
+        *offsets_out
+    } else {
+        u32x4::splat(simd, 0)
+    };
+
+    for (index, &offset) in newline_offsets.iter().enumerate() {
+        let newline = chunk_start + offset as usize;
+        let start = line_start;
+        line_start = newline + 1;
+
+        // SAFETY: `start <= newline < loop_end`, so the lookahead guarantees 8 readable bytes
+        let current_command =
+            unsafe { (buffer.as_ptr().add(start) as *const u64).read_unaligned() };
+        if current_command & 0x00ff_ffff == PX_PATTERN {
+            // SAFETY: `start + 3 + 32 <= loop_end + 35`, which the lookahead covers
+            let (x, y, rgb, len) =
+                simd_parse(simd, unsafe { buffer.as_ptr().add(start + 3) }, offsets);
+
+            // `PX ` contains no newline, so the line is at least that long
+            let line_len = newline - (start + 3);
+            let len = usize::from(len);
+            // The pattern fits `x y`, the line length tells the color: `rrggbb`, `gg`, or
+            // without the `alpha` feature also `rrggbbaa` with the alpha channel ignored.
+            // Checking the length also ensures the spaces that picked the pattern are part of
+            // this line. Short gray lines like `1 2 ff` see the next line's space, so they
+            // take the slow path.
+            // Checked in order of frequency, so RGB and RGBA lines don't pay for gray ones.
+            let color = if len == 0 {
+                std::hint::cold_path();
+                None
+            } else if line_len == len || (!cfg!(feature = "alpha") && line_len == len + 2) {
+                // The alpha byte of `rgb` is always zero
+                Some(rgb)
+            } else if line_len + 4 == len {
+                std::hint::cold_path();
+                // For `gg` the first channel holds the gray value
+                Some((rgb & 0xff) * 0x0001_0101)
+            } else {
+                std::hint::cold_path();
+                None
+            };
+            if let Some(color) = color {
+                fb.set(x as usize, y as usize, color, current_ts);
+            } else {
+                let [_, _, x_offset, y_offset] = <[u32; 4]>::from(offsets);
+                parse_px_slow_path(
+                    fb,
+                    &buffer[start + 3..newline],
+                    (x_offset as usize, y_offset as usize),
+                    current_ts,
+                    response,
+                );
+            }
+            // if present {
+            //     // Separator between coordinates and color
+            //     if unsafe { *buffer.get_unchecked(i) } == b' ' {
+            //         i += 1;
+
+            //         // TODO: Determine what clients use more: RGB, RGBA or gg variant.
+            //         // If RGBA is used more often move the RGB code below the RGBA code
+
+            //         // Must be followed by 6 bytes RGB and newline or ...
+            //         if unsafe { *buffer.get_unchecked(i + 6) } == b'\n' {
+            //             last_byte_parsed = i + 6;
+            //             i += 7; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
+
+            //             let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(i - 7) });
+
+            //             self.fb.set(x, y, rgba & 0x00ff_ffff, current_ts);
+            //             continue;
+            //         }
+
+            //         // ... or must be followed by 8 bytes RGBA and newline
+            //         #[cfg(not(feature = "alpha"))]
+            //         if unsafe { *buffer.get_unchecked(i + 8) } == b'\n' {
+            //             last_byte_parsed = i + 8;
+            //             i += 9; // We can advance one byte more than normal - self.connection_y_offsetas we use continue and therefore not get incremented at the end of the loop
+
+            //             let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(i - 9) });
+
+            //             self.fb.set(x, y, rgba & 0x00ff_ffff, current_ts);
+            //             continue;
+            //         }
+            //     }
+
+            //     // End of command to read Pixel value
+            //     if unsafe { *buffer.get_unchecked(i) } == b'\n' {
+            //         last_byte_parsed = i;
+            //         i += 1;
+            //         if let Some(rgb) = self.fb.get(x, y) {
+            //             response.extend_from_slice(
+            //                 format!(
+            //                     "PX {} {} {:06x}\n",
+            //                     // We don't want to return the actual (absolute) coordinates, the client should also get the result offseted
+            //                     x,
+            //                     y,
+            //                     rgb.to_be() >> 8
+            //                 )
+            //                 .as_bytes(),
+            //             );
+            //         }
+            //         continue;
+            //     }
+            // }
+        } else if current_command & 0x00ff_ffff_ffff_ffff == OFFSET_PATTERN {
+            // `OFFSET ` contains no newline, so the line is at least that long
+            if let Some(new_offsets) = parse_offset(simd, &buffer[start + 7..newline]) {
+                if WITH_OFFSET {
+                    offsets = new_offsets;
+                }
+                // Let the caller switch to the other variant
+                if (<[u32; 4]>::from(new_offsets) != [0; 4]) != WITH_OFFSET {
+                    *line_start_out = line_start;
+                    *offsets_out = new_offsets;
+                    return index + 1;
+                }
+            }
+        } else {
+            parse_text_command(current_command, fb, help_count, response);
+        }
+    }
+
+    *line_start_out = line_start;
+    if WITH_OFFSET {
+        *offsets_out = offsets;
+    }
+    newline_offsets.len()
 }
 
 /// Handles `HELP` and `SIZE`, `command` holds the first 8 bytes of the line. Returns whether it was
@@ -775,6 +854,36 @@ mod tests {
         assert_eq!(fb.get(3, 4), Some(0x00cc_bbaa));
         assert_eq!(fb.get(5, 16), Some(0x0012_1212));
         assert_eq!(fb.get(7, 8), Some(0x00ab_abab));
+    }
+
+    #[test]
+    fn offset_switching() {
+        use std::sync::Arc;
+
+        // Switches between the stage 2 variants without and with offset, in both directions
+        let mut input = b"PX 0 0 aaaaaa\nOFFSET 2 3\nPX 1 1 ff0000\nPX 1 1\nOFFSET 0 0\n\
+            PX 1 1 00ff00\nOFFSET 5 5\nPX 0 0 0000ff\nPX 0 0\n"
+            .to_vec();
+        input.extend([0; PARSER_LOOKAHEAD]);
+        let fb = Arc::new(SimpleFrameBuffer::new(10, 10));
+        let mut parser = SimdParser::new(fb.clone());
+        let mut response = vec![];
+        parser.parse(&input, &mut response);
+
+        assert_eq!(fb.get(0, 0), Some(0x00aa_aaaa));
+        assert_eq!(fb.get(3, 4), Some(0x0000_00ff));
+        assert_eq!(fb.get(1, 1), Some(0x0000_ff00));
+        assert_eq!(fb.get(5, 5), Some(0x00ff_0000));
+        assert_eq!(
+            String::from_utf8_lossy(&response),
+            "PX 1 1 ff0000\nPX 0 0 0000ff\n"
+        );
+
+        // The offset lasts across parse calls
+        let mut input = b"PX 1 1 123456\n".to_vec();
+        input.extend([0; PARSER_LOOKAHEAD]);
+        parser.parse(&input, &mut vec![]);
+        assert_eq!(fb.get(6, 6), Some(0x0056_3412));
     }
 
     #[test]
