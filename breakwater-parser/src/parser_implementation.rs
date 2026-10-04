@@ -30,6 +30,7 @@ impl ParserImplementation {
         Ok(())
     }
 }
+
 impl Display for ParserImplementation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
