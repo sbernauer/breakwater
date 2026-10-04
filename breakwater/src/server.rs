@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use breakwater_parser::{FearParser, FrameBuffer, OriginalParserFrameBuffer, Parser};
+use breakwater_parser::{FrameBuffer, OriginalParserFrameBuffer, Parser};
 use color_eyre::eyre::{self, Context};
 use futures::{StreamExt, stream::SelectAll};
 use memadvise::Advice;
@@ -175,8 +175,12 @@ pub async fn handle_connection<FB: OriginalParserFrameBuffer>(
 
     // Not using `ParserImplementation` to avoid the dynamic dispatch.
     // let mut parser = ParserImplementation::Simple(SimpleParser::new(fb));
-    // let mut parser = OriginalParser::new(fb);
-    let mut parser = FearParser::new(fb);
+    // FearParser works on lines, so it can't support the binary commands: their payload can
+    // contain newlines and doesn't end with one
+    #[cfg(any(feature = "binary-set-pixel", feature = "binary-sync-pixels"))]
+    let mut parser = breakwater_parser::OriginalParser::new(fb);
+    #[cfg(not(any(feature = "binary-set-pixel", feature = "binary-sync-pixels")))]
+    let mut parser = breakwater_parser::FearParser::new(fb);
     let parser_lookahead = parser.parser_lookahead();
 
     // If we send e.g. an StatisticsEvent::BytesRead for every time we read something from the socket the statistics thread would go crazy.
