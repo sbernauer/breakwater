@@ -3,6 +3,8 @@ use std::{
     net::{IpAddr, SocketAddr},
 };
 
+use breakwater_parser::ParserImplementation;
+
 use crate::sinks::cli_args::SinkCliArgs;
 
 pub const DEFAULT_NETWORK_BUFFER_SIZE: usize = 256 * 1024;
@@ -31,6 +33,10 @@ pub struct CliArgs {
     /// used to persist the canvas across restarts.
     #[clap(long)]
     pub shared_memory_name: Option<String>,
+
+    /// The used parser implementation
+    #[clap(long, value_enum, default_value_t)]
+    pub parser: ParserImplementation,
 
     #[clap(flatten)]
     pub network_listener: NetworkListenerCliArgs,

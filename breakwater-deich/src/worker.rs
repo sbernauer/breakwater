@@ -141,6 +141,7 @@ async fn run_session(
         statistics_tx,
         args.network_listener.network_buffer_size,
         args.network_listener.connections_per_ip,
+        args.parser,
     )
     .await
     .context("failed to start pixelflut server")?;

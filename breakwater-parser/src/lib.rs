@@ -12,6 +12,7 @@ mod assembler;
 mod framebuffer;
 mod memchr;
 mod original;
+mod parser_implementation;
 mod refactored;
 
 #[cfg(target_arch = "x86_64")]
@@ -27,6 +28,7 @@ pub use framebuffer::{
 };
 pub use memchr::MemchrParser;
 pub use original::{OriginalParser, OriginalParserFrameBuffer};
+pub use parser_implementation::ParserImplementation;
 pub use refactored::RefactoredParser;
 
 pub const HELP_TEXT: &[u8] = formatcp!("\
@@ -58,6 +60,8 @@ if cfg!(feature = "binary-sync-pixels") {
 ).as_bytes();
 
 pub const ALT_HELP_TEXT: &[u8] = b"Stop spamming HELP!\n";
+
+pub const MAX_HELP_CALLS_PER_CONNECTION: u8 = 3;
 
 pub trait Parser {
     /// Returns the last byte parsed. The next parsing loop will again contain all data that was not parsed.

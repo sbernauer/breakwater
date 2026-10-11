@@ -7,13 +7,16 @@ use std::{
     time::Duration,
 };
 
-use breakwater_parser::{FrameBuffer, OriginalParser, OriginalParserFrameBuffer, Parser};
+use breakwater_parser::{
+    FrameBuffer, OriginalParser, OriginalParserFrameBuffer, Parser, ParserImplementation,
+    RefactoredParser,
+};
 use color_eyre::eyre::{self, Context};
 use futures::{StreamExt, stream::SelectAll};
 use memadvise::Advice;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, ToSocketAddrs},
+    net::{TcpListener, TcpStream, ToSocketAddrs},
     sync::mpsc,
     time::Instant,
 };
@@ -37,6 +40,7 @@ pub struct Server<FB: FrameBuffer> {
     network_buffer_size: usize,
     connections_per_ip: HashMap<IpAddr, u64>,
     max_connections_per_ip: Option<u64>,
+    parser: ParserImplementation,
 }
 
 impl<FB: OriginalParserFrameBuffer + Send + Sync + 'static> Server<FB> {
@@ -47,7 +51,10 @@ impl<FB: OriginalParserFrameBuffer + Send + Sync + 'static> Server<FB> {
         statistics_tx: mpsc::Sender<StatisticsEvent>,
         network_buffer_size: usize,
         max_connections_per_ip: Option<u64>,
+        parser: ParserImplementation,
     ) -> eyre::Result<Self> {
+        parser.check_supported()?;
+
         let mut listener_streams = Vec::with_capacity(listen_addresses.len());
         for addr in listen_addresses {
             let listener = TcpListener::bind(addr)
@@ -68,6 +75,7 @@ impl<FB: OriginalParserFrameBuffer + Send + Sync + 'static> Server<FB> {
             network_buffer_size,
             connections_per_ip: HashMap::new(),
             max_connections_per_ip,
+            parser,
         })
     }
 
@@ -122,38 +130,69 @@ impl<FB: OriginalParserFrameBuffer + Send + Sync + 'static> Server<FB> {
                 }
             }
 
-            let fb_for_thread = Arc::clone(&self.fb);
-            let statistics_tx_for_thread = self.statistics_tx.clone();
+            let fb = Arc::clone(&self.fb);
+            let statistics_tx = self.statistics_tx.clone();
             let network_buffer_size = self.network_buffer_size;
-            let connection_dropped_tx_clone = connection_dropped_tx.clone();
-            tokio::spawn(async move {
-                if let Err(error) = handle_connection(
+            let connection_dropped_tx = connection_dropped_tx.clone();
+            // Every parser gets its own task type, so its connection loop is compiled on its own,
+            // exactly as if the parser was hardcoded. No dynamic dispatch and no code of the other
+            // parser in the same function.
+            match self.parser {
+                ParserImplementation::Original => spawn_connection(
                     stream,
                     ip,
-                    fb_for_thread,
-                    statistics_tx_for_thread,
+                    OriginalParser::new(fb),
+                    statistics_tx,
                     network_buffer_size,
-                    connection_dropped_tx_clone,
-                )
-                .await
-                {
-                    tracing::error!(?error, %ip, "failed to handle connection");
-                }
-            });
+                    connection_dropped_tx,
+                ),
+                ParserImplementation::Refactored => spawn_connection(
+                    stream,
+                    ip,
+                    RefactoredParser::new(fb),
+                    statistics_tx,
+                    network_buffer_size,
+                    connection_dropped_tx,
+                ),
+            }
         }
 
         Ok(())
     }
 }
 
+fn spawn_connection(
+    stream: TcpStream,
+    ip: IpAddr,
+    parser: impl Parser + Send + 'static,
+    statistics_tx: mpsc::Sender<StatisticsEvent>,
+    network_buffer_size: usize,
+    connection_dropped_tx: Option<mpsc::UnboundedSender<IpAddr>>,
+) {
+    tokio::spawn(async move {
+        if let Err(error) = handle_connection(
+            stream,
+            ip,
+            parser,
+            statistics_tx,
+            network_buffer_size,
+            connection_dropped_tx,
+        )
+        .await
+        {
+            tracing::error!(?error, %ip, "failed to handle connection");
+        }
+    });
+}
+
 #[instrument(
-    skip(stream, fb, statistics_tx, connection_dropped_tx),
+    skip(stream, parser, statistics_tx, connection_dropped_tx),
     err(level = "debug")
 )]
-pub async fn handle_connection<FB: OriginalParserFrameBuffer>(
+pub async fn handle_connection(
     mut stream: impl AsyncReadExt + AsyncWriteExt + Send + Unpin,
     ip: IpAddr,
-    fb: Arc<FB>,
+    mut parser: impl Parser,
     statistics_tx: mpsc::Sender<StatisticsEvent>,
     network_buffer_size: usize,
     connection_dropped_tx: Option<mpsc::UnboundedSender<IpAddr>>,
@@ -173,9 +212,6 @@ pub async fn handle_connection<FB: OriginalParserFrameBuffer>(
     // Number bytes left over **on the first bytes of the buffer** from the previous loop iteration
     let mut leftover_bytes_in_buffer = 0;
 
-    // Not using `ParserImplementation` to avoid the dynamic dispatch.
-    // let mut parser = ParserImplementation::Simple(SimpleParser::new(fb));
-    let mut parser = OriginalParser::new(fb);
     let parser_lookahead = parser.parser_lookahead();
 
     // If we send e.g. an StatisticsEvent::BytesRead for every time we read something from the socket the statistics thread would go crazy.

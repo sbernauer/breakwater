@@ -4,6 +4,7 @@ use breakwater::{
     cli_args::{NetworkListenerCliArgs, StatisticsSaveFileCliArgs},
     sinks::cli_args::SinkCliArgs,
 };
+use breakwater_parser::ParserImplementation;
 
 #[derive(clap::Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -35,6 +36,10 @@ pub struct WorkerCliArgs {
     /// worker to the collector across restarts, which keeps per-worker stats stable over time.
     #[clap(long, default_value = "worker-id")]
     pub worker_id_file: PathBuf,
+
+    /// The used parser implementation
+    #[clap(long, value_enum, default_value_t)]
+    pub parser: ParserImplementation,
 
     #[clap(flatten)]
     pub prometheus: PrometheusCliArgs,

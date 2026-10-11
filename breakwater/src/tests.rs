@@ -7,7 +7,8 @@ use std::{
 };
 
 use breakwater_parser::{
-    FrameBuffer, HELP_TEXT, OriginalParserFrameBuffer, SharedMemoryFrameBuffer,
+    FrameBuffer, HELP_TEXT, OriginalParser, OriginalParserFrameBuffer, ParserImplementation,
+    RefactoredParser, SharedMemoryFrameBuffer,
 };
 use rstest::{fixture, rstest};
 use tokio::sync::mpsc;
@@ -53,8 +54,13 @@ fn statistics_channel() -> (
 #[case("HELP\n", std::str::from_utf8(HELP_TEXT).unwrap())]
 #[case("bla bla bla\nSIZE\nblub\nbla", "SIZE 640 480\n")]
 #[tokio::test]
-async fn test_correct_responses_to_general_commands(#[case] input: &str, #[case] expected: &str) {
-    assert_returns(input.as_bytes(), expected).await;
+async fn test_correct_responses_to_general_commands(
+    #[case] input: &str,
+    #[case] expected: &str,
+    #[values(ParserImplementation::Original, ParserImplementation::Refactored)]
+    parser: ParserImplementation,
+) {
+    assert_returns(parser, input.as_bytes(), expected).await;
 }
 
 #[rstest]
@@ -98,8 +104,13 @@ async fn test_correct_responses_to_general_commands(#[case] input: &str, #[case]
 )] // The get pixel result is also offseted
 #[case("OFFSET 0 0\nPX 0 42 abcdef\nPX 0 42\n", "PX 0 42 abcdef\n")]
 #[tokio::test]
-async fn test_setting_pixel(#[case] input: &str, #[case] expected: &str) {
-    assert_returns(input.as_bytes(), expected).await;
+async fn test_setting_pixel(
+    #[case] input: &str,
+    #[case] expected: &str,
+    #[values(ParserImplementation::Original, ParserImplementation::Refactored)]
+    parser: ParserImplementation,
+) {
+    assert_returns(parser, input.as_bytes(), expected).await;
 }
 
 #[rstest]
@@ -108,7 +119,8 @@ async fn test_setting_pixel(#[case] input: &str, #[case] expected: &str) {
 #[tokio::test]
 async fn test_safe<FB: OriginalParserFrameBuffer>(
     #[case] input: &str,
-    ip: IpAddr,
+    #[values(ParserImplementation::Original, ParserImplementation::Refactored)]
+    parser: ParserImplementation,
     fb: Arc<FB>,
     statistics_channel: (
         mpsc::Sender<StatisticsEvent>,
@@ -116,16 +128,7 @@ async fn test_safe<FB: OriginalParserFrameBuffer>(
     ),
 ) {
     let mut stream = MockTcpStream::from_string(input);
-    handle_connection(
-        &mut stream,
-        ip,
-        fb.clone(),
-        statistics_channel.0,
-        DEFAULT_NETWORK_BUFFER_SIZE,
-        None,
-    )
-    .await
-    .unwrap();
+    run_connection(parser, &mut stream, fb.clone(), statistics_channel.0).await;
 
     // Test if it panics
     assert_eq!(fb.get(0, 0).unwrap() & 0x00ff_ffff, 0xaa_aaaa);
@@ -153,7 +156,8 @@ async fn test_drawing_rect<FB: OriginalParserFrameBuffer>(
     #[case] height: usize,
     #[case] offset_x: usize,
     #[case] offset_y: usize,
-    ip: IpAddr,
+    #[values(ParserImplementation::Original, ParserImplementation::Refactored)]
+    parser: ParserImplementation,
     fb: Arc<FB>,
     statistics_channel: (
         mpsc::Sender<StatisticsEvent>,
@@ -190,58 +194,46 @@ async fn test_drawing_rect<FB: OriginalParserFrameBuffer>(
 
     // Color the pixels
     let mut stream = MockTcpStream::from_string(&fill_commands);
-    handle_connection(
+    run_connection(
+        parser,
         &mut stream,
-        ip,
         Arc::clone(&fb),
         statistics_channel.0.clone(),
-        DEFAULT_NETWORK_BUFFER_SIZE,
-        None,
     )
-    .await
-    .unwrap();
+    .await;
     assert_eq!("", stream.get_output());
 
     // Read the pixels again
     let mut stream = MockTcpStream::from_string(&read_commands);
-    handle_connection(
+    run_connection(
+        parser,
         &mut stream,
-        ip,
         Arc::clone(&fb),
         statistics_channel.0.clone(),
-        DEFAULT_NETWORK_BUFFER_SIZE,
-        None,
     )
-    .await
-    .unwrap();
+    .await;
     assert_eq!(fill_commands, stream.get_output());
 
     // We can also do coloring and reading in a single connection
     let mut stream = MockTcpStream::from_string(&combined_commands);
-    handle_connection(
+    run_connection(
+        parser,
         &mut stream,
-        ip,
         Arc::clone(&fb),
         statistics_channel.0.clone(),
-        DEFAULT_NETWORK_BUFFER_SIZE,
-        None,
     )
-    .await
-    .unwrap();
+    .await;
     assert_eq!(combined_commands_expected, stream.get_output());
 
     // Check that nothing else was colored
     let mut stream = MockTcpStream::from_string(&read_other_pixels_commands);
-    handle_connection(
+    run_connection(
+        parser,
         &mut stream,
-        ip,
         Arc::clone(&fb),
         statistics_channel.0.clone(),
-        DEFAULT_NETWORK_BUFFER_SIZE,
-        None,
     )
-    .await
-    .unwrap();
+    .await;
     assert_eq!(read_other_pixels_commands_expected, stream.get_output());
 }
 
@@ -265,7 +257,8 @@ async fn test_drawing_rect<FB: OriginalParserFrameBuffer>(
 async fn test_binary_set_pixel<FB: OriginalParserFrameBuffer>(
     #[case] input: &str,
     #[case] expected: &str,
-    ip: IpAddr,
+    #[values(ParserImplementation::Original, ParserImplementation::Refactored)]
+    parser: ParserImplementation,
     fb: Arc<FB>,
     statistics_channel: (
         mpsc::Sender<StatisticsEvent>,
@@ -273,16 +266,7 @@ async fn test_binary_set_pixel<FB: OriginalParserFrameBuffer>(
     ),
 ) {
     let mut stream = MockTcpStream::from_string(input);
-    handle_connection(
-        &mut stream,
-        ip,
-        fb,
-        statistics_channel.0,
-        DEFAULT_NETWORK_BUFFER_SIZE,
-        None,
-    )
-    .await
-    .unwrap();
+    run_connection(parser, &mut stream, fb, statistics_channel.0).await;
 
     assert_eq!(expected, stream.get_output());
 }
@@ -291,7 +275,12 @@ async fn test_binary_set_pixel<FB: OriginalParserFrameBuffer>(
 #[tokio::test]
 async fn test_binary_sync_pixels() {
     // Test byte conversion works
-    assert_returns("PX 0 0 42\nPX 0 0\n".as_bytes(), "PX 0 0 424242\n").await;
+    assert_returns(
+        ParserImplementation::Original,
+        "PX 0 0 42\nPX 0 0\n".as_bytes(),
+        "PX 0 0 424242\n",
+    )
+    .await;
 
     // Don't set any pixels
     let mut input = Vec::new();
@@ -302,7 +291,7 @@ async fn test_binary_sync_pixels() {
         0, 0, 0, 0, /* length */
     ]);
     input.extend("PX 0 0\n".as_bytes());
-    assert_returns(&input, "PX 0 0 000000\n").await;
+    assert_returns(ParserImplementation::Original, &input, "PX 0 0 000000\n").await;
 
     // Set first 10 pixels
     let mut input = Vec::new();
@@ -318,7 +307,7 @@ async fn test_binary_sync_pixels() {
         "PX 0 0\nPX 1 0\nPX 2 0\nPX 3 0\nPX 4 0\nPX 5 0\nPX 6 0\nPX 7 0\nPX 8 0\nPX 9 0\n"
             .as_bytes(),
     );
-    assert_returns(&input, "PX 0 0 000000\nPX 1 0 000001\nPX 2 0 000002\nPX 3 0 000003\nPX 4 0 000004\nPX 5 0 000005\nPX 6 0 000006\nPX 7 0 000007\nPX 8 0 000008\nPX 9 0 000009\n").await;
+    assert_returns(ParserImplementation::Original, &input, "PX 0 0 000000\nPX 1 0 000001\nPX 2 0 000002\nPX 3 0 000003\nPX 4 0 000004\nPX 5 0 000005\nPX 6 0 000006\nPX 7 0 000007\nPX 8 0 000008\nPX 9 0 000009\n").await;
 }
 
 #[cfg(feature = "binary-sync-pixels")]
@@ -337,6 +326,7 @@ async fn test_binary_sync_pixels_last_pixel<FB: OriginalParserFrameBuffer>(fb: A
 
     input.extend(format!("PX 0 0\nPX {} {y}\nPX {x} {y}\n", x - 1).as_bytes());
     assert_returns(
+        ParserImplementation::Original,
         &input,
         &format!(
             "PX 0 0 000000\nPX {} {y} 000000\nPX {x} {y} 123456\n",
@@ -382,7 +372,7 @@ async fn test_binary_sync_pixels_in_the_middle<FB: OriginalParserFrameBuffer>(fb
     input.extend("PX 52 14\n".as_bytes());
     expected += "PX 52 14 000000\n";
 
-    assert_returns(&input, &expected).await;
+    assert_returns(ParserImplementation::Original, &input, &expected).await;
 }
 
 #[cfg(feature = "binary-sync-pixels")]
@@ -402,7 +392,12 @@ async fn test_binary_sync_pixels_exceeding_screen<FB: OriginalParserFrameBuffer>
 
     input.extend(format!("PX {x} {y}\n").as_bytes());
     // As we exceeded the screen nothing should have been set
-    assert_returns(&input, &format!("PX {x} {y} 000000\n")).await;
+    assert_returns(
+        ParserImplementation::Original,
+        &input,
+        &format!("PX {x} {y} 000000\n"),
+    )
+    .await;
 }
 
 #[cfg(feature = "binary-sync-pixels")]
@@ -446,32 +441,54 @@ async fn test_binary_sync_pixels_larger_than_buffer<FB: OriginalParserFrameBuffe
     }
 
     let mut stream = MockTcpStream::from_bytes(input);
-    handle_connection(
+    run_connection(
+        ParserImplementation::Original,
         &mut stream,
-        ip(),
         fb,
         statistics_channel().0,
-        DEFAULT_NETWORK_BUFFER_SIZE,
-        None,
     )
-    .await
-    .unwrap();
+    .await;
 
     assert_eq!(expected, stream.get_output());
 }
 
-async fn assert_returns(input: &[u8], expected: &str) {
+async fn assert_returns(parser: ParserImplementation, input: &[u8], expected: &str) {
     let mut stream = MockTcpStream::from_bytes(input.to_owned());
-    handle_connection(
-        &mut stream,
-        ip(),
-        fb(),
-        statistics_channel().0,
-        DEFAULT_NETWORK_BUFFER_SIZE,
-        None,
-    )
-    .await
-    .unwrap();
+    run_connection(parser, &mut stream, fb(), statistics_channel().0).await;
 
     assert_eq!(expected, stream.get_output());
+}
+
+/// Handles a connection with the given parser, which the server picks per connection
+async fn run_connection<FB: OriginalParserFrameBuffer>(
+    parser: ParserImplementation,
+    stream: &mut MockTcpStream,
+    fb: Arc<FB>,
+    statistics_tx: mpsc::Sender<StatisticsEvent>,
+) {
+    match parser {
+        ParserImplementation::Original => {
+            handle_connection(
+                stream,
+                ip(),
+                OriginalParser::new(fb),
+                statistics_tx,
+                DEFAULT_NETWORK_BUFFER_SIZE,
+                None,
+            )
+            .await
+        }
+        ParserImplementation::Refactored => {
+            handle_connection(
+                stream,
+                ip(),
+                RefactoredParser::new(fb),
+                statistics_tx,
+                DEFAULT_NETWORK_BUFFER_SIZE,
+                None,
+            )
+            .await
+        }
+    }
+    .unwrap();
 }

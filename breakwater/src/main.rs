@@ -50,6 +50,7 @@ async fn main() -> eyre::Result<()> {
         statistics_tx.clone(),
         args.network_listener.network_buffer_size,
         args.network_listener.connections_per_ip,
+        args.parser,
     )
     .await
     .context("failed to start pixelflut server")?;

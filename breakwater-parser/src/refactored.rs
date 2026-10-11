@@ -11,6 +11,14 @@ use crate::{
 
 const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
 
+/// A feature this build enables, but RefactoredParser doesn't implement
+pub(crate) const UNSUPPORTED_ENABLED_FEATURE: Option<&str> = if cfg!(feature = "binary-sync-pixels")
+{
+    Some("binary-sync-pixels")
+} else {
+    None
+};
+
 pub struct RefactoredParser<FB: FrameBuffer> {
     connection_x_offset: usize,
     connection_y_offset: usize,
