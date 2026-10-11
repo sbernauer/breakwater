@@ -15,16 +15,7 @@ use breakwater::{
 #[tokio::main]
 #[allow(clippy::too_many_lines)]
 async fn main() -> eyre::Result<()> {
-    color_eyre::install()?;
-
-    let filter = tracing_subscriber::EnvFilter::builder()
-        .with_default_directive(if cfg!(debug_assertions) {
-            tracing::Level::DEBUG.into()
-        } else {
-            tracing::Level::INFO.into()
-        })
-        .from_env()?;
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    breakwater::init_telemetry()?;
 
     // We parse via `ArgMatches` (instead of `CliArgs::parse()`) so that `SinkCliArgs::validate` can use
     // `value_source` to tell which sink options were actually passed on the command line.

@@ -103,7 +103,7 @@ pub struct Statistics {
 }
 
 impl StatisticsInformationEvent {
-    fn save_to_file(&self, file_name: &str) -> eyre::Result<()> {
+    pub fn save_to_file(&self, file_name: &str) -> eyre::Result<()> {
         // TODO Check if we can use tokio's File here. This needs some integration with serde_json though
         // This operation is also called very infrequently
         let file = File::create(file_name)
@@ -120,7 +120,7 @@ impl StatisticsInformationEvent {
     /// an error if the file exists but can not be read or parsed. Otherwise a corrupted or outdated
     /// save file (e.g. after adding a new mandatory field) would be silently ignored and
     /// subsequently overwritten, losing all previously collected statistics.
-    fn load_from_file(file_name: &str) -> eyre::Result<Self> {
+    pub fn load_from_file(file_name: &str) -> eyre::Result<Self> {
         let file = match File::open(file_name) {
             Ok(file) => file,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {

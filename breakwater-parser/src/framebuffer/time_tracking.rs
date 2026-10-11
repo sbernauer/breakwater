@@ -37,6 +37,18 @@ impl TimeTrackingFrameBuffer {
     fn pixel_index(&self, x: usize, y: usize) -> usize {
         x + y * self.width
     }
+
+    #[inline(always)]
+    pub fn as_raw_bytes(&self) -> &[u8] {
+        // The buffer is a contiguous `Vec<TimeTrackingPixel>`, so its raw bytes are exactly the
+        // 8-bytes-per-pixel wire layout. Like the other framebuffers, this reads memory that writers
+        // may be mutating concurrently — fine for a lossy, best-effort sync.
+        let len = self.buffer.len() * size_of::<TimeTrackingPixel>();
+        let ptr = self.buffer.as_ptr().cast::<u8>();
+        // SAFETY: `TimeTrackingPixel` is `repr(transparent)` over a `u64` (all bit patterns valid),
+        // so its bytes are a valid `[u8]` of the same length and lifetime as the shared borrow.
+        unsafe { std::slice::from_raw_parts(ptr, len) }
+    }
 }
 
 impl FrameBuffer for TimeTrackingFrameBuffer {
@@ -122,4 +134,14 @@ pub fn get_current_ns_since_unix_epoch() -> u64 {
     u64::try_from(ns_since_unix_epoch).expect(
         "your system time is >= year 2554. I'm developing this in 2026, I'm very likely dead now. And did no one write a better server to use in all that years?",
     )
+}
+
+/// Return a mutable slice of pixels as their raw bytes (8 per pixel), e.g. to read a frame straight
+/// off the wire into a `Vec<TimeTrackingPixel>`.
+pub fn pixels_as_bytes_mut(pixels: &mut [TimeTrackingPixel]) -> &mut [u8] {
+    let len = size_of_val(pixels);
+    let ptr = pixels.as_mut_ptr().cast::<u8>();
+    // SAFETY: `TimeTrackingPixel` is `repr(transparent)` over a `u64` (all bit patterns valid), so
+    // its bytes are a valid `[u8]` of the same lifetime and exclusive borrow.
+    unsafe { std::slice::from_raw_parts_mut(ptr, len) }
 }
