@@ -132,7 +132,7 @@ extern "C" fn draw_ui(
         outer_margin: Margin::same(12),
     };
 
-    egui::Area::new(egui::Id::new("overlay_area"))
+    egui::Area::new(egui::Id::unique("overlay_area"))
         .movable(true)
         .default_pos(egui::pos2(20.0, 20.0))
         .show(ctx, |ui| {
@@ -144,7 +144,7 @@ extern "C" fn draw_ui(
                 );
                 ui.separator();
 
-                egui::Grid::new(egui::Id::new("stats_header_grid")).show(ui, |ui| {
+                egui::Grid::new(egui::Id::unique("stats_header_grid")).show(ui, |ui| {
                     for ep in advertised_endpoints {
                         ui.label(
                             egui::RichText::new(ep)
@@ -157,7 +157,7 @@ extern "C" fn draw_ui(
                 });
 
                 ui.separator();
-                egui::Grid::new(egui::Id::new("stats_metrics_grid")).show(ui, |ui| {
+                egui::Grid::new(egui::Id::unique("stats_metrics_grid")).show(ui, |ui| {
                     ui.label(
                         egui::RichText::new("Connections: ")
                             .color(COLOR_HIGHLIGHT)
