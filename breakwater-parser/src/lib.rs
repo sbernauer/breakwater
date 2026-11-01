@@ -1,6 +1,3 @@
-// Used in the [`FrameBuffer`] trait
-#![feature(associated_type_defaults)]
-
 use const_format::formatcp;
 
 #[cfg(target_arch = "x86_64")]
