@@ -26,7 +26,8 @@ pub struct RefactoredParser<FB: FrameBuffer> {
     connection_x_offset: usize,
     connection_y_offset: usize,
     fb: Arc<FB>,
-    /// The best SIMD instruction set of the CPU we are running on, detected once per connection
+    /// The best SIMD instruction set of the CPU we are running on. `Level::new()` detects it at most
+    /// once per process.
     simd_level: Level,
 }
 
@@ -266,9 +267,9 @@ impl<FB: FrameBuffer> Parser for RefactoredParser<FB> {
 
 impl<FB: FrameBuffer> RefactoredParser<FB> {
     // Only called by `dispatch!`, which already enables the target features of the SIMD level, so
-    // this doesn't need `#[simd]`. That would wrap the parsing loop in another `vectorize` call,
-    // which changes how LLVM optimizes it (OriginalParser needed 2.3% more cycles in an E2E test of
-    // the generic build). All functions called from here need `#[simd]` though.
+    // this doesn't need `#[simd]`. This mirrors OriginalParser, see there why `#[simd]` is left
+    // out. Functions called from here only get the target features if they are `#[inline(always)]`
+    // or `#[simd]`.
     #[inline(always)]
     fn parse_simd<S: Simd>(&mut self, simd: S, buffer: &[u8], response: &mut Vec<u8>) -> usize {
         // As this is a potentially(?) expensive operation we only call it one in this parsing loop

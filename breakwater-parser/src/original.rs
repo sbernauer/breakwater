@@ -35,7 +35,8 @@ pub struct OriginalParser<FB: FrameBuffer> {
     /// How often the client requested the help on this connection. It is tracked per connection.
     help_count: u8,
     fb: Arc<FB>,
-    /// The best SIMD instruction set of the CPU we are running on, detected once per connection
+    /// The best SIMD instruction set of the CPU we are running on. `Level::new()` detects it at most
+    /// once per process.
     simd_level: Level,
     #[cfg(feature = "binary-sync-pixels")]
     remaining_pixel_sync: Option<RemainingPixelSync>,
@@ -80,7 +81,8 @@ impl<FB: OriginalParserFrameBuffer> OriginalParser<FB> {
     // Only called by `dispatch!`, which already enables the target features of the SIMD level, so
     // this doesn't need `#[simd]`. That would wrap the parsing loop in another `vectorize` call,
     // which changes how LLVM optimizes it (OriginalParser needed 2.3% more cycles in an E2E test of
-    // the generic build). All functions called from here need `#[simd]` though.
+    // the generic build). Functions called from here only get the target features if they are
+    // `#[inline(always)]` or `#[simd]`.
     #[inline(always)]
     #[expect(clippy::too_many_lines)]
     fn parse_simd<S: Simd>(&mut self, simd: S, buffer: &[u8], response: &mut Vec<u8>) -> usize {
@@ -386,6 +388,7 @@ pub(crate) fn simd_unhex<S: Simd>(simd: S, value: *const u8) -> u32 {
     // Every u16 lane holds the two characters forming one byte of the result, the first one being
     // the high nibble. Multiplying by 0x1001 adds the lane shifted by 12 bits, which puts the high
     // nibble right above the low one in the upper byte (and shifts the rest out of the lane).
+    // Only the lower half of the narrowed vector is used, so `pairs` is just a dummy upper half.
     let pairs = u16x8::from_bytes(nibbles);
     let bytes = ((pairs * 0x1001) >> 8).narrow(pairs);
     u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
@@ -460,7 +463,7 @@ mod tests {
 
     /// Runs the test for every SIMD level the CPU supports. The scalar fallback only exists on
     /// targets without a SIMD baseline (or with the `force_support_fallback` feature of
-    /// fearless_simd), so it can't be tested here.
+    /// `fearless_simd`), so it can't be tested here.
     fn for_all_simd_levels(test: impl Fn(&dyn Fn(*const u8) -> u32)) {
         let level = Level::new();
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
