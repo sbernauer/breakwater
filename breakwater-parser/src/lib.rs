@@ -1,7 +1,5 @@
 // Used in the [`FrameBuffer`] trait
 #![feature(associated_type_defaults)]
-// Used to conditionally require [`MultiPixelSet`] in the [`OriginalParser`]
-#![feature(trait_alias)]
 
 use const_format::formatcp;
 

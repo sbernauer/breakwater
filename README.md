@@ -218,7 +218,7 @@ See this [guide](docs/custom-overlay.md).
 The SIMD code uses [fearless_simd](https://github.com/linebender/fearless_simd), which detects the best instruction set of the CPU (e.g. SSE4.2, AVX2 or AVX-512) at runtime.
 So the release binaries and the Docker image, which are built for baseline x86-64, still make use of the CPU breakwater runs on.
 
-As we use some unstable features (`associated_type_defaults` and `trait_alias`), we configured this project to use nightly Rust in `rust-toolchain.toml`.
+As we use an unstable feature (`associated_type_defaults`), we configured this project to use nightly Rust in `rust-toolchain.toml`.
 
 If the SIMD or nightly part causes any problems on your setup please reach out by [creating an Issue](https://github.com/sbernauer/breakwater/issues/new)!
 
