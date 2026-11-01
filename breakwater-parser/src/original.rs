@@ -12,12 +12,17 @@ use crate::{
 /// The framebuffer capabilities [`OriginalParser`] requires.
 ///
 /// With `binary-sync-pixels` the parser memcpys whole pixel runs into the framebuffer via
-/// [`MultiPixelSet`], so the framebuffer must expose that. Otherwise plain [`FrameBuffer`] access
-/// is enough.
+/// [`MultiPixelSet`](crate::framebuffer::MultiPixelSet), so the framebuffer must expose that.
+/// Otherwise plain [`FrameBuffer`] access is enough. Every framebuffer with these capabilities
+/// implements it automatically.
 #[cfg(feature = "binary-sync-pixels")]
-pub trait OriginalParserFrameBuffer = FrameBuffer + crate::framebuffer::MultiPixelSet;
+pub trait OriginalParserFrameBuffer: FrameBuffer + crate::framebuffer::MultiPixelSet {}
+#[cfg(feature = "binary-sync-pixels")]
+impl<FB: FrameBuffer + crate::framebuffer::MultiPixelSet> OriginalParserFrameBuffer for FB {}
 #[cfg(not(feature = "binary-sync-pixels"))]
-pub trait OriginalParserFrameBuffer = FrameBuffer;
+pub trait OriginalParserFrameBuffer: FrameBuffer {}
+#[cfg(not(feature = "binary-sync-pixels"))]
+impl<FB: FrameBuffer> OriginalParserFrameBuffer for FB {}
 
 pub const PARSER_LOOKAHEAD: usize = "PX 1234 1234 rrggbbaa\n".len(); // Longest possible command
 
