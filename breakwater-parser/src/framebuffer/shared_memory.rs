@@ -156,6 +156,8 @@ impl SharedMemoryFrameBuffer {
 }
 
 impl FrameBuffer for SharedMemoryFrameBuffer {
+    type Timestamp = ();
+
     #[inline(always)]
     fn get_width(&self) -> usize {
         self.width

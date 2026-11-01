@@ -6,7 +6,10 @@ pub mod time_tracking;
 pub const FB_BYTES_PER_PIXEL: usize = std::mem::size_of::<u32>();
 
 pub trait FrameBuffer {
-    type Timestamp: Copy = ();
+    /// The timestamp type passed to [`FrameBuffer::set`].
+    ///
+    /// Framebuffers that don't track timestamps use `()`.
+    type Timestamp: Copy;
 
     /// Width in pixels
     fn get_width(&self) -> usize;
