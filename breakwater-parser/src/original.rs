@@ -66,8 +66,7 @@ impl<FB: FrameBuffer> OriginalParser<FB> {
 impl<FB: OriginalParserFrameBuffer> Parser for OriginalParser<FB> {
     fn parse(&mut self, buffer: &[u8], response: &mut Vec<u8>) -> usize {
         // Dispatch once per call, so that the whole parsing loop is compiled for (and can use all
-        // instructions of) the detected SIMD level. The Docker image and release binaries are built
-        // for baseline x86-64 (SSE2 only), so this lets them use e.g. AVX2 or AVX-512.
+        // instructions of) the detected SIMD level.
         let level = self.simd_level;
         dispatch!(level, simd => self.parse_simd(simd, buffer, response))
     }
