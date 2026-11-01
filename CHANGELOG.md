@@ -26,6 +26,9 @@ All notable changes to this project will be documented in this file.
   Both defaults are needed, as libvncserver binds a dedicated socket per IP version.
 - Improve derivation of the advertised endpoints from the `--listener-address`es ([#105]).
 - We now only allow 3 HELP calls per connection. Previously, it was 3 HELP calls per read from the socket ([#107]).
+- The `original` and `refactored` parsers detect the SIMD instruction set of the CPU (SSE2, SSE4.2, AVX2 or AVX-512) at runtime.
+  This speeds up the release binaries and the Docker image, which are built without `-C target-cpu=native`.
+  Also the parsing of hexadecimal colors needs fewer instructions.
 
 ### Fixed
 
