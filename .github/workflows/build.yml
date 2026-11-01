@@ -32,7 +32,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
+          toolchain: nightly-2026-10-30
           override: true
       - name: Install libvncserver-dev
         run: sudo apt update && sudo apt install -y libvncserver-dev
@@ -52,7 +52,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
+          toolchain: nightly-2026-10-30
           components: rustfmt
           override: true
       - name: Install libvncserver-dev
@@ -70,7 +70,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
+          toolchain: nightly-2026-10-30
           components: clippy
           override: true
       - name: Install libvncserver-dev
@@ -105,7 +105,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
+          toolchain: nightly-2026-10-30
           components: rustfmt
           override: true
       - name: Install libvncserver-dev
@@ -123,7 +123,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
+          toolchain: nightly-2026-10-30
           override: true
       - name: Install libvncserver-dev
         run: sudo apt update && sudo apt install -y libvncserver-dev
@@ -160,7 +160,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
+          toolchain: nightly-2026-10-30
           override: true
       - name: Install libvncserver-dev
         run: sudo apt update && sudo apt install -y libvncserver-dev
@@ -198,7 +198,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
+          toolchain: nightly-2026-10-30
           target: ${{ matrix.target }}
           override: true
       - name: Print CPU architecture

@@ -1,5 +1,3 @@
-// Needed for original implementation
-#![feature(portable_simd)]
 // Used in the [`FrameBuffer`] trait
 #![feature(associated_type_defaults)]
 // Used to conditionally require [`MultiPixelSet`] in the [`OriginalParser`]

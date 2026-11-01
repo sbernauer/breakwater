@@ -1,7 +1,9 @@
-use std::{
-    simd::{ToBytes, num::SimdUint, u8x8, u16x4},
-    sync::Arc,
+use std::sync::Arc;
+
+use fearless_simd::{
+    Bytes, Level, Select, Simd, SimdBase, SimdFrom, SimdNarrow, dispatch, i8x16, u8x16, u16x8,
 };
+use fearless_simd_macros::simd;
 
 use crate::{
     ALT_HELP_TEXT, HELP_TEXT, MAX_HELP_CALLS_PER_CONNECTION, Parser, framebuffer::FrameBuffer,
@@ -33,6 +35,9 @@ pub struct OriginalParser<FB: FrameBuffer> {
     /// How often the client requested the help on this connection. It is tracked per connection.
     help_count: u8,
     fb: Arc<FB>,
+    /// The best SIMD instruction set of the CPU we are running on. `Level::new()` detects it at most
+    /// once per connection.
+    simd_level: Level,
     #[cfg(feature = "binary-sync-pixels")]
     remaining_pixel_sync: Option<RemainingPixelSync>,
 }
@@ -51,6 +56,7 @@ impl<FB: FrameBuffer> OriginalParser<FB> {
             connection_y_offset: 0,
             help_count: 0,
             fb,
+            simd_level: Level::new(),
             #[cfg(feature = "binary-sync-pixels")]
             remaining_pixel_sync: None,
         }
@@ -58,8 +64,27 @@ impl<FB: FrameBuffer> OriginalParser<FB> {
 }
 
 impl<FB: OriginalParserFrameBuffer> Parser for OriginalParser<FB> {
-    #[allow(clippy::too_many_lines)]
     fn parse(&mut self, buffer: &[u8], response: &mut Vec<u8>) -> usize {
+        // Dispatch once per call, so that the whole parsing loop is compiled for (and can use all
+        // instructions of) the detected SIMD level.
+        let level = self.simd_level;
+        dispatch!(level, simd => self.parse_simd(simd, buffer, response))
+    }
+
+    fn parser_lookahead(&self) -> usize {
+        PARSER_LOOKAHEAD
+    }
+}
+
+impl<FB: OriginalParserFrameBuffer> OriginalParser<FB> {
+    // Only called by `dispatch!`, which already enables the target features of the SIMD level, so
+    // this doesn't need `#[simd]`. That would wrap the parsing loop in another `vectorize` call,
+    // which changes how LLVM optimizes it (OriginalParser needed 2.3% more cycles in an E2E test of
+    // the generic build). Functions called from here only get the target features if they are
+    // `#[inline(always)]` or `#[simd]`.
+    #[inline(always)]
+    #[expect(clippy::too_many_lines)]
+    fn parse_simd<S: Simd>(&mut self, simd: S, buffer: &[u8], response: &mut Vec<u8>) -> usize {
         // As this is a potentially(?) expensive operation we only call it one in this parsing loop
         // All the pixels likely where in the same TCP packets (+- 1/2 or so) it doesn't matter after all
         // Encode the timestamp exactly once here, not per pixel: it's constant for the whole parse
@@ -134,7 +159,7 @@ impl<FB: OriginalParserFrameBuffer> Parser for OriginalParser<FB> {
                             last_byte_parsed = i + 6;
                             i += 7; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                            let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(i - 7) });
+                            let rgba: u32 = simd_unhex(simd, unsafe { buffer.as_ptr().add(i - 7) });
 
                             self.fb.set(x, y, rgba & 0x00ff_ffff, current_ts);
                             continue;
@@ -146,7 +171,7 @@ impl<FB: OriginalParserFrameBuffer> Parser for OriginalParser<FB> {
                             last_byte_parsed = i + 8;
                             i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                            let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(i - 9) });
+                            let rgba: u32 = simd_unhex(simd, unsafe { buffer.as_ptr().add(i - 9) });
 
                             self.fb.set(x, y, rgba & 0x00ff_ffff, current_ts);
                             continue;
@@ -156,7 +181,7 @@ impl<FB: OriginalParserFrameBuffer> Parser for OriginalParser<FB> {
                             last_byte_parsed = i + 8;
                             i += 9; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                            let rgba = simd_unhex(unsafe { buffer.as_ptr().add(i - 9) });
+                            let rgba = simd_unhex(simd, unsafe { buffer.as_ptr().add(i - 9) });
 
                             let alpha = (rgba >> 24) & 0xff;
 
@@ -187,7 +212,8 @@ impl<FB: OriginalParserFrameBuffer> Parser for OriginalParser<FB> {
                             last_byte_parsed = i + 2;
                             i += 3; // We can advance one byte more than normal as we use continue and therefore not get incremented at the end of the loop
 
-                            let base = simd_unhex(unsafe { buffer.as_ptr().add(i - 3) }) & 0xff;
+                            let base =
+                                simd_unhex(simd, unsafe { buffer.as_ptr().add(i - 3) }) & 0xff;
 
                             let rgba: u32 = (base << 16) | (base << 8) | base;
 
@@ -326,10 +352,6 @@ impl<FB: OriginalParserFrameBuffer> Parser for OriginalParser<FB> {
         last_byte_parsed
         // last_byte_parsed.saturating_sub(1)
     }
-
-    fn parser_lookahead(&self) -> usize {
-        PARSER_LOOKAHEAD
-    }
 }
 
 const fn string_to_number(input: &[u8]) -> u64 {
@@ -346,23 +368,29 @@ const fn string_to_number(input: &[u8]) -> u64 {
 /// Parses 8 hex characters into a u32, the first two characters end up in the least significant
 /// byte. Invalid characters result in some garbage color, but never in undefined behavior.
 ///
-/// All characters are processed at once in 8 u8 lanes, which only needs SSE2 on x86. This is a
-/// lot faster than working on 8 u32 lanes (which needs variable shifts and a horizontal reduction)
-/// and also faster than doing the same in a general purpose register, as the parsing loop already
-/// keeps the integer ALUs busy.
+/// All characters are processed at once in the lower 8 u8 lanes of a vector, which only needs SSE2
+/// on x86. This is a lot faster than working on 8 u32 lanes (which needs variable shifts and a
+/// horizontal reduction) and also faster than doing the same in a general purpose register, as the
+/// parsing loop already keeps the integer ALUs busy.
+#[simd]
 #[inline(always)]
-pub(crate) fn simd_unhex(value: *const u8) -> u32 {
-    let chars = u8x8::from_array(unsafe { (value as *const [u8; 8]).read_unaligned() });
+pub(crate) fn simd_unhex<S: Simd>(simd: S, value: *const u8) -> u32 {
+    let mut chars = [0; 16];
+    chars[..8].copy_from_slice(&unsafe { (value as *const [u8; 8]).read_unaligned() });
+    let chars = u8x16::simd_from(simd, chars);
 
-    // Per character `(char & 0xf) + (char >> 6) * 9`, which is 0-15 for `0-9`, `a-f` and `A-F`.
-    // Inspired by https://github.com/nervosnetwork/faster-hex/blob/a4c06b387ddeeea311c9e84a3adcaf01015cf40e/src/decode.rs#L80
-    let nibbles = (chars & u8x8::splat(0xf)) + (chars >> u8x8::splat(6)) * u8x8::splat(9);
+    // The lower nibble of `0-9` (0x30-0x39) already is their value, `A-F` (0x41-0x46) and `a-f`
+    // (0x61-0x66) additionally need 9 added. With AVX-512 the addition is masked by the comparison.
+    let letters = i8x16::from_bytes(chars).simd_gt(0x40);
+    let nibbles = (chars & 0xf) + letters.select(u8x16::splat(simd, 9), u8x16::splat(simd, 0));
 
     // Every u16 lane holds the two characters forming one byte of the result, the first one being
-    // the high nibble. The truncating cast drops everything that got shifted beyond that byte.
-    let pairs = u16x4::from_le_bytes(nibbles);
-    let bytes = ((pairs << u16x4::splat(4)) | (pairs >> u16x4::splat(8))).cast::<u8>();
-    u32::from_le_bytes(bytes.to_array())
+    // the high nibble. Multiplying by 0x1001 adds the lane shifted by 12 bits, which puts the high
+    // nibble right above the low one in the upper byte (and shifts the rest out of the lane).
+    // Only the lower half of the narrowed vector is used, so `pairs` is just a dummy upper half.
+    let pairs = u16x8::from_bytes(nibbles);
+    let bytes = ((pairs * 0x1001) >> 8).narrow(pairs);
+    u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
 }
 
 #[inline(always)]
@@ -432,9 +460,39 @@ mod tests {
         u32::from_le_bytes(bytes)
     }
 
+    /// Runs the test for every SIMD level the CPU supports. The scalar fallback only exists on
+    /// targets without a SIMD baseline (or with the `force_support_fallback` feature of
+    /// `fearless_simd`), so it can't be tested here.
+    fn for_all_simd_levels(test: impl Fn(&dyn Fn(*const u8) -> u32)) {
+        let level = Level::new();
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            if let Some(simd) = level.as_sse2() {
+                test(&|value| simd_unhex(simd, value));
+            }
+            if let Some(simd) = level.as_sse4_2() {
+                test(&|value| simd_unhex(simd, value));
+            }
+            if let Some(simd) = level.as_avx2() {
+                test(&|value| simd_unhex(simd, value));
+            }
+            if let Some(simd) = level.as_avx512() {
+                test(&|value| simd_unhex(simd, value));
+            }
+        }
+        #[cfg(target_arch = "aarch64")]
+        if let Some(simd) = level.as_neon() {
+            test(&|value| simd_unhex(simd, value));
+        }
+    }
+
     /// Only valid hex digits need to be parsed correctly, invalid ones can result in any color
     #[test]
     fn simd_unhex_matches_reference() {
+        for_all_simd_levels(simd_unhex_matches_reference_with);
+    }
+
+    fn simd_unhex_matches_reference_with(unhex: &dyn Fn(*const u8) -> u32) {
         const HEX_DIGITS: &[u8] = b"0123456789abcdefABCDEF";
 
         // xorshift64, we don't want a dependency just to get some random bytes
@@ -449,7 +507,7 @@ mod tests {
                 .map(|byte| HEX_DIGITS[byte as usize % HEX_DIGITS.len()]);
 
             assert_eq!(
-                simd_unhex(chars.as_ptr()),
+                unhex(chars.as_ptr()),
                 unhex_reference(chars),
                 "Different result for {chars:?}"
             );
@@ -458,11 +516,15 @@ mod tests {
 
     #[test]
     fn simd_unhex_parses_hex() {
-        assert_eq!(simd_unhex(b"12345678".as_ptr()), 0x7856_3412);
-        assert_eq!(simd_unhex(b"abcdefAB".as_ptr()), 0xabef_cdab);
-        assert_eq!(simd_unhex(b"ABCDEFab".as_ptr()), 0xabef_cdab);
-        assert_eq!(simd_unhex(b"00ff00ff".as_ptr()), 0xff00_ff00);
+        for_all_simd_levels(simd_unhex_parses_hex_with);
+    }
+
+    fn simd_unhex_parses_hex_with(unhex: &dyn Fn(*const u8) -> u32) {
+        assert_eq!(unhex(b"12345678".as_ptr()), 0x7856_3412);
+        assert_eq!(unhex(b"abcdefAB".as_ptr()), 0xabef_cdab);
+        assert_eq!(unhex(b"ABCDEFab".as_ptr()), 0xabef_cdab);
+        assert_eq!(unhex(b"00ff00ff".as_ptr()), 0xff00_ff00);
         // RGB followed by the newline and the next command
-        assert_eq!(simd_unhex(b"c0ffee\nP".as_ptr()) & 0x00ff_ffff, 0x00ee_ffc0);
+        assert_eq!(unhex(b"c0ffee\nP".as_ptr()) & 0x00ff_ffff, 0x00ee_ffc0);
     }
 }
