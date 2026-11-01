@@ -12,7 +12,7 @@ version = "0.22.0"
 license = "Beerware"
 authors = ["Sebastian Bernauer <bernauerse@web.de>"]
 edition = "2024"
-repository = "https://github.com/sernauer/breakwater"
+repository = "https://github.com/sbernauer/breakwater"
 
 [workspace.dependencies]
 async-trait = "0.1"
