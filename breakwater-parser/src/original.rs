@@ -36,7 +36,7 @@ pub struct OriginalParser<FB: FrameBuffer> {
     help_count: u8,
     fb: Arc<FB>,
     /// The best SIMD instruction set of the CPU we are running on. `Level::new()` detects it at most
-    /// once per process.
+    /// once per connection.
     simd_level: Level,
     #[cfg(feature = "binary-sync-pixels")]
     remaining_pixel_sync: Option<RemainingPixelSync>,

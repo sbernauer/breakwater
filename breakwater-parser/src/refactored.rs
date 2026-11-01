@@ -27,7 +27,7 @@ pub struct RefactoredParser<FB: FrameBuffer> {
     connection_y_offset: usize,
     fb: Arc<FB>,
     /// The best SIMD instruction set of the CPU we are running on. `Level::new()` detects it at most
-    /// once per process.
+    /// once per connection.
     simd_level: Level,
 }
 
