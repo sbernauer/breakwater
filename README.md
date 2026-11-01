@@ -214,8 +214,6 @@ Disclaimer: This project is not in any way affiliated with NDI® or NewTek/Vizrt
 See this [guide](docs/custom-overlay.md).
 
 ## Usage of SIMD and nightly Rust
-[Fabian Wunsch](https://github.com/fabi321) has introduced initial support for SIMD when parsing the hexadecimal color values in [#5](https://github.com/sbernauer/breakwater/pull/5). Thanks!
-We might be able to extend the support, parsing the decimal coordinates or blending colors using alpha using SIMD would be awesome as well. PRs welcome!
 
 The SIMD code uses [fearless_simd](https://github.com/linebender/fearless_simd), which detects the best instruction set of the CPU (e.g. SSE4.2, AVX2 or AVX-512) at runtime.
 So the release binaries and the Docker image, which are built for baseline x86-64, still make use of the CPU breakwater runs on.
