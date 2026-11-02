@@ -35,7 +35,7 @@ Note: This command needs to be enabled using the `binary-sync-pixels` feature
 The easiest way is to continue with the provided [Ready to use Docker setup](#run-in-docker-container) below.
 
 If you prefer the manual way you need to have [Rust installed](https://www.rust-lang.org/tools/install).
-The performance is the same as with the Docker image or the release binaries, as breakwater detects the SIMD instructions your CPU supports at runtime.
+The performance should be the same as with the Docker image or the release binaries, as breakwater detects the SIMD instructions your CPU supports at runtime.
 
 ## Running on desktop
 
