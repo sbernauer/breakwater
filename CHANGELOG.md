@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-11-02
+
 ### Added
 
 - BREAKING: Add `TimeTrackingFrameBuffer` behind `time-tracking` features ([#84]).

@@ -540,7 +540,7 @@ dependencies = [
 
 [[package]]
 name = "breakwater"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -582,7 +582,7 @@ dependencies = [
 
 [[package]]
 name = "breakwater-egui-overlay"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "eframe",
  "egui",
@@ -590,7 +590,7 @@ dependencies = [
 
 [[package]]
 name = "breakwater-parser"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "clap",
  "color-eyre",
@@ -607,7 +607,7 @@ dependencies = [
 
 [[package]]
 name = "breakwater-parser-c-bindings"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "breakwater-parser",
  "libc",
