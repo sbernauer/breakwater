@@ -1,11 +1,8 @@
-FROM rust:1.96.0-trixie AS builder
+FROM rust:1.99.1-trixie AS builder
 
 RUN apt-get update && \
     apt-get install -y clang libvncserver-dev && \
     rm -rf /var/lib/apt/lists/*
-
-# Installing it explicitly to make better use of the docker cache
-RUN rustup toolchain install nightly
 
 WORKDIR /breakwater
 COPY breakwater-parser/ breakwater-parser/

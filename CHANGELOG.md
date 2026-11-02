@@ -29,6 +29,7 @@ All notable changes to this project will be documented in this file.
 - The `original` and `refactored` parsers detect the SIMD instruction set of the CPU (SSE2, SSE4.2, AVX2 or AVX-512) at runtime ([#110]).
   This speeds up the release binaries and the Docker image, which are built without `-C target-cpu=native`.
   Also the parsing of hexadecimal colors needs fewer instructions.
+- breakwater now builds on stable Rust (1.99.1), nightly is no longer needed ([#113]).
 
 ### Fixed
 
@@ -50,6 +51,7 @@ All notable changes to this project will be documented in this file.
 [#107]: https://github.com/sbernauer/breakwater/pull/107
 [#109]: https://github.com/sbernauer/breakwater/pull/109
 [#110]: https://github.com/sbernauer/breakwater/pull/110
+[#113]: https://github.com/sbernauer/breakwater/pull/113
 
 ## [0.22.0] - 2026-06-20
 
