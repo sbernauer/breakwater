@@ -42,19 +42,7 @@ jobs:
 
       # Build without VNC support to keep the list of dynamically linked libraries minimal
       # See https://github.com/sbernauer/breakwater/issues/72 for details.
-      - if: runner.os != 'Windows'
-        name: Build binary (non Windows)
-        # We don't want to e.g. set "-C target-cpu=native", so that the binary should run everywhere
-        run: RUSTFLAGS='' cargo build --release --target=${{ matrix.target }} --no-default-features --features prometheus,egui,winit
-      - if: runner.os == 'Windows'
-        name: Build binary (Windows)
-        # Windows is a joke :)
-        # RUSTFLAGS=: D:\a\_temp\c6583298-1841-4717-a693-03c0ce03fed6.ps1:2
-        # Line |
-        #    2 |  RUSTFLAGS='' cargo build --release --target=x86_64-pc-windows-gnu --n …
-        #      |  ~~~~~~~~~~~~
-        #      | The term 'RUSTFLAGS=' is not recognized as a name of a cmdlet, function, script file, or executable program.
-        #      | Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+      - name: Build binary
         run: cargo build --release --target=${{ matrix.target }} --no-default-features --features prometheus,egui,winit
       - name: Rename binary file
         run: mv target/${{ matrix.target }}/release/breakwater${{ matrix.file-suffix }} breakwater-${{ matrix.target }}${{ matrix.file-suffix }}
@@ -67,8 +55,7 @@ jobs:
       # and Mac)
       - if: runner.os == 'Linux'
         name: Build binary with VNC support (Linux)
-        # We don't want to e.g. set "-C target-cpu=native", so that the binary should run everywhere
-        run: RUSTFLAGS='' cargo build --release --target=${{ matrix.target }} --no-default-features --features prometheus,egui,winit,vnc
+        run: cargo build --release --target=${{ matrix.target }} --no-default-features --features prometheus,egui,winit,vnc
       - if: runner.os == 'Linux'
         name: Rename binary file with VNC support
         run: mv target/${{ matrix.target }}/release/breakwater${{ matrix.file-suffix }} breakwater-with-vnc-support-${{ matrix.target }}${{ matrix.file-suffix }}

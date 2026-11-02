@@ -30,6 +30,8 @@ All notable changes to this project will be documented in this file.
   This speeds up the release binaries and the Docker image, which are built without `-C target-cpu=native`.
   Also the parsing of hexadecimal colors needs fewer instructions.
 - breakwater now builds on stable Rust (1.99.1), nightly is no longer needed ([#113]).
+- `cargo build` no longer passes `-C target-cpu=native`, so a self-compiled binary runs on every CPU of its target ([#114]).
+  Since the parsers detect the SIMD instruction set at runtime ([#110]), it made no measurable performance difference anymore.
 
 ### Fixed
 
@@ -52,6 +54,7 @@ All notable changes to this project will be documented in this file.
 [#109]: https://github.com/sbernauer/breakwater/pull/109
 [#110]: https://github.com/sbernauer/breakwater/pull/110
 [#113]: https://github.com/sbernauer/breakwater/pull/113
+[#114]: https://github.com/sbernauer/breakwater/pull/114
 
 ## [0.22.0] - 2026-06-20
 
