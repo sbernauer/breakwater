@@ -1,11 +1,8 @@
-FROM rust:1.96.0-trixie AS builder
+FROM rust:1.99.1-trixie AS builder
 
 RUN apt-get update && \
     apt-get install -y clang libvncserver-dev && \
     rm -rf /var/lib/apt/lists/*
-
-# Installing it explicitly to make better use of the docker cache
-RUN rustup toolchain install nightly
 
 WORKDIR /breakwater
 COPY breakwater-parser/ breakwater-parser/
@@ -17,13 +14,12 @@ COPY Cargo.lock .
 COPY rust-toolchain.toml .
 COPY Arial.ttf .
 
-# * We don't want to e.g. set "-C target-cpu=native", so that the binary should run everywhere
 # * We can always build with vnc server support as the docker image contains all needed dependencies in any case
 # * While the "native-display" feature compiles successfully, we'd rather not offer the CLI option, as it might cause
 #   users to think it should work (which it doesn't). So let's not enable that feature
 # * We pick libdeflater over zlib-rs as it performs better in our default case, see breakwater/src/sinks/web/README.md for details.
 #   We only need to have a C compiler available.
-RUN RUSTFLAGS='' cargo build --release --no-default-features --features prometheus,vnc,web,web-libdeflate,binary-set-pixel
+RUN cargo build --release --no-default-features --features prometheus,vnc,web,web-libdeflate,binary-set-pixel
 
 FROM debian:trixie-slim AS final
 RUN apt-get update && \

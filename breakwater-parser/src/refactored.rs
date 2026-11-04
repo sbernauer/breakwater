@@ -1,5 +1,8 @@
 use std::sync::Arc;
 
+use fearless_simd::{Level, Simd, dispatch};
+use fearless_simd_macros::simd;
+
 use crate::{
     HELP_TEXT, Parser,
     framebuffer::FrameBuffer,
@@ -23,6 +26,9 @@ pub struct RefactoredParser<FB: FrameBuffer> {
     connection_x_offset: usize,
     connection_y_offset: usize,
     fb: Arc<FB>,
+    /// The best SIMD instruction set of the CPU we are running on. `Level::new()` detects it at most
+    /// once per connection.
+    simd_level: Level,
 }
 
 impl<FB: FrameBuffer> RefactoredParser<FB> {
@@ -31,12 +37,15 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
             connection_x_offset: 0,
             connection_y_offset: 0,
             fb,
+            simd_level: Level::new(),
         }
     }
 
+    #[simd]
     #[inline(always)]
-    fn handle_pixel(
+    fn handle_pixel<S: Simd>(
         &self,
+        simd: S,
         buffer: &[u8],
         current_ts: FB::Timestamp,
         mut idx: usize,
@@ -61,19 +70,19 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
                 // Must be followed by 6 bytes RGB and newline or ...
                 if unsafe { *buffer.get_unchecked(idx + 6) } == b'\n' {
                     idx += 7;
-                    self.handle_rgb(idx, buffer, current_ts, x, y);
+                    self.handle_rgb(simd, idx, buffer, current_ts, x, y);
                     (idx, idx)
                 }
                 // ... or must be followed by 8 bytes RGBA and newline
                 else if unsafe { *buffer.get_unchecked(idx + 8) } == b'\n' {
                     idx += 9;
-                    self.handle_rgba(idx, buffer, current_ts, x, y);
+                    self.handle_rgba(simd, idx, buffer, current_ts, x, y);
                     (idx, idx)
                 }
                 // ... for the efficient/lazy clients
                 else if unsafe { *buffer.get_unchecked(idx + 2) } == b'\n' {
                     idx += 3;
-                    self.handle_gray(idx, buffer, current_ts, x, y);
+                    self.handle_gray(simd, idx, buffer, current_ts, x, y);
                     (idx, idx)
                 } else {
                     (idx, previous)
@@ -139,39 +148,52 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
         response.extend_from_slice(HELP_TEXT);
     }
 
+    #[simd]
     #[inline(always)]
-    fn handle_rgb(&self, idx: usize, buffer: &[u8], current_ts: FB::Timestamp, x: usize, y: usize) {
-        let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(idx - 7) });
+    fn handle_rgb<S: Simd>(
+        &self,
+        simd: S,
+        idx: usize,
+        buffer: &[u8],
+        current_ts: FB::Timestamp,
+        x: usize,
+        y: usize,
+    ) {
+        let rgba: u32 = simd_unhex(simd, unsafe { buffer.as_ptr().add(idx - 7) });
 
         self.fb.set(x, y, rgba & 0x00ff_ffff, current_ts);
     }
 
     #[cfg(not(feature = "alpha"))]
+    #[simd]
     #[inline(always)]
-    fn handle_rgba(
+    fn handle_rgba<S: Simd>(
         &self,
+        simd: S,
         idx: usize,
         buffer: &[u8],
         current_ts: FB::Timestamp,
         x: usize,
         y: usize,
     ) {
-        let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(idx - 9) });
+        let rgba: u32 = simd_unhex(simd, unsafe { buffer.as_ptr().add(idx - 9) });
 
         self.fb.set(x, y, rgba & 0x00ff_ffff, current_ts);
     }
 
     #[cfg(feature = "alpha")]
+    #[simd]
     #[inline(always)]
-    fn handle_rgba(
+    fn handle_rgba<S: Simd>(
         &self,
+        simd: S,
         idx: usize,
         buffer: &[u8],
         current_ts: FB::Timestamp,
         x: usize,
         y: usize,
     ) {
-        let rgba: u32 = simd_unhex(unsafe { buffer.as_ptr().add(idx - 9) });
+        let rgba: u32 = simd_unhex(simd, unsafe { buffer.as_ptr().add(idx - 9) });
 
         let alpha = (rgba >> 24) & 0xff;
 
@@ -193,9 +215,11 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
             .set(x, y, (red << 16) | (green << 8) | blue, current_ts);
     }
 
+    #[simd]
     #[inline(always)]
-    fn handle_gray(
+    fn handle_gray<S: Simd>(
         &self,
+        simd: S,
         idx: usize,
         buffer: &[u8],
         current_ts: FB::Timestamp,
@@ -204,7 +228,7 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
     ) {
         // FIXME: Read that two bytes directly instead of going through the whole SIMD vector setup.
         // Or - as an alternative - still do the SIMD part but only load two bytes.
-        let base: u32 = simd_unhex(unsafe { buffer.as_ptr().add(idx - 3) }) & 0xff;
+        let base: u32 = simd_unhex(simd, unsafe { buffer.as_ptr().add(idx - 3) }) & 0xff;
 
         let rgba: u32 = (base << 16) | (base << 8) | base;
 
@@ -230,6 +254,24 @@ impl<FB: FrameBuffer> RefactoredParser<FB> {
 
 impl<FB: FrameBuffer> Parser for RefactoredParser<FB> {
     fn parse(&mut self, buffer: &[u8], response: &mut Vec<u8>) -> usize {
+        // Dispatch once per call, so that the whole parsing loop is compiled for (and can use all
+        // instructions of) the detected SIMD level
+        let level = self.simd_level;
+        dispatch!(level, simd => self.parse_simd(simd, buffer, response))
+    }
+
+    fn parser_lookahead(&self) -> usize {
+        PARSER_LOOKAHEAD
+    }
+}
+
+impl<FB: FrameBuffer> RefactoredParser<FB> {
+    // Only called by `dispatch!`, which already enables the target features of the SIMD level, so
+    // this doesn't need `#[simd]`. This mirrors OriginalParser, see there why `#[simd]` is left
+    // out. Functions called from here only get the target features if they are `#[inline(always)]`
+    // or `#[simd]`.
+    #[inline(always)]
+    fn parse_simd<S: Simd>(&mut self, simd: S, buffer: &[u8], response: &mut Vec<u8>) -> usize {
         // As this is a potentially(?) expensive operation we only call it one in this parsing loop
         // All the pixels likely where in the same TCP packets (+- 1/2 or so) it doesn't matter after all
         // Encode the timestamp exactly once here, not per pixel: it's constant for the whole parse
@@ -245,7 +287,7 @@ impl<FB: FrameBuffer> Parser for RefactoredParser<FB> {
             let current_command =
                 unsafe { (buffer.as_ptr().add(i) as *const u64).read_unaligned() };
             if current_command & 0x00ff_ffff == PX_PATTERN {
-                (i, last_byte_parsed) = self.handle_pixel(buffer, current_ts, i, response);
+                (i, last_byte_parsed) = self.handle_pixel(simd, buffer, current_ts, i, response);
             } else if cfg!(feature = "binary-set-pixel")
                 && current_command & 0x0000_ffff == PB_PATTERN
             {
@@ -268,9 +310,5 @@ impl<FB: FrameBuffer> Parser for RefactoredParser<FB> {
         }
 
         last_byte_parsed.wrapping_sub(1)
-    }
-
-    fn parser_lookahead(&self) -> usize {
-        PARSER_LOOKAHEAD
     }
 }

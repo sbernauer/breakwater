@@ -25,6 +25,8 @@ impl SimpleFrameBuffer {
 }
 
 impl FrameBuffer for SimpleFrameBuffer {
+    type Timestamp = ();
+
     #[inline(always)]
     fn get_width(&self) -> usize {
         self.width
